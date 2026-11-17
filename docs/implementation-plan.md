@@ -15,7 +15,7 @@ Everything below is the v1 target; nothing is implemented yet.
 | Backup format | `msgstore.db.crypt15` + `msgstore-increment-*.db.crypt15`, plus the rolling `msgstore-YYYY-MM-DD.1.db.crypt15` copies when present |
 | Key | 32-byte root key: 64 hex digits typed in, a `.png` screenshot, or an `encrypted_backup.key` file (root only) |
 | Input | A folder the user copied from the phone over USB/MTP (`Databases/`, `Backups/`, `Media/`) |
-| Output | one **self-contained site per chat**, `<out>/<date>-<slug>/` — HTML + JS + media + `chat.db`, opened through `wexport serve` |
+| Output | one **self-contained archive per chat**, `<out>/<date>-<slug>/` — HTML + classic-script data chunks + media, opened by **double-clicking `index.html`**, with no server and no wexport installed |
 
 **Out of scope for v1** (each one is a separate product decision, not a later ticket)
 
@@ -50,13 +50,11 @@ input dir + key
       │         → <out>/media/… (the output directory is created here), media rows updated,
       │           missing files flagged
       ▼
-[5] build       per chat: chat.db + assets + manifest → <out>/<date>-<slug>/
-      │         → one folder that stands alone; optional <out>/index.html linking them (never
-      │           inside a chat folder)
+[5] build       per chat: query chat.db, emit index.html + app.js + data/*.js chunks + media
+      │         → <out>/<date>-<slug>/ , a folder that opens over file://
+      │         → optional <out>/index.html linking the chats (never inside a chat folder)
       ▼
-      │
-      ▼
-[6] serve       http.server with Range support, no caching, localhost only
+[6] serve       optional convenience: the same folder over http, for big media and picky browsers
 ```
 
 Stage contracts:
@@ -69,9 +67,11 @@ Stage contracts:
   our own schema, so a WhatsApp rename breaks exactly one file.
 - **media** is idempotent: a second run skips what exists, reports what is missing, never
   overwrites.
-- **build** never mutates the archive; it only reads. Each chat folder is a complete site: it works
-  when copied alone, zipped, or sent to someone who has wexport and nothing else of yours.
-- **serve** is optional (a user with a static-host habit can open the folder any other way).
+- **build** never mutates the archive; it only reads. Each chat folder is a complete archive: it works
+  when copied alone, zipped, or sent to someone who has a browser and nothing else.
+- **serve** is a convenience, not a requirement. The archive is designed for `file://`; the server only
+  exists for the cases where an HTTP origin is nicer (big media on a slow disk, a browser that is
+  picky about local files).
 
 ### CLI surface
 
@@ -80,7 +80,7 @@ wexport check <input-dir> [--key <hex|png|keyfile>]
 wexport build <input-dir> --key <hex|png|keyfile> --out <out-dir>
               [--all | --chat <jid> ...] [--index] [--jobs N]
               [--transcode {none,audio,video,all}] [--link]
-wexport serve <site-dir> [--port 8765]
+wexport serve <site-dir> [--port 8765]        # optional: same archive over http
 ```
 
 `build` defaults to `--all` (one folder per chat). `--chat` takes one or more JIDs and produces only
@@ -142,19 +142,18 @@ wexport/
 │   │   └── merge.py             # incremental replay, ordering, edits/revokes
 │   ├── db/
 │   │   ├── msgstore.py          # source-schema adapter (WhatsApp 2.26 names)
-│   │   ├── slim.py              # our schema + writer
-│   │   └── fts.py               # FTS5 index build and query fixtures
+│   │   └── slim.py              # chat.db schema + writer
 │   ├── media/
 │   │   ├── resolve.py           # DB path → file, missing detection, dedupe by hash
 │   │   └── derive.py            # thumbnails, posters, waveform peaks, optional transcode
 │   ├── site/
-│   │   ├── build.py             # per-chat site builder, index page, manifest
-│   │   ├── serve.py             # Range-capable handler
+│   │   ├── build.py             # per-chat builder: HTML, data chunks, manifest, index page
+│   │   ├── chunks.py            # chat.db rows → classic-script data chunks
+│   │   ├── serve.py             # optional HTTP handler (Range)
 │   │   └── assets/
-│   │       ├── index.html       # shell
-│   │       ├── app.js           # router, chat list, virtualised timeline, renderers
-│   │       ├── app.css
-│   │       └── vendor/          # sqlite-wasm build, pinned, licence file next to it
+│   │       ├── index.html       # shell, no modules, no fetch
+│   │       ├── app.js           # router, virtualised timeline, renderers, search
+│   │       └── app.css
 └── tests/
     ├── unit/
     ├── integration/
@@ -170,17 +169,19 @@ Rules that follow from the layout:
 - `db/msgstore.py` is the **only** place a WhatsApp column name or table name appears.
 - Tests exercise module functions, never a subprocess. The CLI is covered through `main(argv)` for
   argument parsing and exit codes, which is where its logic lives.
-- `site/assets/` is plain ES modules — no bundler, no node toolchain. If the viewer ever needs a
-  build step it is because a dependency was added that should not have been.
+- `site/assets/` is plain **classic** scripts — no modules (blocked over `file://`), no bundler, no
+  node toolchain. If the viewer ever needs a build step it is because a dependency was added that
+  should not have been.
 
 ---
 
-## 4. Data model (`chat.db`, our schema)
+## 4. Data model (build-time `chat.db`)
 
-Built fresh per run; it is derived data and can always be regenerated. Slim on purpose: the viewer
-queries it in the browser through SQLite-WASM. Each site carries its own `chat.db` with exactly one
-row in `chat` — the chat that site belongs to. `chat_id` stays on `message` anyway, so a future
-"everything in one site" mode is a build option, not a schema migration.
+Built fresh per run; it is derived data and can always be regenerated. It is an **intermediate**: the
+build reads it and emits the data chunks the site ships. It is never part of the archive, and deleting
+it breaks nothing. Each build carries exactly one row in `chat` — the chat that site belongs to.
+`chat_id` stays on `message` anyway, so a future "everything in one archive" mode is a build option,
+not a schema migration.
 
 ```sql
 meta(key TEXT PRIMARY KEY, value TEXT)          -- schema version, source app version, build date
@@ -196,16 +197,13 @@ media(id INTEGER PRIMARY KEY, message_id INTEGER, kind TEXT, path TEXT,
       thumb TEXT, peaks TEXT, sha256 TEXT, missing INTEGER DEFAULT 0)
 reaction(message_id INTEGER, sender_jid TEXT, emoji TEXT, ts INTEGER)
 receipt(message_id INTEGER, delivered_ts INTEGER, read_ts INTEGER, played_ts INTEGER)
-message_fts USING fts5(text, content='message', content_rowid='id')
 ```
 
 Decisions worth stating:
 
-- `media.path`, `media.thumb` and `media.peaks` are paths **relative to `site/`**, so the site can be
-  moved or copied to another disk without a rebuild. The absolute source path is never stored: the
-  archive is not a permanent fixture of one machine.
-- `message_fts` is populated once at build and `chat.db` is write-once afterwards, so no FTS triggers
-  and no `rebuild` command are needed.
+- `media.path`, `media.thumb` and `media.peaks` are paths **relative to the archive root**, so the
+  folder can be moved or copied to another disk without a rebuild. The absolute source path is never
+  stored: the archive is not a permanent fixture of one machine.
 - `kind` is a small closed vocabulary (`text`, `image`, `video`, `audio`, `document`, `sticker`,
   `gif`, `ptv`, `location`, `contact`, `poll`, `call`, `system`, `deleted`), not WhatsApp's numeric
   types: the mapping lives in `db/msgstore.py` and nowhere else.
@@ -228,9 +226,10 @@ Decisions worth stating:
 | document | mime icon + filename + size | no preview in v1 |
 
 - Source of every byte: the user's `Media/` folder. Files are stored once **per site**,
-  content-addressed, at `site/media/<first2>/<sha256><ext>`: inside one chat the same photo sent five
-  times is one file. Across per-chat sites the same file is duplicated on purpose — a chat folder has
-  to stand alone when it is copied or zipped, and dedupe across sites would break that promise.
+  content-addressed, at `media/<first2>/<sha256><ext>` inside the chat folder: inside one chat the
+  same photo sent five times is one file. Across per-chat archives the same file is duplicated on
+  purpose — a chat folder has to stand alone when it is copied or zipped, and dedupe across archives
+  would break that promise.
 - The chat grouping lives only in `chat.db` (`media.message_id` → `message.chat_id`), never in a path.
   Renaming a chat, or moving a file between chats, never touches the archive on disk.
 - The build copies by default, or hardlinks with `--link` (same filesystem only).
@@ -243,21 +242,50 @@ Decisions worth stating:
 
 ---
 
-## 6. Viewer
+## 6. Archive format and viewer
 
-- One page per chat: header (name, participants, date range, message count), timeline, media
-  drawer/gallery. Navigation between chats exists only in `<out>/index.html`, outside the site.
+```
+<out>/2026-11-17-family-4f2a/
+├── index.html          # shell: opens by double-click, no server, no tool
+├── app.js              # classic script: loader, virtualised timeline, renderers, search
+├── app.css
+├── data/
+│   ├── manifest.js     # header, chunk index (month → file, first/last message, counts)
+│   └── 2026-11.js      # one chunk per month, newest first, classic script
+├── media/<xx>/<sha256>.<ext>
+└── deriv/…             # thumbnails, posters, waveform peaks, same content-addressed scheme
+```
+
+The archive is opened with `file://`, which is a hostile environment and decides most of the design:
+
+| On `file://` | Available | Consequence |
+|---|---|---|
+| classic `<script src="…">` | yes | this is how data chunks are loaded |
+| `fetch` / XHR | **no** (origin is `null`) | no JSON files, no SQLite-WASM, no `.db` in the archive |
+| ES modules | **no** (CORS) | `app.js` is one classic script |
+| Web Workers | **no** (Chrome) | parsing happens on the main thread |
+| `localStorage` / `sessionStorage` | **no** (opaque origin) | no saved state; the URL hash is the only state |
+| `<img>`, `<video>`, `<audio>` | yes | media and video seeking work, read straight by the browser |
+
+- **Data in chunks**: one classic script per month, newest first, each calling
+  `WEX.chunk("2026-11", [...])`. Strings are escaped for `<` so message text can never close a
+  `<script>` tag. Opening a chat parses the newest chunk only; scrolling loads the previous one by
+  injecting a `<script>` element — the one loading mechanism `file://` allows.
 - **Virtualised timeline**: only the messages in and around the viewport exist in the DOM
   (target: ≤ 250 nodes regardless of chat length). This is the requirement that decides the
   architecture, so it is built first, not retrofitted.
-- Data access through SQLite-WASM over HTTP (Range requests work; `file://` does not — Chrome
-  blocks module and `fetch` from `file://`, and video cannot seek without Range).
-- Renderers per `kind`, each a small function; unknown `payload` shapes fall back to a raw JSON
+- **Bounded memory**: chunks far from the viewport are released. Without this, a 300k-message chat
+  would hold the whole conversation in memory and the tab would die on an old laptop.
+- **Search** is a linear scan over the loaded chunk data, case- and accent-insensitive, with matches
+  highlighted and jumped to. A search on a large chat loads every chunk first (tens of MB, one
+  progress bar) — `shortcut: no inverted index; add a precomputed index chunk if searches over 500k
+  messages get slow`.
+- **Renderers per `kind`**, each a small function; unknown `payload` shapes fall back to a raw JSON
   disclosure rather than an exception.
-- Search: FTS5 query against the site's own `chat.db`. Global search across chats would need a site
-  that knows every chat, which is exactly what a shareable chat site must not be; it is out of v1.
-- Jump-to-date, gallery, keyboard navigation (`j`/`k`, `/` for search).
-- No framework, no CDN, no bundler, no telemetry, no network calls at all.
+- **One page per chat**: header (name, participants, date range, message count), timeline, media
+  gallery. Navigation between chats exists only in `<out>/index.html`, which is never inside a chat
+  folder: a shareable archive must not reveal what else exists.
+- No framework, no CDN, no bundler, no WASM, no telemetry, no network calls at all.
 
 ---
 
@@ -275,7 +303,7 @@ reads it or says the digits must be typed. `pyproject.toml` records the pinned `
 and a test fails if the header fields we parse stop matching the tested version.
 
 ### M1 — decrypt, merge, read
-`backup/decrypt.py`, `backup/merge.py`, `db/msgstore.py`, `db/slim.py`, `db/fts.py`.
+`backup/decrypt.py`, `backup/merge.py`, `db/msgstore.py`, `db/slim.py`.
 **Acceptance:** `chat.db` row counts match the source tables; contacts resolved from
 `Backups/wa.db` when present, numbers otherwise; an incremental set merges to the same message
 count the phone shows; re-running is deterministic (same hashes, same order).
@@ -289,15 +317,17 @@ machine without `ffmpeg`, `build` exits `5` with the install command for that pl
 touching the output directory.
 
 ### M3 — viewer MVP
-Virtualised timeline, image/video/audio/document renderers, chat header, `--index` page, `serve`.
-**Acceptance:** a 100k-message chat opens in under a second and scrolls without jank; a 3 GB video
-seeks correctly over `wexport serve`; a built chat folder still works after being zipped, moved to
-another machine and opened there; nothing loads from the network.
+Virtualised timeline, image/video/audio/document renderers, chat header, `--index` page.
+**Acceptance:** a 100k-message chat opens in under a second and scrolls without jank when
+**double-clicked from the file manager** in Chrome, Firefox and Edge; a 3 GB video seeks from
+`file://`; a built chat folder still works after being zipped and moved to another machine; nothing
+loads from the network.
 
 ### M4 — search, dates, gallery
-FTS5 wiring, jump-to-date, per-chat gallery, keyboard navigation.
-**Acceptance:** a phrase search over a 300k-message chat returns in under 100 ms locally; jump-to-date
-lands on the right message including for DST boundaries.
+Chunked search, jump-to-date, gallery, keyboard navigation.
+**Acceptance:** a search over a 300k-message chat returns its first results in under a second,
+including loading the chunks; a search that needs every chunk shows progress and does not freeze the
+tab; jump-to-date lands on the right message including for DST boundaries.
 
 ### M5 — error UX, packaging, docs
 Every exit code has a test; **Nuitka `--onefile`** builds for **Linux and Windows** only (macOS is not
@@ -317,8 +347,8 @@ the Linux build runs on a distro older than the one it was compiled on.
 - **Integration**: real backup supplied out of band via `WEXPORT_REAL_BACKUP`; skipped when unset.
   The reason is stated in the test docstring so nobody "fixes" the skip into a fake.
 - **Golden data**, not golden HTML: the viewer renders through a virtualised list, so comparing markup
-  proves nothing. The snapshot is `chat.db` (schema plus rows in a fixed order) and the site manifest;
-  the viewer is judged in M3 by behaviour.
+  proves nothing. The snapshot is `chat.db` (schema plus rows in a fixed order) and the emitted data
+  chunks with their manifest; the viewer is judged in M3 by behaviour.
 - **No gate is run per change**; the project's checks run once before a push, whole tree, per the
   owner's rules.
 
@@ -332,8 +362,7 @@ the Linux build runs on a distro older than the one it was compiled on.
 | `Pillow` | thumbnails, EXIF | HPND (permissive) |
 | `Nuitka` (build only) | single-binary packaging at M5 | Apache-2.0 |
 | `ffmpeg`, `ffprobe` (external) | metadata, poster frames, optional transcode | LGPL/GPL builds vary |
-| SQLite-WASM build (vendored asset) | viewer data access | public domain / Apache-2.0 (confirm at vendoring) |
-| Python stdlib | sqlite3, http.server, argparse, hashlib | PSF |
+| Python stdlib | sqlite3 (build-time), http.server, argparse, hashlib | PSF |
 
 **Decision (owner, taken):** wexport is **GPL-3.0-or-later** and reuses `wa-crypt-tools` instead of
 reimplementing crypt15. The alternative — our own reader (protobuf header + AES-256-GCM + the
@@ -366,7 +395,8 @@ audio` / `video` / `all` are the explicit paths that re-encode, and the default 
 | Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `--chat` builds only what is wanted |
 | Nuitka one-file needs a C toolchain and a long build on each platform | releases become a slow manual step, hard to repeat | fixed build images (Ubuntu + Windows runner), one build per release; the AppImage wrapper, if ever wanted, is a second step on the same binary |
 | Single binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first run fails on a clean machine | exit `5` at startup, naming the missing binary and the install command for that platform (§2); bundling deferred with the Rust work (§12) |
-| `site/` is a folder, not a single file | user copies it somewhere else and nothing opens | `site/` opens through `wexport serve`; relative paths only, and the user flow says so |
+| The archive is a folder, not one file | sending it means zipping; a chat with video is large | the folder is the unit, and the user flow says zip it; media are duplicated per chat on purpose so a folder stands alone |
+| `file://` blocks `fetch`, modules, workers and storage | a "modern" front-end would open blank for the recipient | the whole design is built around the constraint (§6); M3 tests double-click in three browsers, not a dev server |
 
 ---
 
@@ -381,7 +411,7 @@ Taken by the owner:
 3. **One site per chat**, `--index` as the only page that lists chats together (§2, §6).
 4. **English** in code, CLI, UI and documentation. If the eventual recipient cannot read English, add
    `docs/user-flow.it.md` as a short quick-start; the main artifact stays English.
-5. **The site is plaintext on disk**, with an explicit warning in the build summary. No encrypted
+5. **The archive is plaintext on disk**, with an explicit warning in the build summary. No encrypted
    archive mode.
 6. **GPL-3.0-or-later**, reusing `wa-crypt-tools` (§9).
 7. **Transcoding opt-in** (§5).
@@ -392,18 +422,23 @@ Taken by the owner:
 10. **Missing dependencies abort at startup**, exit `5`, with an English message naming the binary and
     the install command per platform (§2). No degraded mode. `tesseract` is demanded only when the key
     is an image.
+11. **The archive opens from the filesystem.** Double-clicking `index.html` must work with no server,
+    no wexport and no browser flag; `wexport serve` is a convenience, never a requirement. That is why
+    the data is emitted as classic scripts and why there is no SQLite-WASM and no HTTP-only format
+    (§6).
 
 No decision is open.
 
 ## 12. Later, deliberately not now
 
-- **Rust rewrite of the core** (decrypt, `msgstore` adapter, `chat.db` writer, media orchestration)
-  producing a native ~20 MB binary with the viewer assets embedded — decided as the eventual
-  direction, explicitly **after v1**, not before. What it would buy: no Python runtime, millisecond
-  startup, no interpreter inside the one-file binary, and freedom from the pinned upstream ref. What
-  it costs: reimplementing the adapter that breaks whenever WhatsApp renames a column, which is the
-  reason v1 reuses `wa-crypt-tools` at all. Nothing in v1 should be written in a way that only makes
-  sense in Python — the pipeline stages already have file-based contracts, which is what makes the
-  rewrite possible later.
+- **Rust rewrite of the core** (decrypt, `msgstore` adapter, `chat.db` writer, media orchestration,
+  chunk emitter) producing a native ~20 MB binary with the viewer assets embedded — decided as the
+  eventual direction, explicitly **after v1**, not before. What it would buy: no Python runtime,
+  millisecond startup, no interpreter inside the one-file binary, and freedom from the pinned upstream
+  ref. What it costs: reimplementing the adapter that breaks whenever WhatsApp renames a column, which
+  is the reason v1 reuses `wa-crypt-tools` at all. Nothing in v1 should be written in a way that only
+  makes sense in Python — the pipeline stages already have file-based contracts, the viewer is plain
+  scripts, and there is no wasm runtime or HTTP-only format to port, which is what makes the rewrite
+  possible later.
 - ffmpeg/tesseract bundling: deferred with it. Both single-binary builds still expect them on the
   host and degrade with a message when absent.

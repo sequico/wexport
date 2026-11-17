@@ -6,15 +6,16 @@ every image, video and voice note, rendered as a site you open in a browser.
 ## What it does
 
 ```
-phone ──► folder you copy by USB ──► wexport ──► site/ (HTML + media) ──► browser
+phone ──► folder you copy by USB ──► wexport ──► one folder per chat ──► double-click index.html
                                      + 64-digit key
 ```
 
 `wexport` reads `msgstore.db.crypt15` (and the daily incrementals), decrypts it with the 64-digit
 key WhatsApp showed you when you enabled end-to-end encrypted backups, joins the messages with the
-`Media/` folder you copied, and writes one self-contained site per chat — a virtualised timeline,
-thumbnails, video posters, voice-note waveforms and full-text search — that `wexport serve` opens in
-your browser. A chat folder can be zipped and given to someone without exposing the others.
+`Media/` folder you copied, and writes one self-contained archive per chat — a virtualised timeline,
+thumbnails, video posters, voice-note waveforms and search. It opens by double-clicking `index.html`:
+no server, no wexport, no install on the machine that reads it. A chat folder can be zipped and given
+to someone without exposing the others.
 
 It runs entirely offline. Nothing is uploaded anywhere.
 

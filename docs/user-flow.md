@@ -66,12 +66,13 @@ backup was never redone after enabling it): go back to step 1 and 2. wexport can
 ```
 wexport check ~/whatsapp/phone-copy --key key.png
 wexport build ~/whatsapp/phone-copy --key key.png --out ~/whatsapp/sites
-wexport serve ~/whatsapp/sites/2026-11-17-family-4f2a
+xdg-open ~/whatsapp/sites/2026-11-17-family-4f2a/index.html     # or Explorer / Finder
 ```
 
 `build` writes one folder per chat (all of them, unless you pass `--chat <jid>` for only one) plus an
-optional index at `~/whatsapp/sites/index.html`. `serve` takes one chat folder, and prints the
-`http://127.0.0.1:8765` address to open.
+optional index at `~/whatsapp/sites/index.html`. After that, wexport is not needed any more: the folder
+opens by double-click, and `wexport serve ~/whatsapp/sites/2026-11-17-family-4f2a` exists only for the
+case where you prefer an `http://` address.
 
 The key can be given three ways: the screenshot (`--key key.png`), the 64 digits copied from it
 (`--key 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`--key encrypted_backup.key`).
@@ -92,18 +93,17 @@ same message appears when it is missing; typing the 64 digits avoids it.
 | `backup needs the password / passkey` | the key is on WhatsApp's servers | re-enable E2EE with the 64-digit key and make a new backup; old backups stay closed |
 | `key does not match this backup` | wrong key, or a new key was generated after this backup | use the key from the screenshot; if the key was regenerated, use a backup made after that |
 | `ffmpeg not found` / `tesseract not found` | a dependency is missing; wexport refuses to run rather than produce a half-broken archive | run the install command printed in the message, then the same command again |
-| `media missing` in the build summary | the file is not in the copied `Media/` (deleted on the phone, or never downloaded) | nothing to do; the site shows a placeholder |
+| `media missing` in the build summary | the file is not in the copied `Media/` (deleted on the phone, or never downloaded) | nothing to do; the archive shows a placeholder |
 | contact names show as numbers | `Backups/wa.db` was not copied | copy it and rebuild |
 
 ## 6. Afterwards
 
-`site/` has no external dependency: no network, no other files, no `node_modules`. It does need
-`wexport serve` to open (a browser opening the HTML file directly cannot read the data file or seek in
-a video), and it never phones home.
+Each chat folder opens by double-clicking its `index.html`, with nothing installed: no server, no
+wexport, no network. Everything it needs is inside the folder — messages, images, video, voice notes.
+Sharing one chat is zipping that folder, which is why a shared chat with video can be large.
 
-Each chat folder stands alone, so sharing one is zipping that one folder — with all of its media, which
-is why a shared chat can be large. Nothing outside the folder is needed, and nothing about the other
-chats is inside it.
+If a browser refuses to open a local file properly, `wexport serve <folder>` gives the same archive over
+`http://127.0.0.1:8765` — a fallback, not the normal way.
 
-Keep the screenshot of the key and the sites together but separately stored: the key alone is useless
-without the backup, and the sites are the readable copy that does not need the key at all.
+Keep the screenshot of the key and the chat folders together but separately stored: the key alone is
+useless without the backup, and the chat folders are the readable copy that does not need the key at all.
