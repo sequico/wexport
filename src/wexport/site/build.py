@@ -6,6 +6,7 @@ anything outside itself (plan §5, §6).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import html
 import re
@@ -91,6 +92,8 @@ def build_chat(
         summary.bytes = _tree_bytes(archive)
 
     chat_db.unlink(missing_ok=True)
+    with contextlib.suppress(OSError):  # leave no empty working directory in the user's output folder
+        intermediate.rmdir()
     return summary
 
 
