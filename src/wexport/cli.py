@@ -93,10 +93,10 @@ def _check(args: argparse.Namespace) -> int:
     preflight.require_openable(header)
     if args.key:
         key = load_key(args.key)
+        print("\nverifying    the key against the backup (this decrypts it once)")
         with tempfile.TemporaryDirectory(prefix="wexport-check-") as workspace:
             probe = Path(workspace) / "probe.db"
             decrypt_to(inputs.database, probe, key)
-        print()
         print("key           verified against this backup")
     print()
     print("ready to build: wexport build <input> --key <key> --out <folder>")
