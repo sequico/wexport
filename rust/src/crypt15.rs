@@ -305,7 +305,7 @@ mod fixture_tests {
     use super::*;
 
     const FIXTURE: &[u8] =
-        include_bytes!("../../tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15");
+        include_bytes!("../../py/tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15");
 
     #[test]
     fn header_of_the_fixture_is_read() {
@@ -322,7 +322,7 @@ mod decrypt_tests {
     use super::*;
 
     const FIXTURE: &[u8] =
-        include_bytes!("../../tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15");
+        include_bytes!("../../py/tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15");
     const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     fn root() -> [u8; 32] {

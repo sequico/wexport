@@ -1,6 +1,6 @@
 ---
 name: wexport implementation
-description: Implement, fix or review code in the wexport repository (Android WhatsApp crypt15 backup → offline chat archive). Use for any edit under src/ or tests/, for milestone work, and for judging whether a change respects the project's invariants.
+description: Implement, fix or review the Python tree of the wexport repository (Android WhatsApp crypt15 backup → offline chat archive). Use for any edit under py/src/ or py/tests/, for milestone work, and for judging whether a change respects the project's invariants.
 ---
 
 # Implementing wexport
@@ -22,7 +22,7 @@ Read before editing:
 
 | Invariant | Why it matters | Spec |
 |---|---|---|
-| Only `db/msgstore.py` knows WhatsApp table or column names | one file to fix when WhatsApp renames something; everything else survives | §3 |
+| Only `py/src/wexport/db/msgstore.py` knows WhatsApp table or column names | one file to fix when WhatsApp renames something; everything else survives | §3 |
 | The archive opens from `file://`; the product has no server | the recipient must need nothing installed, not even wexport | §6 |
 | Timestamps are frozen at build; the viewer never derives a local time | timezone rules change; the archive must keep saying when it happened | §4 |
 | Media are content-addressed inside the chat folder, never grouped by chat on disk | a chat folder stands alone when copied or zipped | §5 |
@@ -61,11 +61,11 @@ the diff is what judges a unit.
 - Probe WhatsApp's version string to decide a schema shape when the schema itself answers.
 - Make a fixture match the code instead of the reality the fixture is meant to represent.
 - Silence a failure into a warning. Either the archive is correct or the exit code says why not.
-- Read a WhatsApp column anywhere outside `db/msgstore.py`.
+- Read a WhatsApp column anywhere outside `py/src/wexport/db/msgstore.py`.
 
 ## Adding a message kind
 
-Three places, in this order: the mapping in `db/msgstore.py` → the `kind` vocabulary in §4 (with the
+Three places, in this order: the mapping in `py/src/wexport/db/msgstore.py` → the `kind` vocabulary in §4 (with the
 plan updated in the same commit) → a renderer in `app.js` with a fallback for unknown payloads. If
 the kind needs a new data field, it goes in `payload` JSON; a new column requires a schema change and
 a reason in the commit.

@@ -10,7 +10,7 @@ use wexport::ui;
 const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/synthetic/phone")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../py/tests/fixtures/synthetic/phone")
 }
 
 fn build(out: &Path) {

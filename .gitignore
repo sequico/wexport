@@ -4,8 +4,6 @@ __pycache__/
 .venv/
 venv/
 .uv/
-dist/
-build/
 *.egg-info/
 
 # Tests and local data
@@ -19,11 +17,18 @@ build/
 *.db
 *.db.crypt15
 *.db.crypt14
-tests/fixtures/real/
+/py/tests/fixtures/real/
 
-# …except the synthetic fixture the tests run on (built by tests/fixtures/synthetic/build.py)
-!tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15
-!tests/fixtures/synthetic/phone/Backups/wa.db.crypt15
+# …except the synthetic fixture both implementations test on
+# (built by py/tests/fixtures/synthetic/build.py)
+!py/tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15
+!py/tests/fixtures/synthetic/phone/Backups/wa.db.crypt15
+
+# Build output
+/dist/
+/py/dist/
+/py/build/
+/rust/target/
 
 # Editors and OS
 .idea/
@@ -32,6 +37,3 @@ tests/fixtures/real/
 
 # Automation artefacts
 .playwright-mcp/
-
-# Rust
-rust/target/

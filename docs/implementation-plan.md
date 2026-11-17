@@ -126,62 +126,56 @@ Target tree. Directories appear with their first real file, never as empty place
 
 ```
 wexport/
-├── README.md
-├── LICENSE                      # GPL-3.0-or-later full text, added with M0
-├── pyproject.toml               # uv, src layout, entry point `wexport`
+├── README.md                    # the product, both trees, how to run either
+├── LICENSE                      # GPL-3.0-or-later full text
 ├── .gitignore
-├── docs/
+├── docs/                        # shared: one spec, one format reference, one user flow
 │   ├── implementation-plan.md   # this file
 │   ├── android-backup-formats.md
 │   └── user-flow.md
 ├── .opencode/skills/            # agent skills for working in this repo
-│   ├── wexport-implement/       # procedure + invariants + fixtures recipe
+│   ├── wexport-implement/       # procedure + invariants + fixtures recipe (Python tree)
 │   └── offline-html-archive/    # file:// archive technique
-├── src/wexport/
-│   ├── __init__.py
-│   ├── __main__.py              # `python -m wexport`, and the packager's entry point
-│   ├── cli.py                   # argparse, one command, the numbered picker, exit codes
-│   ├── errors.py                # exceptions that carry a user-facing message + exit code
-│   ├── preflight.py             # discovery + header read + key-type gate + binary gate
-│   ├── keys.py                  # hex | png (OCR) | key file → 32 bytes
-│   ├── backup/
-│   │   ├── decrypt.py           # crypt15 → msgstore.db
-│   │   └── merge.py             # incremental replay, ordering, edits/revokes
-│   ├── db/
-│   │   ├── __init__.py          # ro_connect: the one read-only connection helper
-│   │   ├── msgstore.py          # source-schema adapter (WhatsApp 2.26 names)
-│   │   └── slim.py              # chat.db schema + writer
-│   ├── media/
-│   │   ├── resolve.py           # DB path → file, containment check, content-addressed copy
-│   │   └── derive.py            # thumbnails, posters, waveform peaks, optional transcode
-│   ├── site/
-│   │   ├── build.py             # per-chat builder: media, chat.db, assets, README, index page
-│   │   ├── chunks.py            # chat.db rows → classic-script data chunks, frozen timestamps
-│   │   └── assets/
-│   │       ├── index.html       # shell, no modules, no fetch
-│   │       ├── app.js           # virtualised timeline, renderers, search, jump-to-date
-│   │       └── app.css
-└── tests/
-    ├── conftest.py              # builds the fixture when it is absent
-    ├── unit/
-    ├── integration/
-    └── fixtures/
-        ├── synthetic/           # schema, data, generator and the crypt15 files it commits
-        └── real/                # gitignored, supplied via WEXPORT_REAL_BACKUP
+├── py/                          # the original implementation
+│   ├── pyproject.toml           # uv, src layout, entry point `wexport`
+│   ├── uv.lock
+│   ├── README.md                # what this tree is, and how it relates to rust/
+│   ├── src/wexport/
+│   │   ├── __init__.py
+│   │   ├── __main__.py          # `python -m wexport`, and the packager's entry point
+│   │   ├── cli.py               # argparse, one command, the numbered picker, exit codes
+│   │   ├── errors.py            # exceptions that carry a user-facing message + exit code
+│   │   ├── preflight.py         # discovery + header read + key-type gate + binary gate
+│   │   ├── keys.py              # hex | png (OCR) | key file → 32 bytes
+│   │   ├── backup/              # decrypt.py, merge.py
+│   │   ├── db/                  # __init__.py (ro_connect), msgstore.py, slim.py
+│   │   ├── media/               # resolve.py, derive.py
+│   │   └── site/                # build.py, chunks.py, assets/{index.html,app.js,app.css}
+│   └── tests/                   # unit/, integration/, fixtures/synthetic/ (shared with rust/)
+├── rust/                        # the rewrite: same product, one static binary
+│   ├── Cargo.toml
+│   ├── README.md                # module map and the measured parity
+│   ├── src/                     # crypt15, keys, discover, msgstore, media, chunks, archive,
+│   │                            # progress, ui, assets/
+│   └── tests/                   # integration tests against py/tests/fixtures
+└── dist/                        # packaged Python binary, gitignored: built, not stored
 ```
 
-`dist/` holds the packaged binary and is gitignored: it is built, not stored.
+The fixture lives in `py/tests/fixtures/synthetic/phone` and is the one both suites run on: it is
+built by `py/tests/fixtures/synthetic/build.py` and contains no real WhatsApp data.
 
 Rules that follow from the layout:
 
-- No file at `src/wexport/` root except `__init__.py`, `cli.py`, `preflight.py`, `keys.py`,
+- **Two trees, one contract.** The archive format and the CLI surface are the product; a change to
+  either lands in both trees, or the trees diverge. Everything else is an implementation detail.
+- No file at `py/src/wexport/` root except `__init__.py`, `cli.py`, `preflight.py`, `keys.py`,
   `errors.py`: the four modules every other module imports, plus the package marker.
-- `db/msgstore.py` is the **only** place a WhatsApp column name or table name appears.
-- Tests exercise module functions, never a subprocess. The CLI is covered through `main(argv)` for
-  argument parsing and exit codes, which is where its logic lives.
-- `site/assets/` is plain **classic** scripts — no modules (blocked over `file://`), no bundler, no
-  node toolchain. If the viewer ever needs a build step it is because a dependency was added that
-  should not have been.
+- `db/msgstore.py` (Python) and `msgstore.rs` (Rust) are the **only** places a WhatsApp column name or
+  table name appears, one per tree.
+- Tests exercise module functions, never a subprocess (except the one test that runs the packaged entry
+  point). The CLI is covered through its argument-parsing entry for exit codes.
+- `site/assets/` (Python) and `src/assets/` (Rust) are the same viewer, copied: plain **classic**
+  scripts — no modules (blocked over `file://`), no bundler, no node toolchain.
 
 ---
 

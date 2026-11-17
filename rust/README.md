@@ -40,7 +40,7 @@ messages are already in memory, so the intermediate would be a file written and 
 
 ## Parity, measured
 
-On the committed fixture (`tests/fixtures/synthetic/phone`), both implementations were run into
+On the committed fixture (`py/tests/fixtures/synthetic/phone`), both implementations were run into
 separate output directories and compared:
 
 - **folder names identical** (`2026-12-02-alice-8c02`, `2026-12-02-family-9fd6`);
