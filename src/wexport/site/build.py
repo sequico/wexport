@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import html
 import json
+import os
 import re
 import shutil
 from collections.abc import Callable, Iterable, Iterator
@@ -74,7 +75,7 @@ def build_chat(
     archive.mkdir(parents=True, exist_ok=True)
     intermediate = out_root / ".wexport"
     intermediate.mkdir(exist_ok=True)
-    chat_db = intermediate / f"{_slug(chat)}.db"
+    chat_db = intermediate / f"{_slug(chat)}.{os.getpid()}.db"
     chat_db.unlink(missing_ok=True)
 
     summary = Summary(archive=archive, name=chat.name)
