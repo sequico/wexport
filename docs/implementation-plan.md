@@ -47,9 +47,10 @@ input dir + key
       │         → chat.db: messages, chats, contacts, media refs, reactions, receipts
       ▼
 [4] media       DB paths → files on disk; derivatives (thumbs, posters, waveform peaks)
-      │         → site/media/… + media rows updated, missing files flagged
+      │         → <out>/media/… (the output directory is created here), media rows updated,
+      │           missing files flagged
       ▼
-[5] build       chat.db + assets + manifest → site/
+[5] build       chat.db + assets + manifest → <out>/, which becomes the site
       │
       ▼
 [6] serve       http.server with Range support, no caching, localhost only
