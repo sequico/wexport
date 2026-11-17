@@ -81,7 +81,7 @@ The key can be given three ways: the screenshot (`--key key.png`), the 64 digits
 | `backup is crypt14` | E2EE was off when the backup was made | enable E2EE with the 64-digit key, force a full backup, copy again |
 | `backup needs the password / passkey` | the key is on WhatsApp's servers | re-enable E2EE with the 64-digit key and make a new backup; old backups stay closed |
 | `key does not match this backup` | wrong key, or a new key was generated after this backup | use the key from the screenshot; if the key was regenerated, use a backup made after that |
-| `media missing` rows in the report | the file is not in the copied `Media/` (deleted on the phone, or never downloaded) | nothing to do; the site shows a placeholder |
+| `media missing` in the build summary | the file is not in the copied `Media/` (deleted on the phone, or never downloaded) | nothing to do; the site shows a placeholder |
 | contact names show as numbers | `Backups/wa.db` was not copied | copy it and rebuild |
 
 ## 6. Afterwards
