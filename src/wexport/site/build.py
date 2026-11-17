@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -116,6 +117,7 @@ def build_chat(
             chunks.emit(chat_db, archive / "data", manifest)
             _copy_assets(archive)
             _write_readme(archive, chat, time, app_version, summary, built)
+            _prune(archive, chat_db)
             summary.bytes = _tree_bytes(archive)
 
     chat_db.unlink(missing_ok=True)
@@ -290,6 +292,39 @@ def _tzdata() -> str:
     from ..db.slim import tzdata_version
 
     return tzdata_version()
+
+
+def _prune(archive: Path, chat_db: Path) -> None:
+    """Delete media and derivatives that this build no longer references.
+
+    A rebuild after messages were removed from the phone must not leave the old files behind: the
+    archive is a copy of a conversation, and a deleted photo that survives in it is a privacy defect,
+    not a spare byte.
+    """
+    con = sqlite3.connect(f"file:{chat_db}?mode=ro", uri=True)
+    try:
+        keep = {
+            row[0]
+            for row in con.execute(
+                "SELECT path FROM media WHERE path IS NOT NULL "
+                "UNION SELECT thumb FROM media WHERE thumb IS NOT NULL "
+                "UNION SELECT alt FROM media WHERE alt IS NOT NULL"
+            )
+        }
+    finally:
+        con.close()
+    for folder in ("media", "deriv"):
+        root = archive / folder
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and path.relative_to(archive).as_posix() not in keep:
+                path.unlink()
+        for directory in sorted((p for p in root.rglob("*") if p.is_dir()), reverse=True):
+            with contextlib.suppress(OSError):
+                directory.rmdir()
+        with contextlib.suppress(OSError):
+            root.rmdir()
 
 
 def _copy_assets(archive: Path) -> None:

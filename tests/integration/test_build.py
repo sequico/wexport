@@ -85,6 +85,20 @@ def test_incrementals_extend_and_correct_the_full_backup(phone, tmp_path, fixtur
     assert _manifest(family)["messages"] == 10
 
 
+def test_a_rebuild_removes_media_it_no_longer_references(phone, tmp_path):
+    """A photo deleted from the phone must not survive in the folder of a second build."""
+    out = tmp_path / "out"
+    args = ["build", str(phone), "--key", "0123456789abcdef" * 4, "--out", str(out),
+            "--tz", "Europe/Rome"]
+    assert main(args) == 0
+    family = next(p for p in out.iterdir() if "family" in p.name)
+    orphan = family / "media" / "zz" / "deadbeef.png"
+    orphan.parent.mkdir(parents=True, exist_ok=True)
+    orphan.write_bytes(b"a photo that no longer exists anywhere")
+    assert main(args) == 0
+    assert not orphan.exists()
+
+
 def test_an_empty_chat_is_skipped_not_shipped(built):
     assert not any("empty" in archive.name for archive in _archives(built))
     assert len(_archives(built)) == 2
