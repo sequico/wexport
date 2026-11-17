@@ -275,10 +275,11 @@ FTS5 wiring, jump-to-date, per-chat gallery, keyboard navigation.
 lands on the right message including for DST boundaries.
 
 ### M5 — error UX, packaging, docs
-Every exit code has a test; `pyinstaller` one-file builds for Linux/macOS/Windows; README and
-`docs/user-flow.md` checked against a fresh account with no Python installed.
+Every exit code has a test; **Nuitka `--onefile`** builds for **Linux and Windows** only (macOS is not
+built); README and `docs/user-flow.md` checked against a fresh account with no Python installed.
 **Acceptance:** a non-technical person follows `docs/user-flow.md` end to end on a machine with no
-Python, using only the release binary.
+Python, using only the single binary; the Windows build starts under Defender without a warning, and
+the Linux build runs on a distro older than the one it was compiled on.
 
 ---
 
@@ -304,6 +305,7 @@ Python, using only the release binary.
 |---|---|---|
 | `wa-crypt-tools` | reference crypt15 decrypt + key-type parsing + OCR of the key screenshot (OCR is the `[ocr]` extra, and needs the `tesseract` binary) | **GPL-3.0-or-later** |
 | `Pillow` | thumbnails, EXIF | HPND (permissive) |
+| `Nuitka` (build only) | single-binary packaging at M5 | Apache-2.0 |
 | `ffmpeg`, `ffprobe` (external) | metadata, poster frames, optional transcode | LGPL/GPL builds vary |
 | SQLite-WASM build (vendored asset) | viewer data access | public domain / Apache-2.0 (confirm at vendoring) |
 | Python stdlib | sqlite3, http.server, argparse, hashlib | PSF |
@@ -337,6 +339,8 @@ audio` / `video` / `all` are the explicit paths that re-encode, and the default 
 | Opus in OGG on Safari | voice notes do not play | optional M4A track on demand (`--transcode audio`) |
 | Screenshot-key OCR lives on `wa-crypt-tools` main, not in 0.2.0 | `--key key.png` missing on the released version | pinned git ref (decided) + header fixture test; revisit when the release lands |
 | Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `--chat` builds only what is wanted |
+| Nuitka one-file needs a C toolchain and a long build on each platform | releases become a slow manual step, hard to repeat | fixed build images (Ubuntu + Windows runner), one build per release; the AppImage wrapper, if ever wanted, is a second step on the same binary |
+| Single binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first video, or the first PNG key, fails on a clean machine | the error names the missing binary; bundling deferred with the Rust work (§12) |
 | `site/` is a folder, not a single file | user copies it somewhere else and nothing opens | `site/` opens through `wexport serve`; relative paths only, and the user flow says so |
 
 ---
@@ -357,9 +361,21 @@ Taken by the owner:
 6. **GPL-3.0-or-later**, reusing `wa-crypt-tools` (§9).
 7. **Transcoding opt-in** (§5).
 8. **`wexport check` never touches the network.** No update check, ever.
+9. **Packaging: Nuitka `--onefile`**, one single binary per platform, **Linux and Windows only**
+   (macOS not built, AppImage not built — the same binary can be wrapped in one later without changing
+   anything). `uv tool install wexport` stays the technical path for development. This is §7 M5.
 
-Still open:
+No decision is open.
 
-- **Packaging** (§7 M5): AppImage under evaluation for Linux, plus what Windows/macOS get, and whether
-  `uvx wexport` remains the technical path. Nothing is decided here yet, and M5 is not blocked by it
-  until the milestone starts.
+## 12. Later, deliberately not now
+
+- **Rust rewrite of the core** (decrypt, `msgstore` adapter, `chat.db` writer, media orchestration)
+  producing a native ~20 MB binary with the viewer assets embedded — decided as the eventual
+  direction, explicitly **after v1**, not before. What it would buy: no Python runtime, millisecond
+  startup, no interpreter inside the one-file binary, and freedom from the pinned upstream ref. What
+  it costs: reimplementing the adapter that breaks whenever WhatsApp renames a column, which is the
+  reason v1 reuses `wa-crypt-tools` at all. Nothing in v1 should be written in a way that only makes
+  sense in Python — the pipeline stages already have file-based contracts, which is what makes the
+  rewrite possible later.
+- ffmpeg/tesseract bundling: deferred with it. Both single-binary builds still expect them on the
+  host and degrade with a message when absent.

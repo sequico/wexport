@@ -76,6 +76,11 @@ optional index at `~/whatsapp/sites/index.html`. `serve` takes one chat folder, 
 The key can be given three ways: the screenshot (`--key key.png`), the 64 digits copied from it
 (`--key 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`--key encrypted_backup.key`).
 
+You run the release binary (on Linux and Windows there is one file per platform, no Python needed) or,
+if you have Python, `uv tool install wexport`. Both give the same `wexport` command. `ffmpeg` must be
+on the PATH for thumbnails, posters and video metadata: without it the build still completes, with
+images and messages only.
+
 ## 5. What can go wrong
 
 | Message | Meaning | What to do |

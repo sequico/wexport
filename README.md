@@ -39,7 +39,8 @@ backups, legacy `crypt12`/`crypt14`, re-encrypting anything back.
 
 Planning stage: no code yet. Milestone M0 not started — see the plan for milestones and acceptance
 criteria. Owner decisions taken: GPL-3.0-or-later, transcode opt-in, one site per chat, English
-throughout, plaintext archive with a warning. Packaging is the one decision still open.
+throughout, plaintext archive with a warning, Nuitka one-file binaries for Linux and Windows. A Rust
+core is planned for after v1, not now.
 
 ## License
 
