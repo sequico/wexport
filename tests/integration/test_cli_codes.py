@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from wexport.cli import main
 
 
@@ -36,3 +38,20 @@ def test_build_without_media_folder_reports_placeholders(phone, tmp_path):
             target.joinpath(item.name).write_bytes(item.read_bytes())
     code = main(["build", str(copy), "--key", "0123456789abcdef" * 4, "--out", str(tmp_path / "out")])
     assert code == 0
+
+
+def test_module_entry_point_works():
+    """The packaged entry point is `python -m wexport`; a relative import there breaks the binary."""
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "-m", "wexport", "--version"],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "wexport" in result.stdout

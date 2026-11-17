@@ -50,10 +50,23 @@ v0.1.0, working end to end:
   The viewer was verified in Chromium over `http` with Playwright; **double-clicking from `file://`
   in Chrome, Firefox and Edge still needs a manual pass** (the plan's M3 criterion), because the
   automation available here refuses `file://` URLs.
-- packaging — `uv tool install wexport` works today; a Nuitka one-file Linux binary is built from
-  `dist/`; the Windows build needs a Windows machine.
+- packaging — `uv tool install wexport` works today; the Nuitka one-file Linux binary is built from
+  `src/wexport/__main__.py` into `dist/wexport` (≈19 MB, no Python needed). The Windows build is the
+  same command on a Windows machine, still to be run.
 - known limits — poll options and votes are not decoded (they render as a card with the question);
   incremental merge is row-level, so a message deleted only on the phone stays in the archive.
+
+## Packaging
+
+```sh
+.venv/bin/nuitka --onefile --assume-yes-for-downloads --output-dir=dist --output-filename=wexport \
+  --include-package=wa_crypt_tools --include-package-data=wexport --include-package=PIL \
+  src/wexport/__main__.py
+```
+
+`__main__.py`, not `cli.py`: the packaged entry point has no parent package, so relative imports
+would fail. `patchelf` is required on Linux; the viewer assets are pulled in by
+`--include-package-data=wexport`.
 
 ## Documentation
 
