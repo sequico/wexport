@@ -1,0 +1,556 @@
+//! Turning one chat into a self-contained archive folder, and the index that lists them.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use chrono::{SecondsFormat, TimeZone, Utc};
+use chrono_tz::Tz;
+use serde_json::{json, Map, Value};
+
+use crate::chunks::{self, Record};
+use crate::error::{Error, Result};
+use crate::media;
+use crate::msgstore::{Chat, ChatStat, Message, Msgstore};
+use crate::progress::Bar;
+
+const INDEX_HTML: &str = include_str!("assets/index.html");
+const APP_JS: &str = include_str!("assets/app.js");
+const APP_CSS: &str = include_str!("assets/app.css");
+
+pub struct Clock {
+    pub tz: Tz,
+    pub name: String,
+}
+
+impl Clock {
+    pub fn system() -> Self {
+        if let Ok(name) = std::fs::read_to_string("/etc/timezone") {
+            let name = name.trim().to_string();
+            if let Ok(tz) = name.parse::<Tz>() {
+                return Clock { tz, name };
+            }
+        }
+        if let Ok(target) = std::fs::canonicalize("/etc/localtime") {
+            let text = target.display().to_string();
+            if let Some((_, zone)) = text.split_once("zoneinfo/") {
+                if let Ok(tz) = zone.parse::<Tz>() {
+                    let name = zone.to_string();
+                    return Clock { tz, name };
+                }
+            }
+        }
+        Clock {
+            tz: chrono_tz::UTC,
+            name: "UTC".into(),
+        }
+    }
+
+    /// The wall clock with its explicit offset, rendered once and never recomputed by a viewer.
+    pub fn local(&self, epoch_ms: i64) -> String {
+        let seconds = epoch_ms / 1000;
+        let nanos = ((epoch_ms % 1000) * 1_000_000) as u32;
+        match self.tz.timestamp_opt(seconds, nanos) {
+            chrono::LocalResult::Single(moment) => {
+                moment.format("%Y-%m-%d %H:%M:%S %:z").to_string()
+            }
+            _ => Utc
+                .timestamp_opt(seconds, nanos)
+                .single()
+                .map(|moment| moment.format("%Y-%m-%d %H:%M:%S +00:00").to_string())
+                .unwrap_or_default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Summary {
+    pub archive: PathBuf,
+    pub name: String,
+    pub messages: usize,
+    pub media: usize,
+    pub missing: usize,
+    pub failures: Vec<String>,
+    pub failure_count: usize,
+    pub bytes: u64,
+    pub first_ts: i64,
+    pub last_ts: i64,
+    pub people: usize,
+    pub empty: bool,
+}
+
+struct Prepared {
+    row: Option<Value>,
+    failure: Option<String>,
+}
+
+/// Everything a chat build needs from its surroundings, so the call stays readable.
+pub struct BuildContext<'a> {
+    pub out_root: &'a Path,
+    pub clock: &'a Clock,
+    pub app_version: &'a str,
+    pub copy_root: &'a Path,
+    pub media_root: Option<&'a Path>,
+    pub jobs: usize,
+}
+
+pub fn build_chat(
+    store: &Msgstore,
+    stat: &ChatStat,
+    context: &BuildContext<'_>,
+    bar_label: &str,
+) -> Result<Summary> {
+    let clock = context.clock;
+    let chat = &stat.chat;
+    let messages = store.messages(chat)?;
+    let archive = context.out_root.join(archive_name(chat, stat, clock));
+    std::fs::create_dir_all(&archive)?;
+
+    let mut summary = Summary {
+        archive: archive.clone(),
+        name: chat.name.clone(),
+        messages: messages.len(),
+        media: 0,
+        missing: 0,
+        failures: Vec::new(),
+        failure_count: 0,
+        bytes: 0,
+        first_ts: messages.first().map(|message| message.ts).unwrap_or(0),
+        last_ts: messages.last().map(|message| message.ts).unwrap_or(0),
+        people: messages
+            .iter()
+            .filter_map(|message| message.sender.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        empty: messages.is_empty(),
+    };
+    if summary.empty {
+        let _ = std::fs::remove_dir(&archive);
+        return Ok(summary);
+    }
+
+    let bar = Arc::new(Mutex::new(Bar::new(bar_label, stat.media_count as usize)));
+    let prepared = prepare_media(
+        &messages,
+        &archive,
+        context.copy_root,
+        context.media_root,
+        context.jobs,
+        &bar,
+    )?;
+    if let Ok(mut bar) = bar.lock() {
+        bar.close();
+    }
+
+    let mut records: Vec<Record> = Vec::with_capacity(messages.len());
+    for message in &messages {
+        let result = prepared.get(&message.id);
+        if let Some(Prepared { row, failure }) = result {
+            if let Some(row) = row {
+                summary.media += 1;
+                if row.get("mi").and_then(Value::as_bool).unwrap_or(false) {
+                    summary.missing += 1;
+                }
+            }
+            if let Some(failure) = failure {
+                summary.failure_count += 1;
+                if summary.failures.len() < 20 {
+                    summary.failures.push(failure.clone());
+                }
+            }
+        }
+        let stamp = clock.local(message.ts);
+        records.push(Record {
+            month: stamp.chars().take(7).collect(),
+            ts: message.ts,
+            value: record(message, &stamp, result.and_then(|p| p.row.clone())),
+        });
+    }
+
+    let manifest = json!({
+        "title": chat.name,
+        "is_group": chat.is_group,
+        "tz": clock.name,
+        "tzdata": tzdata_version(),
+        "source_app_version": context.app_version,
+        "builder": format!("wexport {}", env!("CARGO_PKG_VERSION")),
+        "built": Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string(),
+        "media": summary.media,
+        "missing": summary.missing,
+        "people": summary.people + if chat.is_group { 1 } else { 0 },
+        "first": clock.local(summary.first_ts),
+        "last": clock.local(summary.last_ts),
+    });
+    chunks::emit(
+        records,
+        &archive.join("data"),
+        manifest,
+        chunks::MAX_RECORDS,
+    )?;
+    std::fs::write(archive.join("index.html"), INDEX_HTML)?;
+    std::fs::write(archive.join("app.js"), APP_JS)?;
+    std::fs::write(archive.join("app.css"), APP_CSS)?;
+    write_readme(&archive, &summary, clock, context.app_version)?;
+    prune(&archive, &prepared)?;
+    summary.bytes = tree_bytes(&archive);
+    Ok(summary)
+}
+
+fn prepare_media(
+    messages: &[Message],
+    archive: &Path,
+    copy_root: &Path,
+    media_root: Option<&Path>,
+    jobs: usize,
+    bar: &Arc<Mutex<Bar>>,
+) -> Result<HashMap<i64, Prepared>> {
+    let with_media: Vec<&Message> = messages
+        .iter()
+        .filter(|message| message.media.is_some())
+        .collect();
+    if with_media.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let workers = jobs.clamp(1, 8).min(with_media.len());
+    let chunk_size = with_media.len().div_ceil(workers);
+    let mut collected: HashMap<i64, Prepared> = HashMap::new();
+
+    std::thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for slice in with_media.chunks(chunk_size) {
+            let bar = Arc::clone(bar);
+            handles.push(scope.spawn(move || {
+                let mut out: Vec<(i64, Prepared)> = Vec::new();
+                for message in slice {
+                    let media = message.media.as_ref().expect("filtered by media");
+                    out.push((
+                        message.id,
+                        one_media(message.id, media, archive, copy_root, media_root, &bar),
+                    ));
+                }
+                out
+            }));
+        }
+        for handle in handles {
+            if let Ok(results) = handle.join() {
+                collected.extend(results);
+            }
+        }
+    });
+    Ok(collected)
+}
+
+fn one_media(
+    id: i64,
+    media_item: &crate::msgstore::Media,
+    archive: &Path,
+    copy_root: &Path,
+    media_root: Option<&Path>,
+    bar: &Arc<Mutex<Bar>>,
+) -> Prepared {
+    let mut row = Map::new();
+    if let Some(name) = Path::new(&media_item.rel_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+    {
+        row.insert("nm".into(), json!(name));
+    }
+    if let Some(mime) = &media_item.mime {
+        row.insert("mt".into(), json!(mime));
+    }
+    let Some(source) = media::source_for(&media_item.rel_path, media_root, copy_root) else {
+        row.insert("mi".into(), json!(1));
+        if let Ok(mut bar) = bar.lock() {
+            bar.step(1);
+        }
+        return Prepared {
+            row: Some(Value::Object(row)),
+            failure: None,
+        };
+    };
+    let placed = match media::place(&source, archive, true) {
+        Ok(placed) => placed,
+        Err(error) => {
+            if let Ok(mut bar) = bar.lock() {
+                bar.step(1);
+            }
+            return Prepared {
+                row: Some(Value::Object(row)),
+                failure: Some(format!("{id}: {}: {}", media_item.rel_path, error)),
+            };
+        }
+    };
+    row.insert("p".into(), json!(placed.rel_path));
+    row.insert(
+        "sz".into(),
+        json!(media_item
+            .bytes
+            .unwrap_or_else(|| std::fs::metadata(&source)
+                .map(|meta| meta.len() as i64)
+                .unwrap_or(0))),
+    );
+    let derived = media::derive(&media_item.kind, &source, archive, &placed.sha256);
+    if let Ok(mut bar) = bar.lock() {
+        bar.step(1);
+    }
+    match derived {
+        Ok(derived) => {
+            if let Some(width) = media_item.width.or(derived.width) {
+                row.insert("w".into(), json!(width));
+            }
+            if let Some(height) = media_item.height.or(derived.height) {
+                row.insert("h".into(), json!(height));
+            }
+            if let Some(duration) = media_item.duration_ms.or(derived.duration_ms) {
+                row.insert("d".into(), json!(duration));
+            }
+            if let Some(thumb) = derived.thumb {
+                row.insert("th".into(), json!(thumb));
+            }
+            if let Some(peaks) = derived.peaks {
+                row.insert("pk".into(), json!(peaks));
+            }
+            Prepared {
+                row: Some(Value::Object(row)),
+                failure: None,
+            }
+        }
+        Err(error) => Prepared {
+            row: Some(Value::Object(row)),
+            failure: Some(format!("{id}: {}: {}", media_item.rel_path, error)),
+        },
+    }
+}
+
+fn record(message: &Message, stamp: &str, media_row: Option<Value>) -> Value {
+    let mut record = Map::new();
+    record.insert("i".into(), json!(message.id));
+    record.insert("t".into(), json!(message.ts));
+    record.insert("s".into(), json!(stamp));
+    record.insert("k".into(), json!(message.kind));
+    if message.from_me {
+        record.insert("f".into(), json!(1));
+    }
+    if let Some(sender) = &message.sender {
+        record.insert("a".into(), json!(sender));
+    }
+    if !message.text.is_empty() {
+        record.insert("x".into(), json!(message.text));
+    }
+    if let Some(quoted) = message.quoted_id {
+        record.insert("q".into(), json!(quoted));
+    }
+    if message.edited {
+        record.insert("e".into(), json!(1));
+    }
+    if message.revoked {
+        record.insert("r".into(), json!(1));
+    }
+    if let Some(status) = message.status {
+        if status != 0 {
+            record.insert("st".into(), json!(status));
+        }
+    }
+    if let Some(payload) = &message.payload {
+        record.insert("pl".into(), payload.clone());
+    }
+    if !message.reactions.is_empty() {
+        record.insert("rx".into(), json!(message.reactions));
+    }
+    if let Some(row) = media_row {
+        record.insert("md".into(), row);
+    }
+    Value::Object(record)
+}
+
+fn archive_name(chat: &Chat, stat: &ChatStat, clock: &Clock) -> String {
+    let stamp = if stat.last_ts > 0 {
+        clock.local(stat.last_ts)[..10].to_string()
+    } else {
+        "0000-00-00".to_string()
+    };
+    format!("{stamp}-{}", slug(chat))
+}
+
+fn slug(chat: &Chat) -> String {
+    let base: String = chat
+        .name
+        .to_lowercase()
+        .replace('+', " ")
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let base = base
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    let base: String = base.chars().take(40).collect();
+    // sha1, four hex digits: the Python implementation named every archive this way, and the name
+    // is what a person recognises on disk. Same input, same folder.
+    let mut digest = sha1::Sha1::new();
+    use sha1::Digest;
+    digest.update(chat.jid.as_bytes());
+    let hash = format!("{:x}", digest.finalize());
+    format!(
+        "{}-{}",
+        if base.is_empty() {
+            "chat".to_string()
+        } else {
+            base
+        },
+        &hash[..4]
+    )
+}
+
+fn write_readme(archive: &Path, summary: &Summary, clock: &Clock, app_version: &str) -> Result<()> {
+    let text = format!(
+        "wexport archive — {}\n\nOpen index.html in any browser. No server is needed, nothing needs to be installed, and\nnothing is loaded from the network.\n\nBuilt ......... {} by wexport {}\nSource app .... WhatsApp {}\nTime zone ..... {} (timestamps are fixed strings with their UTC offset)\nMessages ...... {}\nMedia files ... {} ({} referenced but not present in the copied folder)\n\nThis folder is complete on its own: messages, data chunks, images, video and voice notes.\nKeep it as a folder; if you share it, share the whole folder (a zip of it works).\n",
+        summary.name,
+        Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        env!("CARGO_PKG_VERSION"),
+        app_version,
+        clock.name,
+        summary.messages,
+        summary.media,
+        summary.missing
+    );
+    std::fs::write(archive.join("README.txt"), text)?;
+    Ok(())
+}
+
+fn prune(archive: &Path, prepared: &HashMap<i64, Prepared>) -> Result<()> {
+    let mut keep: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for entry in prepared.values() {
+        if let Some(row) = &entry.row {
+            for key in ["p", "th"] {
+                if let Some(value) = row.get(key).and_then(Value::as_str) {
+                    keep.insert(value.to_string());
+                }
+            }
+        }
+    }
+    for folder in ["media", "deriv"] {
+        let root = archive.join(folder);
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let Ok(inner) = std::fs::read_dir(&path) else {
+                    continue;
+                };
+                for file in inner.flatten() {
+                    let candidate = file.path();
+                    if let Ok(relative) = candidate.strip_prefix(archive) {
+                        if !keep.contains(relative.to_string_lossy().as_ref()) {
+                            let _ = std::fs::remove_file(&candidate);
+                        }
+                    }
+                }
+                let _ = std::fs::remove_dir(&path);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn tree_bytes(root: &Path) -> u64 {
+    let mut total = 0;
+    let mut queue = vec![root.to_path_buf()];
+    while let Some(folder) = queue.pop() {
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                queue.push(path);
+            } else if let Ok(meta) = entry.metadata() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+fn tzdata_version() -> String {
+    std::fs::read_to_string("/usr/share/zoneinfo/tzdata.zi")
+        .ok()
+        .and_then(|text| text.lines().next().map(|line| line.trim().to_string()))
+        .unwrap_or_default()
+}
+
+pub fn write_index(out_root: &Path, summaries: &[Summary]) -> Result<PathBuf> {
+    let items: String = summaries
+        .iter()
+        .filter(|summary| !summary.empty)
+        .map(|summary| {
+            let href = summary
+                .archive
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default();
+            format!(
+                "<li><a href=\"{}/index.html\">{}</a> <span>{} messages</span></li>",
+                escape_html(&href),
+                escape_html(&summary.name),
+                summary.messages
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let page = format!(
+        "<!doctype html>\n<html lang=\"en\"><meta charset=\"utf-8\"><title>wexport archives</title>\n<style>body{{font:16px/1.5 system-ui,sans-serif;max-width:44rem;margin:4rem auto;padding:0 1rem}}\nli{{margin:.4rem 0}}span{{color:#666;font-size:.9em}}</style>\n<h1>Archives</h1>\n<p>Each folder below is a complete archive: open its <code>index.html</code>. Nothing here needs a\nserver or wexport installed.</p>\n<ul>\n{items}\n</ul>\n<p>Built with wexport {}.</p>\n</html>\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    let target = out_root.join("index.html");
+    std::fs::write(&target, page)?;
+    Ok(target)
+}
+
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+pub fn human_bytes(count: u64) -> String {
+    let mut size = count as f64;
+    for unit in ["B", "kB", "MB", "GB"] {
+        if size < 1024.0 || unit == "GB" {
+            return if unit == "B" {
+                format!("{size:.0} {unit}")
+            } else {
+                format!("{size:.1} {unit}")
+            };
+        }
+        size /= 1024.0;
+    }
+    format!("{size:.1} GB")
+}
+
+pub fn require_binaries(names: &[&str]) -> Result<()> {
+    for name in names {
+        let found = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("command -v {name}"))
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        if !found {
+            return Err(Error::dependency(format!(
+                "{name} not found on PATH.\n  Debian/Ubuntu   sudo apt install ffmpeg\n  Fedora/RHEL     sudo dnf install ffmpeg\n  Arch            sudo pacman -S ffmpeg\n  Windows         winget install Gyan.FFmpeg\nThen re-run the same command."
+            )));
+        }
+    }
+    Ok(())
+}
