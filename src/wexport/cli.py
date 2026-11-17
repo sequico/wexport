@@ -123,7 +123,12 @@ def _build(args: argparse.Namespace) -> int:
         decrypt_to(inputs.database, database, key)
         if inputs.incrementals:
             print(f"merging      {len(inputs.incrementals)} incremental file(s)")
-            merge(database, inputs.incrementals)
+            deltas = []
+            for index, increment in enumerate(inputs.incrementals, start=1):
+                plain = Path(workspace) / f"increment-{index}.db"
+                decrypt_to(increment, plain, key)
+                deltas.append(plain)
+            merge(database, deltas)
 
         with Msgstore(database) as store:
             if inputs.contacts is not None:

@@ -1,7 +1,7 @@
 """Replay incremental backups into the full one.
 
-Incremental backups are SQLite deltas: rows for the tables WhatsApp changed since the last full
-backup. Merging is therefore row-level, from the oldest delta to the newest.
+Incrementals are SQLite deltas — rows for the tables WhatsApp changed since the last full backup —
+so both arguments are already decrypted databases. Merging is row-level, oldest delta first.
 
 shortcut: INSERT OR REPLACE by primary key, not a semantic replay. A message deleted from the
 phone is absent from the delta rather than marked, so it stays in the archive. Upgrade when a

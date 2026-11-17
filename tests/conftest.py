@@ -33,3 +33,9 @@ def phone() -> Path:
 @pytest.fixture(scope="session")
 def fixture_key() -> str:
     return KEY_HEX
+
+
+@pytest.fixture(scope="session")
+def fixture_builder():
+    """The fixture generator itself, for tests that need to add a delta to a copy."""
+    return _load_builder()

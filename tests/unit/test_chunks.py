@@ -27,11 +27,11 @@ def chat_db(tmp_path):
         """
     )
     rows = [
-        (1, 1763382725000, "2026-11-17 14:32:05 +01:00", 0, None, "text",
-         "hi </script> \u2028 end", None, None, 0, 13, None),
-        (2, 1763382725001, "2026-11-17 14:32:05 +01:00", 1, None, "text",
+        (1, 1794922325000, "2026-11-17 14:32:05 +01:00", 0, None, "text",
+         "hi </script> \u2028 end", None, 0, 0, 13, None),
+        (2, 1794922325001, "2026-11-17 14:32:05 +01:00", 1, None, "text",
          "second", 1, None, 0, 13, None),
-        (3, 1764756000000, "2026-12-03 10:00:00 +01:00", 0, "39333@s.whatsapp.net", "image",
+        (3, 1796400000000, "2026-12-03 10:00:00 +01:00", 0, "39333@s.whatsapp.net", "image",
          "cap", None, None, 0, 13, None),
     ]
     con.executemany("INSERT INTO message VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)

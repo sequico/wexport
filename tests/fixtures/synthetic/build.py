@@ -22,17 +22,29 @@ INSERT INTO wa_contacts (_id, jid, display_name, wa_name) VALUES
     (2, '393339999999@s.whatsapp.net', 'Bob', 'Bob');
 """
 
+INCREMENTAL_SQL = """
+-- A delta holds only what changed: one new message, and an edit of an existing one.
+INSERT INTO message (_id, chat_row_id, from_me, key_id, timestamp, text_data, status,
+                     remote_resource, quoted_row_id, edit_version)
+VALUES
+    (5, 2, 0, 'k5', CAST((julianday('2026-12-01T09:00:00Z') - 2440587.5) * 86400000 AS INTEGER),
+        'corrected by the delta', 13, '393339999999@s.whatsapp.net', NULL, 1),
+    (17, 2, 1, 'k17', CAST((julianday('2026-12-03T08:00:00Z') - 2440587.5) * 86400000 AS INTEGER),
+        'delta message', 13, NULL, NULL, 0);
+"""
 
-def build(dest: Path = PHONE) -> Path:
-    """Create `dest` as a copy of a phone's WhatsApp folder. Idempotent."""
+
+def _media(dest: Path) -> None:
     media = dest / "Media"
-    (media / "WhatsApp Images").mkdir(parents=True, exist_ok=True)
-    (media / "WhatsApp Voice Notes").mkdir(parents=True, exist_ok=True)
-    (media / "WhatsApp Video").mkdir(parents=True, exist_ok=True)
-    (media / "WhatsApp Documents").mkdir(parents=True, exist_ok=True)
-    (media / "WhatsApp Stickers").mkdir(parents=True, exist_ok=True)
-    (media / "WhatsApp Animated Gifs").mkdir(parents=True, exist_ok=True)
-
+    for folder in (
+        "WhatsApp Images",
+        "WhatsApp Voice Notes",
+        "WhatsApp Video",
+        "WhatsApp Documents",
+        "WhatsApp Stickers",
+        "WhatsApp Animated Gifs",
+    ):
+        (media / folder).mkdir(parents=True, exist_ok=True)
     _png(media / "WhatsApp Images/IMG-20261201-WA0001.png", (16, 16))
     _webp(media / "WhatsApp Stickers/sticker.webp")
     _write(media / "WhatsApp Documents/notes.txt", b"fixture document\n")
@@ -53,6 +65,10 @@ def build(dest: Path = PHONE) -> Path:
             str(media / "WhatsApp Animated Gifs/GIF-20261201-WA0004.mp4"),
         )
 
+
+def build(dest: Path = PHONE) -> Path:
+    """Create `dest` as a copy of a phone's WhatsApp folder. Idempotent."""
+    _media(dest)
     (dest / "Databases").mkdir(exist_ok=True)
     (dest / "Backups").mkdir(exist_ok=True)
 
@@ -69,6 +85,19 @@ def build(dest: Path = PHONE) -> Path:
     (dest / "Backups" / "wa.db.crypt15").write_bytes(_encrypt(contacts.read_bytes()))
     contacts.unlink()
     return dest
+
+
+def build_incremental(dest: Path) -> Path:
+    """A delta as WhatsApp writes it: only the rows that changed since the full backup."""
+    dest.mkdir(parents=True, exist_ok=True)
+    delta = dest / "delta.db"
+    with sqlite3.connect(delta) as con:
+        con.executescript((HERE / "schema.sql").read_text(encoding="utf-8"))
+        con.executescript(INCREMENTAL_SQL)
+    target = dest / "msgstore-increment-2026-12-03.db.crypt15"
+    target.write_bytes(_encrypt(delta.read_bytes()))
+    delta.unlink()
+    return target
 
 
 def _encrypt(data: bytes) -> bytes:

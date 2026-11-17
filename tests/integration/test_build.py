@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -64,6 +65,24 @@ def test_a_chat_archive_never_links_another_chat(built):
         page = (archive / "index.html").read_text(encoding="utf-8")
         assert "../" not in page
         assert not re.search(r'index\.html', page)
+
+
+def test_incrementals_extend_and_correct_the_full_backup(phone, tmp_path, fixture_builder):
+    """M1's merge path: a delta adds a message and rewrites another, and the archive shows both."""
+    copy = tmp_path / "phone"
+    shutil.copytree(phone, copy)
+    fixture_builder.build_incremental(copy / "Databases")
+    code = main(
+        ["build", str(copy), "--key", "0123456789abcdef" * 4, "--out", str(tmp_path / "out"),
+         "--tz", "Europe/Rome"]
+    )
+    assert code == 0
+    family = next(p for p in (tmp_path / "out").iterdir() if "family" in p.name)
+    chunk = "".join(p.read_text(encoding="utf-8") for p in (family / "data").glob("*.js"))
+    assert "delta message" in chunk
+    assert "corrected by the delta" in chunk
+    assert "photo caption" in chunk
+    assert _manifest(family)["messages"] == 10
 
 
 def test_an_empty_chat_is_skipped_not_shipped(built):
