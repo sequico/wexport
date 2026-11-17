@@ -37,4 +37,4 @@ def test_real_backup_decrypts_and_maps_every_chat(tmp_path):
         assert chats, "a real backup with no chat is not a backup"
         for chat in chats[:5]:
             messages = list(store.messages(chat))
-            assert messages or True  # an empty chat is legal; the read must not raise
+            assert isinstance(messages, list)  # an empty chat is legal; the read must not raise
