@@ -32,3 +32,6 @@ tests/fixtures/real/
 
 # Automation artefacts
 .playwright-mcp/
+
+# Rust
+rust/target/
