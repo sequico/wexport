@@ -33,14 +33,14 @@ def test_video_uses_the_injected_tools(tmp_path):
     assert calls and calls[0][0] == "-i"
 
 
-def test_audio_derivative_writes_peaks_and_cleans_the_pcm(tmp_path):
+def test_audio_derivative_computes_peaks_and_cleans_the_pcm(tmp_path):
     def run(args: list[str]) -> None:
         Path(args[-1]).write_bytes(b"\x00\x10" * 2000)
 
     derived = derive.derive("audio", tmp_path / "a.opus", tmp_path, "def", run=run)
     assert derived.peaks and len(derived.peaks) == derive.PEAKS
-    assert (tmp_path / "deriv" / "def.json").is_file()
-    assert not (tmp_path / "deriv" / "def.pcm").exists()
+    assert not list((tmp_path / "deriv").glob("*.json"))  # peaks are inline, no side file
+    assert not list((tmp_path / "deriv").glob("*.pcm"))
 
 
 def test_images_get_a_thumbnail(tmp_path):
