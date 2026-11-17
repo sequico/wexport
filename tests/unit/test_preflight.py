@@ -32,6 +32,15 @@ def test_crypt14_is_refused_with_the_way_out(tmp_path):
     assert "64-digit key" in str(error.value)
 
 
+def test_only_incrementals_is_refused_with_the_way_out(tmp_path):
+    databases = tmp_path / "Databases"
+    databases.mkdir()
+    (databases / "msgstore-increment-2026-12-02.db.crypt15").write_bytes(b"")
+    with pytest.raises(Exception) as error:
+        preflight.discover(tmp_path)
+    assert "Back up now" in str(error.value)
+
+
 def test_header_of_another_format_is_refused():
     header = preflight.Header(path=__file__, format="crypt12", app_version="", key_type="", size=1)
     with pytest.raises(WrongBackupType) as error:

@@ -46,7 +46,7 @@ v0.1.0, working end to end:
   tables in `docs/android-backup-formats.md`; content-addressed media with thumbnails, posters and
   waveform peaks; month chunks; the `file://` viewer with virtualised rendering, search and
   jump-to-date; the plaintext warning and the `README.txt` in each archive.
-- checks — 48 tests green (one of them skips by design without a real backup), `ruff check` clean.
+- checks — 59 tests green (one of them skips by design without a real backup), `ruff check` clean.
   The viewer was verified in Chromium over `http` with Playwright; **double-clicking from `file://`
   in Chrome, Firefox and Edge still needs a manual pass** (the plan's M3 criterion), because the
   automation available here refuses `file://` URLs.

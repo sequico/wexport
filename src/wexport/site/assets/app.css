@@ -135,11 +135,13 @@ body {
 .msg img.thumb {
   display: block;
   max-width: 100%;
+  max-height: 60vh;
+  width: auto;
   border-radius: 6px;
   cursor: zoom-in;
 }
 
-.msg video { display: block; max-width: 100%; border-radius: 6px; }
+.msg video { display: block; max-width: 100%; max-height: 60vh; border-radius: 6px; }
 
 .msg .wave { display: flex; align-items: center; gap: .5rem; }
 .msg .wave canvas { width: 220px; height: 34px; }

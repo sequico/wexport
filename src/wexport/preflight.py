@@ -84,6 +84,11 @@ def discover(root: str | Path) -> Inputs:
     full = next((p for p in crypt15 if p.name == "msgstore.db.crypt15"), None)
     if full is None:
         full = max(crypt15, key=lambda p: p.stat().st_mtime)
+    if full.name.startswith("msgstore-increment"):
+        raise UnreadableInput(
+            f"{databases} has only incremental files and no full backup.\n"
+            "Open WhatsApp → Settings → Chats → Chat Backup → Back up now, then copy the folder again."
+        )
     incrementals = tuple(p for p in crypt15 if p != full and p.name.startswith("msgstore-increment"))
 
     backups = _first_dir(root, "Backups", "WhatsApp/Backups", "WhatsApp Business/Backups")
