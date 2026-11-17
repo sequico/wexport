@@ -75,7 +75,7 @@ Stage contracts:
 ```
 wexport check <input-dir> [--key <hex|png|keyfile>]
 wexport build <input-dir> --key <hex|png|keyfile> --out <out-dir>
-              [--all | --chat <jid> ...] [--index] [--jobs N] [--tz <IANA name>]
+              [--all | --chat <jid|name> ...] [--index] [--jobs N] [--tz <IANA name>]
               [--transcode {none,audio,video,all}] [--link]
 ```
 
@@ -370,8 +370,9 @@ the Linux build runs on a distro older than the one it was compiled on.
 - **Integration**: real backup supplied out of band via `WEXPORT_REAL_BACKUP`; skipped when unset.
   The reason is stated in the test docstring so nobody "fixes" the skip into a fake.
 - **Golden data**, not golden HTML: the viewer renders through a virtualised list, so comparing markup
-  proves nothing. The snapshot is `chat.db` (schema plus rows in a fixed order) and the emitted data
-  chunks with their manifest; the viewer is judged in M3 by behaviour.
+  proves nothing. What the suite pins is the emitted chunk bytes and the manifest: building the same
+  fixture twice must produce identical files, with the build time held fixed. The viewer is judged in
+  M3 by behaviour.
 - **No gate is run per change**; the project's checks run once before a push, whole tree, per the
   owner's rules.
 

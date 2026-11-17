@@ -88,9 +88,9 @@ same message appears when it is missing; typing the 64 digits avoids it.
 
 | Message | Meaning | What to do |
 |---|---|---|
-| `backup is crypt14` | E2EE was off when the backup was made | enable E2EE with the 64-digit key, force a full backup, copy again |
-| `backup needs the password / passkey` | the key is on WhatsApp's servers | re-enable E2EE with the 64-digit key and make a new backup; old backups stay closed |
-| `key does not match this backup` | wrong key, or a new key was generated after this backup | use the key from the screenshot; if the key was regenerated, use a backup made after that |
+| `only crypt14 backups in …` | E2EE was off when the backup was made | enable E2EE with the 64-digit key, force a full backup, copy again |
+| `was made with a password` / `with a passkey` | the key is on WhatsApp's servers | re-enable E2EE with the 64-digit key and make a new backup; old backups stay closed |
+| `the key does not match this backup` | wrong key, or a new key was generated after this backup | use the key from the screenshot; if the key was regenerated, use a backup made after that |
 | `ffmpeg not found` / `tesseract not found` | a dependency is missing; wexport refuses to run rather than produce a half-broken archive | run the install command printed in the message, then the same command again |
 | `media missing` in the build summary | the file is not in the copied `Media/` (deleted on the phone, or never downloaded) | nothing to do; the archive shows a placeholder |
 | contact names show as numbers | `Backups/wa.db` was not copied | copy it and rebuild |
