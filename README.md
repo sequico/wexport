@@ -28,8 +28,10 @@ xdg-open ~/whatsapp/archives/2026-11-17-family-4f2a/index.html
 ```
 
 The key can be 64 hex digits (spaces and a 4×4 grid are fine), a screenshot of them, or the phone's
-`encrypted_backup.key` on a rooted device. `ffmpeg` and `ffprobe` are required and missing ones abort
-at startup with the install command for the platform. See [the user flow](docs/user-flow.md).
+`encrypted_backup.key` on a rooted device. The screenshot path needs the OCR extra and the `tesseract`
+binary: `uv sync --extra ocr` plus `apt install tesseract-ocr` (or the equivalent). `ffmpeg` and
+`ffprobe` are required and missing ones abort at startup with the install command for the platform.
+See [the user flow](docs/user-flow.md).
 
 ## Scope
 
@@ -59,6 +61,7 @@ v0.1.0, working end to end:
 ## Packaging
 
 ```sh
+uv sync --group packaging
 .venv/bin/nuitka --onefile --assume-yes-for-downloads --output-dir=dist --output-filename=wexport \
   --include-package=wa_crypt_tools --include-package-data=wexport --include-package=PIL \
   src/wexport/__main__.py

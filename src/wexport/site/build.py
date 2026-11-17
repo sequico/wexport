@@ -113,6 +113,7 @@ def build_chat(
             summary.empty = True
         else:
             manifest = _manifest(chat, time, app_version, summary, built)
+            shutil.rmtree(archive / "data", ignore_errors=True)  # no stale chunk from a previous run
             chunks.emit(chat_db, archive / "data", manifest)
             _copy_assets(archive)
             _write_readme(archive, chat, time, app_version, summary, built)

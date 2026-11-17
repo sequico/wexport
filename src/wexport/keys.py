@@ -44,8 +44,12 @@ def load_key(spec: str) -> Any:
         _require_tesseract()
         try:
             return KeyFactory.from_image(path)
-        except MissingDependency:
-            raise
+        except ImportError as exc:
+            raise MissingDependency(
+                "reading the key from an image needs the OCR extra:\n"
+                "  uv sync --extra ocr      (or: pip install pytesseract)\n"
+                f"({exc})"
+            ) from exc
         except Exception as exc:
             raise UnusableKey(
                 f"could not read the key from {path.name}: {exc}\n"

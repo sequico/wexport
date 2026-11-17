@@ -22,6 +22,11 @@ wexport = "wexport.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0.0", "ruff>=0.6.0"]
+packaging = ["nuitka>=4.0"]
+
+[project.optional-dependencies]
+# Reading the 64 digits out of a screenshot; the tesseract binary is a separate requirement.
+ocr = ["pytesseract>=0.3.13"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wexport"]

@@ -30,6 +30,12 @@ wheels = [
 ]
 
 [[package]]
+name = "nuitka"
+version = "4.3.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/ec/a9a448d2c429865483fdecf3e4d60e4dcdb8738085337cbd2482ec6468ef/nuitka-4.3.5.tar.gz", hash = "sha256:ca1dabc274b95efa7a46597f464ec27484b30f32cb89872d14d66541284d4f01", size = 4780637, upload-time = "2026-11-08T13:01:00.034Z" }
+
+[[package]]
 name = "packaging"
 version = "26.3"
 source = { registry = "https://pypi.org/simple" }
@@ -205,6 +211,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pytesseract"
+version = "0.3.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/a6/7d679b83c285974a7cb94d739b461fa7e7a9b17a3abfd7bf6cbc5c2394b0/pytesseract-0.3.13.tar.gz", hash = "sha256:4bf5f880c99406f52a3cfc2633e42d9dc67615e69d8a509d74867d3baddb5db9", size = 17689, upload-time = "2024-08-16T02:33:56.762Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/33/8312d7ce74670c9d39a532b2c246a853861120486be9443eebf048043637/pytesseract-0.3.13-py3-none-any.whl", hash = "sha256:7a99c6c2ac598360693d83a416e36e0b33a67638bb9d77fdcac094a3589d4b34", size = 14705, upload-time = "2024-08-16T02:36:10.09Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -264,20 +283,31 @@ dependencies = [
     { name = "wa-crypt-tools" },
 ]
 
+[package.optional-dependencies]
+ocr = [
+    { name = "pytesseract" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+packaging = [
+    { name = "nuitka" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "pillow", specifier = ">=10.0.0" },
+    { name = "pytesseract", marker = "extra == 'ocr'", specifier = ">=0.3.13" },
     { name = "wa-crypt-tools", git = "https://github.com/ElDavoo/wa-crypt-tools?rev=b6f67453d19e443f53f57da0361f3ef5e8b6821d" },
 ]
+provides-extras = ["ocr"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "ruff", specifier = ">=0.6.0" },
 ]
+packaging = [{ name = "nuitka", specifier = ">=4.0" }]
