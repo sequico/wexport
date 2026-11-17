@@ -135,33 +135,38 @@ wexport/
 │   └── offline-html-archive/    # file:// archive technique
 ├── src/wexport/
 │   ├── __init__.py
-│   ├── cli.py                   # argparse, 3 subcommands, exit codes
+│   ├── __main__.py              # `python -m wexport`, and the packager's entry point
+│   ├── cli.py                   # argparse, 2 subcommands, exit codes
 │   ├── errors.py                # exceptions that carry a user-facing message + exit code
-│   ├── preflight.py             # discovery + header read + key-type gate
+│   ├── preflight.py             # discovery + header read + key-type gate + binary gate
 │   ├── keys.py                  # hex | png (OCR) | key file → 32 bytes
 │   ├── backup/
 │   │   ├── decrypt.py           # crypt15 → msgstore.db
 │   │   └── merge.py             # incremental replay, ordering, edits/revokes
 │   ├── db/
+│   │   ├── __init__.py          # ro_connect: the one read-only connection helper
 │   │   ├── msgstore.py          # source-schema adapter (WhatsApp 2.26 names)
 │   │   └── slim.py              # chat.db schema + writer
 │   ├── media/
-│   │   ├── resolve.py           # DB path → file, missing detection, dedupe by hash
+│   │   ├── resolve.py           # DB path → file, containment check, content-addressed copy
 │   │   └── derive.py            # thumbnails, posters, waveform peaks, optional transcode
 │   ├── site/
-│   │   ├── build.py             # per-chat builder: HTML, data chunks, manifest, index page
+│   │   ├── build.py             # per-chat builder: media, chat.db, assets, README, index page
 │   │   ├── chunks.py            # chat.db rows → classic-script data chunks, frozen timestamps
 │   │   └── assets/
 │   │       ├── index.html       # shell, no modules, no fetch
-│   │       ├── app.js           # router, virtualised timeline, renderers, search
+│   │       ├── app.js           # virtualised timeline, renderers, search, jump-to-date
 │   │       └── app.css
 └── tests/
+    ├── conftest.py              # builds the fixture when it is absent
     ├── unit/
     ├── integration/
     └── fixtures/
-        ├── synthetic/           # crypt15 files we generate ourselves, safe to commit
+        ├── synthetic/           # schema, data, generator and the crypt15 files it commits
         └── real/                # gitignored, supplied via WEXPORT_REAL_BACKUP
 ```
+
+`dist/` holds the packaged binary and is gitignored: it is built, not stored.
 
 Rules that follow from the layout:
 
@@ -270,8 +275,9 @@ Decisions worth stating:
 ├── app.js              # classic script: loader, virtualised timeline, renderers, search
 ├── app.css
 ├── data/
-│   ├── manifest.js     # header, chunk index (month → file, first/last message, counts)
-│   └── 2026-11.js      # one chunk per month, newest first, classic script
+│   ├── manifest.js     # header, chunk index (name → file, first/last message, counts)
+│   └── 2026-11.js      # one chunk per month, newest last; a month over 20k messages is split
+│                       # into 2026-11, 2026-11-2, …
 ├── media/<xx>/<sha256>.<ext>
 └── deriv/…             # thumbnails, posters, waveform peaks, same content-addressed scheme
 ```

@@ -27,6 +27,12 @@ def test_wrong_key_is_two(phone, tmp_path):
     assert code == 2
 
 
+def test_check_verifies_the_key_instead_of_only_parsing_it(phone, capsys):
+    code = main(["check", str(phone), "--key", "f" * 64])
+    assert code == 2
+    assert "does not match this backup" in capsys.readouterr().err
+
+
 def test_build_without_media_folder_reports_placeholders(phone, tmp_path):
     """A copied folder without Media/ is a partial archive, not an error (plan §2)."""
     copy = tmp_path / "phone"
