@@ -272,7 +272,7 @@ def _manifest(
         "built": built or datetime.now(UTC).isoformat(timespec="seconds"),
         "media": summary.media,
         "missing": summary.missing,
-        "people": len(summary.people),
+        "people": len(summary.people) + (1 if chat.is_group else 0),  # group senders plus me
         "first": time.local(summary.first_ts) if summary.first_ts else "",
         "last": time.local(summary.last_ts) if summary.last_ts else "",
     }

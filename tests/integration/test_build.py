@@ -66,6 +66,8 @@ def test_manifest_counts_and_zone(built):
     assert manifest["messages"] == 9
     assert manifest["tz"] == "Europe/Rome"
     assert manifest["source_app_version"]
+    assert manifest["people"] == 2  # one other sender plus me
+    assert manifest["first"].startswith("2026-12-01") and manifest["last"].startswith("2026-12-02")
 
 
 def test_timestamps_are_frozen_strings_with_offsets(built):

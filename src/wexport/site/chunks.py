@@ -133,7 +133,7 @@ def _reactions(con: sqlite3.Connection) -> dict[int, list[str]]:
     if "reaction" not in tables:
         return {}
     out: dict[int, list[str]] = {}
-    for message_id, emoji in con.execute("SELECT message_id, emoji FROM reaction ORDER BY message_id"):
+    for message_id, emoji in con.execute("SELECT message_id, emoji FROM reaction ORDER BY message_id, emoji"):
         if emoji:
             out.setdefault(message_id, []).append(emoji)
     return out
