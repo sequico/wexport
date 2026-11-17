@@ -35,6 +35,7 @@
   var searching = false;
 
   titleEl.textContent = manifest.title;
+  document.title = manifest.title + " — wexport archive";
   var parts = [total.toLocaleString("en") + " messages"];
   if (manifest.is_group && manifest.people) parts.push(manifest.people + " participants");
   if (manifest.first && manifest.last) parts.push(manifest.first + " → " + manifest.last);
