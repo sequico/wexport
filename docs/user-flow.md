@@ -77,9 +77,12 @@ The key can be given three ways: the screenshot (`--key key.png`), the 64 digits
 (`--key 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`--key encrypted_backup.key`).
 
 You run the release binary (on Linux and Windows there is one file per platform, no Python needed) or,
-if you have Python, `uv tool install wexport`. Both give the same `wexport` command. `ffmpeg` must be
-on the PATH for thumbnails, posters and video metadata: without it the build still completes, with
-images and messages only.
+if you have Python, `uv tool install wexport`. Both give the same `wexport` command.
+
+`ffmpeg` must be on the PATH: without it wexport stops immediately and tells you the exact command for
+your system (`sudo apt install ffmpeg`, `sudo dnf install ffmpeg`, `sudo pacman -S ffmpeg`, or
+`winget install Gyan.FFmpeg`). If you give the key as a screenshot, `tesseract` is needed too, and the
+same message appears when it is missing; typing the 64 digits avoids it.
 
 ## 5. What can go wrong
 
@@ -88,6 +91,7 @@ images and messages only.
 | `backup is crypt14` | E2EE was off when the backup was made | enable E2EE with the 64-digit key, force a full backup, copy again |
 | `backup needs the password / passkey` | the key is on WhatsApp's servers | re-enable E2EE with the 64-digit key and make a new backup; old backups stay closed |
 | `key does not match this backup` | wrong key, or a new key was generated after this backup | use the key from the screenshot; if the key was regenerated, use a backup made after that |
+| `ffmpeg not found` / `tesseract not found` | a dependency is missing; wexport refuses to run rather than produce a half-broken archive | run the install command printed in the message, then the same command again |
 | `media missing` in the build summary | the file is not in the copied `Media/` (deleted on the phone, or never downloaded) | nothing to do; the site shows a placeholder |
 | contact names show as numbers | `Backups/wa.db` was not copied | copy it and rebuild |
 

@@ -90,11 +90,30 @@ every chat folder, because a chat site must never reveal what else exists.
 
 Three commands, `argparse` only. Exit codes: `0` ok, `1` unreadable input, `2` unusable key,
 `3` wrong backup type (crypt14 / password / passkey), `4` build incomplete (some derivatives could
-not be produced; the site is written and usable).
+not be produced; the site is written and usable), `5` missing external dependency.
 
 Media that the user did not copy is **not** an error: it is the normal state of a partial archive,
 reported in the build summary and visible in the site as a placeholder. Only a derivative that was
 attempted and failed (a corrupt image, an unreadable video) produces exit `4`.
+
+### Dependency gate
+
+Before any work, every command except `--help`, `--version` and `serve` checks its external binaries.
+A missing one is **fatal, not a downgrade**: exit `5`, with the name of the binary and the command
+that installs it, on one screen and in English:
+
+```
+wexport: ffprobe not found on PATH.
+  Debian/Ubuntu   sudo apt install ffmpeg
+  Fedora/RHEL     sudo dnf install ffmpeg
+  Arch            sudo pacman -S ffmpeg
+  Windows         winget install Gyan.FFmpeg
+Then re-run the same command. `wexport check` prints the full environment report.
+```
+
+`ffmpeg` and `ffprobe` are required for `check` and `build`. `tesseract` is required only when the key
+is given as a screenshot: it is checked at that moment, with the same message shape, so a user who
+types the 64 digits never needs it. `serve` requires nothing at all.
 
 ---
 
@@ -216,8 +235,11 @@ Decisions worth stating:
   Renaming a chat, or moving a file between chats, never touches the archive on disk.
 - The build copies by default, or hardlinks with `--link` (same filesystem only).
 - Transcoding is opt-in. Default build touches no video and no audio beyond metadata read.
-- `ffmpeg`/`ffprobe` are external: probed at startup, and a missing binary downgrades to
-  "no derivatives" with a warning instead of failing the build.
+- `ffmpeg`/`ffprobe` are **required**, not optional: the startup gate (§2) refuses to run without
+  them and prints the install command for the detected platform. No silent degradation — a site
+  without thumbnails or playable video is a broken site that looks finished.
+- When `ffprobe` fails on a single file (corrupt media), that file is marked and the build continues:
+  one broken video is not a reason to abandon an archive.
 
 ---
 
@@ -259,9 +281,12 @@ and a test fails if the header fields we parse stop matching the tested version.
 count the phone shows; re-running is deterministic (same hashes, same order).
 
 ### M2 — media
-`media/resolve.py`, `media/derive.py`, `--jobs` parallelism, idempotency.
+`media/resolve.py`, `media/derive.py`, the startup dependency gate (§2), `--jobs` parallelism,
+idempotency.
 **Acceptance:** every `media` row is either present with a derivative or `missing=1` with a reason;
-second run copies nothing; a 20 GB `Media/` folder finishes without loading files into memory.
+second run copies nothing; a 20 GB `Media/` folder finishes without loading files into memory; on a
+machine without `ffmpeg`, `build` exits `5` with the install command for that platform and without
+touching the output directory.
 
 ### M3 — viewer MVP
 Virtualised timeline, image/video/audio/document renderers, chat header, `--index` page, `serve`.
@@ -340,7 +365,7 @@ audio` / `video` / `all` are the explicit paths that re-encode, and the default 
 | Screenshot-key OCR lives on `wa-crypt-tools` main, not in 0.2.0 | `--key key.png` missing on the released version | pinned git ref (decided) + header fixture test; revisit when the release lands |
 | Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `--chat` builds only what is wanted |
 | Nuitka one-file needs a C toolchain and a long build on each platform | releases become a slow manual step, hard to repeat | fixed build images (Ubuntu + Windows runner), one build per release; the AppImage wrapper, if ever wanted, is a second step on the same binary |
-| Single binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first video, or the first PNG key, fails on a clean machine | the error names the missing binary; bundling deferred with the Rust work (§12) |
+| Single binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first run fails on a clean machine | exit `5` at startup, naming the missing binary and the install command for that platform (§2); bundling deferred with the Rust work (§12) |
 | `site/` is a folder, not a single file | user copies it somewhere else and nothing opens | `site/` opens through `wexport serve`; relative paths only, and the user flow says so |
 
 ---
@@ -364,6 +389,9 @@ Taken by the owner:
 9. **Packaging: Nuitka `--onefile`**, one single binary per platform, **Linux and Windows only**
    (macOS not built, AppImage not built — the same binary can be wrapped in one later without changing
    anything). `uv tool install wexport` stays the technical path for development. This is §7 M5.
+10. **Missing dependencies abort at startup**, exit `5`, with an English message naming the binary and
+    the install command per platform (§2). No degraded mode. `tesseract` is demanded only when the key
+    is an image.
 
 No decision is open.
 
