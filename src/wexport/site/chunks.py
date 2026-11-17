@@ -75,9 +75,12 @@ SELECT m.id, m.ts, m.ts_local, m.from_me, m.sender, m.kind, m.text, m.quoted_id,
        d.thumb AS media_thumb, d.peaks AS media_peaks, d.missing AS media_missing,
        d.alt AS media_alt, d.name AS media_name
   FROM message m
-  LEFT JOIN media d ON d.message_id = m.id
+  LEFT JOIN media d ON d.id = (SELECT MIN(id) FROM media WHERE message_id = m.id)
  ORDER BY m.ts, m.id
 """
+
+# shortcut: an album is several media rows on one message; the archive shows the first one.
+# Render a gallery when a real backup with albums arrives.
 
 
 def _record(row: sqlite3.Row, reactions: list[str]) -> dict:

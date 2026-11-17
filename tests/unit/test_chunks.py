@@ -20,9 +20,9 @@ def chat_db(tmp_path):
         CREATE TABLE message (id INTEGER PRIMARY KEY, ts INTEGER, ts_local TEXT, from_me INTEGER,
             sender TEXT, kind TEXT, text TEXT, quoted_id INTEGER, edited INTEGER,
             revoked INTEGER, status INTEGER, payload TEXT);
-        CREATE TABLE media (message_id INTEGER, path TEXT, mime TEXT, bytes INTEGER, width INTEGER,
-            height INTEGER, duration_ms INTEGER, thumb TEXT, peaks TEXT, alt TEXT, name TEXT,
-            missing INTEGER);
+        CREATE TABLE media (id INTEGER PRIMARY KEY, message_id INTEGER, path TEXT, mime TEXT,
+            bytes INTEGER, width INTEGER, height INTEGER, duration_ms INTEGER, thumb TEXT,
+            peaks TEXT, alt TEXT, name TEXT, missing INTEGER);
         CREATE TABLE reaction (message_id INTEGER, emoji TEXT);
         """
     )
@@ -36,8 +36,8 @@ def chat_db(tmp_path):
     ]
     con.executemany("INSERT INTO message VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     con.execute(
-        "INSERT INTO media (message_id, path, mime, bytes, width, height, thumb, name, missing)"
-        " VALUES (3, 'media/ab/x.png', 'image/png', 10, 2, 3, 'deriv/ab.webp', 'IMG-1.png', 0)"
+        "INSERT INTO media (id, message_id, path, mime, bytes, width, height, thumb, name, missing)"
+        " VALUES (1, 3, 'media/ab/x.png', 'image/png', 10, 2, 3, 'deriv/ab.webp', 'IMG-1.png', 0)"
     )
     con.execute("INSERT INTO reaction (message_id, emoji) VALUES (1, '👍')")
     con.commit()
@@ -72,6 +72,40 @@ def test_emission_is_deterministic(chat_db, tmp_path):
     chunks.emit(chat_db, second, {"title": "t", "built": "fixed"})
     for name in ("manifest.js", "2026-11.js", "2026-12.js"):
         assert (first / name).read_bytes() == (second / name).read_bytes()
+
+
+def test_two_media_rows_produce_one_message(tmp_path):
+    """An album is several media rows; the record must not be duplicated for each of them."""
+    database = tmp_path / "chat.db"
+    con = sqlite3.connect(database)
+    con.executescript(
+        """
+        CREATE TABLE message (id INTEGER PRIMARY KEY, ts INTEGER, ts_local TEXT, from_me INTEGER,
+            sender TEXT, kind TEXT, text TEXT, quoted_id INTEGER, edited INTEGER,
+            revoked INTEGER, status INTEGER, payload TEXT);
+        CREATE TABLE media (id INTEGER PRIMARY KEY, message_id INTEGER, path TEXT, mime TEXT,
+            bytes INTEGER, width INTEGER, height INTEGER, duration_ms INTEGER, thumb TEXT,
+            peaks TEXT, alt TEXT, name TEXT, missing INTEGER);
+        CREATE TABLE reaction (message_id INTEGER, emoji TEXT);
+        """
+    )
+    con.execute(
+        "INSERT INTO message VALUES (1, 1763382725000, '2026-11-17 14:32:05 +01:00', 0, NULL,"
+        " 'image', 'album', NULL, 0, 0, 13, NULL)"
+    )
+    con.executemany(
+        "INSERT INTO media (id, message_id, path, mime, name) VALUES (?,?,?,?,?)",
+        [(1, 1, "media/aa/one.png", "image/png", "one.png"), (2, 1, "media/bb/two.png", "image/png", "two.png")],
+    )
+    con.commit()
+    con.close()
+
+    out = tmp_path / "data"
+    emitted = chunks.emit(database, out, {"title": "t", "built": "fixed"})
+    assert emitted[0].messages == 1
+    text = (out / "2026-11.js").read_text(encoding="utf-8")
+    assert text.count('"i":1') == 1
+    assert '"nm":"one.png"' in text
 
 
 def test_media_and_reactions_reach_the_record(chat_db, tmp_path):

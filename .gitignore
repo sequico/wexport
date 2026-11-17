@@ -15,11 +15,11 @@ build/
 
 # Real backups and exported archives: never committed
 /data/
-/fixtures/real/
 /site/
 *.db
 *.db.crypt15
 *.db.crypt14
+tests/fixtures/real/
 
 # …except the synthetic fixture the tests run on (built by tests/fixtures/synthetic/build.py)
 !tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15
