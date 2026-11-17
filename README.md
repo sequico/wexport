@@ -34,6 +34,9 @@ xdg-open ~/whatsapp/archives/2026-11-17-family-4f2a/index.html
 them, `--limit 0` shows all, which matters on a phone with a thousand conversations.
 Without `--chat`, `build` writes one archive per chat.
 
+`wexport -h` prints the full reference: every option of both commands, the exit codes, the
+requirements and worked examples. `wexport check -h` and `wexport build -h` do the same per command.
+
 The key can be 64 hex digits (spaces and a 4×4 grid are fine), a screenshot of them, or the phone's
 `encrypted_backup.key` on a rooted device. The screenshot path needs the OCR extra and the `tesseract`
 binary: `uv sync --extra ocr` plus `apt install tesseract-ocr` (or the equivalent). `ffmpeg` and

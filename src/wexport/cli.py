@@ -22,55 +22,228 @@ from .errors import IncompleteBuild, UnreadableInput, UnusableKey, WexError
 from .keys import load_key
 from .site.build import build_chat, write_index
 
+CHECK_FLAGS = [
+    {
+        "names": ["input"],
+        "help": "the folder copied from the phone; it must contain Databases/msgstore.db.crypt15 "
+        "(WhatsApp or WhatsApp Business, the Android/media path or the older sdcard one)",
+    },
+    {
+        "names": ["--key"],
+        "metavar": "HEX|IMAGE|FILE",
+        "help": "the 64 hex digits (spaces or a 4x4 grid are fine), a screenshot of them, or the "
+        "phone's encrypted_backup.key. Needed to verify the key or to list chats: names live "
+        "inside the encrypted database",
+    },
+    {
+        "names": ["--chats"],
+        "action": "store_true",
+        "help": "list the conversations instead of building: last event with its offset, message "
+        "count, media count, media weight, name and JID. Nothing is written to disk",
+    },
+    {
+        "names": ["--sort"],
+        "choices": ["last", "messages", "size", "name"],
+        "default": "last",
+        "help": "listing order: last = newest event first (default), messages = most messages "
+        "first, size = heaviest media first, name = alphabetical",
+    },
+    {
+        "names": ["--reverse"],
+        "action": "store_true",
+        "help": "invert the chosen order, e.g. --sort size --reverse = lightest first",
+    },
+    {
+        "names": ["--match"],
+        "metavar": "TEXT",
+        "help": "keep only chats whose name or JID contains TEXT; case and accents are ignored",
+    },
+    {
+        "names": ["--limit"],
+        "type": int,
+        "default": 50,
+        "metavar": "N",
+        "help": "print at most N chats; 0 prints every chat (default 50, the rest is summed and "
+        "reported)",
+    },
+    {
+        "names": ["--tz"],
+        "metavar": "AREA/CITY",
+        "help": "IANA timezone used to render the timestamps, e.g. Europe/Rome (default: this "
+        "machine's zone, and the build records whichever is used)",
+    },
+]
+
+BUILD_FLAGS = [
+    {
+        "names": ["input"],
+        "help": "the folder copied from the phone (Databases/, optionally Backups/ and Media/)",
+    },
+    {
+        "names": ["--key"],
+        "required": True,
+        "metavar": "HEX|IMAGE|FILE",
+        "help": "the 64 hex digits, a screenshot of them, or the phone's encrypted_backup.key",
+    },
+    {
+        "names": ["--out"],
+        "required": True,
+        "metavar": "DIR",
+        "help": "where the archive folders go: one folder per chat, dated and slugged",
+    },
+    {
+        "names": ["--all"],
+        "action": "store_true",
+        "exclusive": "selection",
+        "help": "build every chat (the default when --chat is absent)",
+    },
+    {
+        "names": ["--chat"],
+        "action": "append",
+        "metavar": "JID|NAME",
+        "exclusive": "selection",
+        "help": "build only these chats; repeatable; each value is a JID or part of the chat name, "
+        "case and accents ignored",
+    },
+    {
+        "names": ["--index"],
+        "action": "store_true",
+        "help": "also write <out>/index.html listing the built chats; it stays outside every chat "
+        "folder, so sharing one chat never reveals the others",
+    },
+    {
+        "names": ["--jobs"],
+        "type": int,
+        "default": 4,
+        "metavar": "N",
+        "help": "workers used for thumbnails, posters and waveform peaks (default 4)",
+    },
+    {
+        "names": ["--tz"],
+        "metavar": "AREA/CITY",
+        "help": "IANA timezone used to render every timestamp, e.g. Europe/Rome (default: this "
+        "machine's zone; the frozen strings never change afterwards)",
+    },
+    {
+        "names": ["--transcode"],
+        "choices": ["none", "audio", "video", "all"],
+        "default": "none",
+        "help": "re-encode media for browsers that are picky: none (default), audio = M4A beside "
+        "the Opus voice note, video = 720p H.264 beside the original, all = both",
+    },
+    {
+        "names": ["--link"],
+        "action": "store_true",
+        "help": "hardlink media instead of copying it (same filesystem only; falls back to a copy)",
+    },
+]
+
+COMMANDS = {
+    "check": {
+        "summary": "inspect a copied backup: what it is, whether it opens, and which chats it holds",
+        "usage": "wexport check <input-dir> [options]",
+        "flags": CHECK_FLAGS,
+    },
+    "build": {
+        "summary": "write one self-contained archive folder per chat",
+        "usage": "wexport build <input-dir> --key <key> --out <dir> [options]",
+        "flags": BUILD_FLAGS,
+    },
+}
+
+EXIT_CODES = [
+    ("0", "success"),
+    ("1", "unreadable input: the folder, the backup file or the database cannot be used"),
+    ("2", "unusable key: not a key, or the key does not open this backup"),
+    ("3", "wrong backup type: crypt14, password-based or passkey-based backup"),
+    ("4", "build incomplete: some media could not be processed, the archive is still usable"),
+    ("5", "missing external dependency: ffmpeg, ffprobe, or tesseract for a screenshot key"),
+]
+
+EXAMPLES = [
+    "wexport check ~/whatsapp/phone-copy --key <64 hex digits> --chats --sort size --limit 20",
+    "wexport check ~/whatsapp/phone-copy --key key.png --chats --match family --limit 0",
+    "wexport build ~/whatsapp/phone-copy --key key.png --out ~/whatsapp/archives --index",
+    "wexport build ~/whatsapp/phone-copy --key key.png --out ~/whatsapp/archives --chat Family",
+]
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wexport",
-        description="Turn an Android WhatsApp crypt15 backup into a self-contained offline chat "
-        "archive. Every archive opens by double-clicking its index.html; nothing is installed.",
+        description="Turn an Android WhatsApp crypt15 backup into self-contained archives that open by "
+        "double-clicking index.html: no server, no wexport and no network on the reading machine. "
+        "It never uploads anything and never touches the phone.",
+        epilog=_reference(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"wexport {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True, metavar="{check,build}")
 
-    check = sub.add_parser("check", help="report what the backup contains and whether it can be opened")
-    check.add_argument("input", help="the folder copied from the phone (contains Databases/)")
-    check.add_argument("--key", help="64 hex digits, a screenshot, or encrypted_backup.key")
-    check.add_argument("--chats", action="store_true", help="list the chats without building anything")
-    check.add_argument(
-        "--sort",
-        choices=["last", "messages", "size", "name"],
-        default="last",
-        help="listing order: newest last message, most messages, heaviest media, or name",
-    )
-    check.add_argument("--reverse", action="store_true", help="flip the listing order")
-    check.add_argument("--match", help="only chats whose name or JID contains this text")
-    check.add_argument(
-        "--limit",
-        type=int,
-        default=50,
-        metavar="N",
-        help="show at most N chats, 0 for all (default 50)",
-    )
-    check.add_argument("--tz", default=None, help="IANA timezone for the printed timestamps")
-
-    build = sub.add_parser("build", help="write one archive folder per chat")
-    build.add_argument("input", help="the folder copied from the phone")
-    build.add_argument("--key", required=True, help="64 hex digits, a screenshot, or encrypted_backup.key")
-    build.add_argument("--out", required=True, help="where to write the archive folders")
-    group = build.add_mutually_exclusive_group()
-    group.add_argument("--all", action="store_true", help="every chat (default)")
-    group.add_argument("--chat", action="append", metavar="JID|NAME", help="only these chats; repeatable")
-    build.add_argument("--index", action="store_true", help="also write <out>/index.html listing the chats")
-    build.add_argument("--jobs", type=int, default=4, help="media workers (default 4)")
-    build.add_argument("--tz", default=None, help="IANA timezone for the rendered timestamps")
-    build.add_argument(
-        "--transcode",
-        choices=["none", "audio", "video", "all"],
-        default="none",
-        help="re-encode media for picky browsers (default none)",
-    )
-    build.add_argument("--link", action="store_true", help="hardlink media instead of copying")
+    for name, command in COMMANDS.items():
+        command_parser = sub.add_parser(
+            name,
+            help=command["summary"],
+            description=command["summary"],
+            usage=command["usage"],
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+        exclusive: dict[str, argparse._MutuallyExclusiveGroup] = {}
+        groups: dict[str, argparse._ArgumentGroup] = {}
+        for flag in command["flags"]:
+            kwargs = {
+                key: value
+                for key, value in flag.items()
+                if key not in {"names", "exclusive", "group"}
+            }
+            target: argparse._ActionsContainer = command_parser
+            if "exclusive" in flag:
+                target = exclusive.setdefault(
+                    flag["exclusive"], command_parser.add_mutually_exclusive_group()
+                )
+            elif "group" in flag:
+                target = groups.setdefault(flag["group"], command_parser.add_argument_group(flag["group"]))
+            target.add_argument(*flag["names"], **kwargs)
     return parser
+
+
+def _flag_label(flag: dict) -> str:
+    """How a flag is spelled in the reference: the one source for both parser and help."""
+    names = flag["names"]
+    if not names[0].startswith("-"):
+        return flag.get("metavar") or names[0].upper()
+    head = " | ".join(names)
+    if flag.get("action") in {"store_true", "store_false", "version", "help"}:
+        return head
+    metavar = flag.get("metavar")
+    if metavar is None and flag.get("choices"):
+        metavar = "{" + ",".join(str(choice) for choice in flag["choices"]) + "}"
+    return f"{head} {metavar or head.lstrip('-').upper()}"
+
+
+def _reference() -> str:
+    """The full reference that `wexport -h` prints, generated from the same flags the parser uses."""
+    import textwrap
+
+    lines = []
+    for name, command in COMMANDS.items():
+        lines.append("")
+        lines.append(f"wexport {name} options — {command['usage']}")
+        for flag in command["flags"]:
+            label = _flag_label(flag)
+            wrapped = textwrap.wrap(flag["help"], width=96)
+            lines.append(f"  {label}")
+            lines.extend(f"      {line}" for line in wrapped)
+    lines.append("")
+    lines.append("exit codes:")
+    lines.extend(f"  {code}  {text}" for code, text in EXIT_CODES)
+    lines.append("")
+    lines.append("requirements: ffmpeg and ffprobe on PATH (thumbnails, posters, video metadata);")
+    lines.append("tesseract only when the key is given as a screenshot.")
+    lines.append("")
+    lines.append("examples:")
+    lines.extend(f"  {example}" for example in EXAMPLES)
+    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
