@@ -129,6 +129,9 @@ wexport/
 │   ├── implementation-plan.md   # this file
 │   ├── android-backup-formats.md
 │   └── user-flow.md
+├── .opencode/skills/            # agent skills for working in this repo
+│   ├── wexport-implement/       # procedure + invariants + fixtures recipe
+│   └── offline-html-archive/    # file:// archive technique
 ├── src/wexport/
 │   ├── __init__.py
 │   ├── cli.py                   # argparse, 3 subcommands, exit codes

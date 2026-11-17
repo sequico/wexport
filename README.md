@@ -43,6 +43,16 @@ backups, legacy `crypt12`/`crypt14`, re-encrypting anything back.
   opens which format.
 - [User flow](docs/user-flow.md) — what the person with the phone has to do, step by step.
 
+## Working on it with an agent
+
+Two skills live in `.opencode/skills/`, and they load only when relevant:
+
+- `wexport-implement` — the procedure and the invariants for editing code here, plus the synthetic
+  fixture recipe in `references/fixtures.md`.
+- `offline-html-archive` — how to build an archive that opens from `file://` with no server.
+
+They point at the plan rather than restating it: the plan is the spec, the skills are the practice.
+
 ## Status
 
 Planning stage: no code yet. Milestone M0 not started — see the plan for milestones and acceptance
