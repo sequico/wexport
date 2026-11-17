@@ -27,8 +27,14 @@ def _js(value: object) -> str:
     return text.replace("<", "\\u003c").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 
 
-def emit(chat_db: str | Path, destination: str | Path, manifest: dict) -> list[Chunk]:
-    """Write `data/manifest.js` and `data/<YYYY-MM>.js`; returns the chunk list in order."""
+def emit(
+    chat_db: str | Path, destination: str | Path, manifest: dict, max_records: int = 20_000
+) -> list[Chunk]:
+    """Write `data/manifest.js` and `data/*.js`; returns the chunk list in order.
+
+    A month is the usual bucket; a month holding more than `max_records` messages is split, because
+    one 300k-message script is hundreds of megabytes to parse before the first pixel.
+    """
     chat_db, destination = Path(chat_db), Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
     con = ro_connect(chat_db)
@@ -38,15 +44,18 @@ def emit(chat_db: str | Path, destination: str | Path, manifest: dict) -> list[C
         reactions = _reactions(con)
         current: str | None = None
         buffer: list[dict] = []
+        parts: dict[str, int] = {}
         for row in con.execute(_MESSAGE_QUERY):
             month = (row["ts_local"] or "")[:7] or "0000-00"
-            if current is not None and month != current:
-                chunks.append(_write_chunk(destination, current, buffer))
+            if current is not None and (month != current or len(buffer) >= max_records):
+                chunks.append(_write_chunk(destination, current, buffer, parts))
                 buffer = []
+                if month != current:
+                    parts = {}
             current = month
             buffer.append(_record(row, reactions.get(row["id"], [])))
         if current is not None:
-            chunks.append(_write_chunk(destination, current, buffer))
+            chunks.append(_write_chunk(destination, current, buffer, parts))
     finally:
         con.close()
 
@@ -62,11 +71,19 @@ def emit(chat_db: str | Path, destination: str | Path, manifest: dict) -> list[C
     return chunks
 
 
-def _write_chunk(destination: Path, name: str, records: list[dict]) -> Chunk:
-    (destination / f"{name}.js").write_text(
-        f'WEX.chunk("{name}",{_js(records)});\n', encoding="utf-8"
+def _write_chunk(destination: Path, name: str, records: list[dict], parts: dict[str, int]) -> Chunk:
+    part = parts.get(name, 0)
+    parts[name] = part + 1
+    file_name = name if part == 0 else f"{name}-{part + 1}"
+    (destination / f"{file_name}.js").write_text(
+        f'WEX.chunk("{file_name}",{_js(records)});\n', encoding="utf-8"
     )
-    return Chunk(name=name, messages=len(records), first_ts=records[0]["t"], last_ts=records[-1]["t"])
+    return Chunk(
+        name=file_name,
+        messages=len(records),
+        first_ts=records[0]["t"],
+        last_ts=records[-1]["t"],
+    )
 
 
 _MESSAGE_QUERY = """

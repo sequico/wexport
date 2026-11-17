@@ -108,6 +108,36 @@ def test_two_media_rows_produce_one_message(tmp_path):
     assert '"nm":"one.png"' in text
 
 
+def test_a_huge_month_is_split_without_colliding(tmp_path):
+    database = tmp_path / "chat.db"
+    con = sqlite3.connect(database)
+    con.executescript(
+        """
+        CREATE TABLE message (id INTEGER PRIMARY KEY, ts INTEGER, ts_local TEXT, from_me INTEGER,
+            sender TEXT, kind TEXT, text TEXT, quoted_id INTEGER, edited INTEGER,
+            revoked INTEGER, status INTEGER, payload TEXT);
+        CREATE TABLE media (id INTEGER PRIMARY KEY, message_id INTEGER, path TEXT, mime TEXT,
+            bytes INTEGER, width INTEGER, height INTEGER, duration_ms INTEGER, thumb TEXT,
+            peaks TEXT, alt TEXT, name TEXT, missing INTEGER);
+        CREATE TABLE reaction (message_id INTEGER, emoji TEXT);
+        """
+    )
+    rows = [
+        (i, 1763382725000 + i, "2026-11-17 14:32:05 +01:00", 0, None, "text", f"m{i}", None, 0, 0, 13, None)
+        for i in range(1, 8)
+    ]
+    con.executemany("INSERT INTO message VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    con.commit()
+    con.close()
+
+    out = tmp_path / "data"
+    emitted = chunks.emit(database, out, {"title": "t", "built": "fixed"}, max_records=3)
+    assert [chunk.name for chunk in emitted] == ["2026-11", "2026-11-2", "2026-11-3"]
+    assert sum(chunk.messages for chunk in emitted) == 7
+    for chunk in emitted:
+        assert (out / f"{chunk.name}.js").is_file()
+
+
 def test_media_and_reactions_reach_the_record(chat_db, tmp_path):
     out = tmp_path / "data"
     chunks.emit(chat_db, out, {"title": "t", "built": "fixed"})
