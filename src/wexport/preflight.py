@@ -78,13 +78,13 @@ def discover(root: str | Path) -> Inputs:
             )
         raise UnreadableInput(f"no msgstore.db.crypt15 in {databases}")
 
-    # The full backup is msgstore.db.crypt15; the rest are rolling copies and deltas.
+    # The full backup is msgstore.db.crypt15; only `msgstore-increment-*` are deltas to replay.
+    # The rolling `msgstore-YYYY-MM-DD.1.db.crypt15` copies are superseded full snapshots: merging
+    # one back in could resurrect messages WhatsApp has already dropped.
     full = next((p for p in crypt15 if p.name == "msgstore.db.crypt15"), None)
     if full is None:
         full = max(crypt15, key=lambda p: p.stat().st_mtime)
-    incrementals = tuple(
-        p for p in crypt15 if p != full and (p.name.startswith("msgstore-increment") or ".db.crypt15" in p.name)
-    )
+    incrementals = tuple(p for p in crypt15 if p != full and p.name.startswith("msgstore-increment"))
 
     backups = _first_dir(root, "Backups", "WhatsApp/Backups", "WhatsApp Business/Backups")
     contacts = None
@@ -145,14 +145,14 @@ def _key_type_name(value: object) -> str:
 
 
 def require_openable(header: Header) -> None:
-    """Refuse what cannot be decrypted offline, naming the way out."""
+    """Refuse what cannot be decrypted offline, naming the way out.
+
+    A crypt14 folder is already refused by `discover`, with the folder it looked at; this function
+    only has to judge the key type of a header that was parsed.
+    """
     name = Path(header.path).name
     if header.format != "crypt15":
-        raise WrongBackupType(
-            f"{name} is {header.format}, not crypt15.\n"
-            "Only end-to-end encrypted backups (crypt15) can be opened offline: turn on\n"
-            "end-to-end encrypted backup with the 64-digit key, run a full backup, copy again."
-        )
+        raise WrongBackupType(f"{name} is {header.format}: only crypt15 backups can be opened offline.")
     if header.key_type in OPENABLE_KEY_TYPES:
         return
     if header.key_type == "E2EE_PASSWORD":

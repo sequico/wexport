@@ -7,6 +7,7 @@ server command: an archive is opened by double-clicking it (plan §2, §6).
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -126,7 +127,10 @@ def _build(args: argparse.Namespace) -> int:
                     store.apply_contacts(contacts)
             chats = _select_chats(store, args)
             if not chats:
-                raise UnreadableInput("no chat matched the selection")
+                names = ", ".join(chat.name for chat in store.chats()[:10])
+                raise UnreadableInput(
+                    f"no chat matched {', '.join(args.chat or [])}.\nAvailable: {names or 'none'}"
+                )
             print(f"building     {len(chats)} chat(s) into {out_root}")
             summaries = []
             for chat in chats:
@@ -175,7 +179,8 @@ def _contacts_database(contacts: Path, workspace: str, key) -> Path | None:
         target = Path(workspace) / "wa.db"
         try:
             decrypt_to(contacts, target, key)
-        except UnreadableInput:
+        except WexError as error:
+            print(f"warning: contacts not readable — names will be numbers ({error})", file=sys.stderr)
             return None
         return target
     return contacts
@@ -196,13 +201,18 @@ def _select_chats(store: Msgstore, args: argparse.Namespace) -> list[Chat]:
 
 
 def _system_zone() -> str:
+    """Best effort, and never silent about it: the zone ends up in every frozen timestamp."""
+    for candidate in ("/etc/timezone",):
+        path = Path(candidate)
+        if path.is_file():
+            name = path.read_text(encoding="utf-8", errors="replace").strip()
+            if name:
+                return name
     try:
-        link = Path("/etc/localtime").resolve()
-        parts = link.parts
-        index = parts.index("zoneinfo")
-        return "/".join(parts[index + 1 :]) or "UTC"
+        parts = Path("/etc/localtime").resolve().parts
+        return "/".join(parts[parts.index("zoneinfo") + 1 :]) or "UTC"
     except (OSError, ValueError):
-        return "UTC"
+        return os.environ.get("TZ") or "UTC"
 
 
 if __name__ == "__main__":  # pragma: no cover

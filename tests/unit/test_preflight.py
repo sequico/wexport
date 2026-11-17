@@ -22,11 +22,21 @@ def test_header_names_the_key_type(phone):
     assert header.app_version
 
 
-def test_crypt14_is_refused_with_the_way_out():
-    header = preflight.Header(path=__file__, format="crypt14", app_version="", key_type="", size=1)
+def test_crypt14_is_refused_with_the_way_out(tmp_path):
+    """`discover` owns this refusal, because only it knows the folder the files are in."""
+    databases = tmp_path / "Databases"
+    databases.mkdir()
+    (databases / "msgstore.db.crypt14").write_bytes(b"")
+    with pytest.raises(WrongBackupType) as error:
+        preflight.discover(tmp_path)
+    assert "64-digit key" in str(error.value)
+
+
+def test_header_of_another_format_is_refused():
+    header = preflight.Header(path=__file__, format="crypt12", app_version="", key_type="", size=1)
     with pytest.raises(WrongBackupType) as error:
         preflight.require_openable(header)
-    assert "64-digit key" in str(error.value)
+    assert "only crypt15" in str(error.value)
 
 
 def test_password_backup_explains_the_hsm():
