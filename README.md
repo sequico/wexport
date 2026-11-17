@@ -13,9 +13,16 @@ phone ──► folder you copy by USB ──► wexport ──► one folder pe
 `wexport` reads `msgstore.db.crypt15` (and the daily incrementals), decrypts it with the 64-digit
 key WhatsApp showed you when you enabled end-to-end encrypted backups, joins the messages with the
 `Media/` folder you copied, and writes one self-contained archive per chat — a virtualised timeline,
-thumbnails, video posters, voice-note waveforms and search. It opens by double-clicking `index.html`:
-no server, no wexport, no install on the machine that reads it. A chat folder can be zipped and given
-to someone without exposing the others.
+thumbnails, video posters, voice-note waveforms and search, with every message stamped in full:
+
+```
+Monday, 17 November 2026
+14:32:05 +01:00   │ the message
+```
+
+It opens by double-clicking `index.html`: no server, no wexport, no install on the machine that reads
+it, and the timestamps are frozen at build, so the archive still says exactly when something happened
+years later. A chat folder can be zipped and given to someone without exposing the others.
 
 It runs entirely offline. Nothing is uploaded anywhere.
 

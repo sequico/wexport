@@ -31,7 +31,7 @@ Everything below is the v1 target; nothing is implemented yet.
 
 ## 2. Pipeline
 
-Six stages, each a module with a narrow contract so it can be tested alone.
+Five stages, each a module with a narrow contract so it can be tested alone.
 
 ```
 input dir + key
@@ -53,8 +53,6 @@ input dir + key
 [5] build       per chat: query chat.db, emit index.html + app.js + data/*.js chunks + media
       │         → <out>/<date>-<slug>/ , a folder that opens over file://
       │         → optional <out>/index.html linking the chats (never inside a chat folder)
-      ▼
-[6] serve       optional convenience: the same folder over http, for big media and picky browsers
 ```
 
 Stage contracts:
@@ -68,29 +66,29 @@ Stage contracts:
 - **media** is idempotent: a second run skips what exists, reports what is missing, never
   overwrites.
 - **build** never mutates the archive; it only reads. Each chat folder is a complete archive: it works
-  when copied alone, zipped, or sent to someone who has a browser and nothing else.
-- **serve** is a convenience, not a requirement. The archive is designed for `file://`; the server only
-  exists for the cases where an HTTP origin is nicer (big media on a slow disk, a browser that is
-  picky about local files).
+  when copied alone, zipped, or sent to someone who has a browser and nothing else. There is no server
+  anywhere in the product: `file://` is the only way an archive is opened.
 
 ### CLI surface
 
 ```
 wexport check <input-dir> [--key <hex|png|keyfile>]
 wexport build <input-dir> --key <hex|png|keyfile> --out <out-dir>
-              [--all | --chat <jid> ...] [--index] [--jobs N]
+              [--all | --chat <jid> ...] [--index] [--jobs N] [--tz <IANA name>]
               [--transcode {none,audio,video,all}] [--link]
-wexport serve <site-dir> [--port 8765]        # optional: same archive over http
 ```
 
 `build` defaults to `--all` (one folder per chat). `--chat` takes one or more JIDs and produces only
 those folders, which is the sharing path: hand someone the one folder you chose. `--index` additionally
 writes `<out>/index.html` with the list of built chats, and that file is deliberately kept outside
-every chat folder, because a chat site must never reveal what else exists.
+every chat folder, because a chat archive must never reveal what else exists.
 
-Three commands, `argparse` only. Exit codes: `0` ok, `1` unreadable input, `2` unusable key,
+`--tz <IANA name>` fixes the timezone used to render every timestamp (default: the machine's zone,
+which is recorded in the manifest). See §4 for why the rendered strings are frozen at build time.
+
+Two commands, `argparse` only. Exit codes: `0` ok, `1` unreadable input, `2` unusable key,
 `3` wrong backup type (crypt14 / password / passkey), `4` build incomplete (some derivatives could
-not be produced; the site is written and usable), `5` missing external dependency.
+not be produced; the archive is written and usable), `5` missing external dependency.
 
 Media that the user did not copy is **not** an error: it is the normal state of a partial archive,
 reported in the build summary and visible in the site as a placeholder. Only a derivative that was
@@ -98,7 +96,7 @@ attempted and failed (a corrupt image, an unreadable video) produces exit `4`.
 
 ### Dependency gate
 
-Before any work, every command except `--help`, `--version` and `serve` checks its external binaries.
+Before any work, every command except `--help` and `--version` checks its external binaries.
 A missing one is **fatal, not a downgrade**: exit `5`, with the name of the binary and the command
 that installs it, on one screen and in English:
 
@@ -113,7 +111,7 @@ Then re-run the same command. `wexport check` prints the full environment report
 
 `ffmpeg` and `ffprobe` are required for `check` and `build`. `tesseract` is required only when the key
 is given as a screenshot: it is checked at that moment, with the same message shape, so a user who
-types the 64 digits never needs it. `serve` requires nothing at all.
+types the 64 digits never needs it.
 
 ---
 
@@ -148,8 +146,7 @@ wexport/
 │   │   └── derive.py            # thumbnails, posters, waveform peaks, optional transcode
 │   ├── site/
 │   │   ├── build.py             # per-chat builder: HTML, data chunks, manifest, index page
-│   │   ├── chunks.py            # chat.db rows → classic-script data chunks
-│   │   ├── serve.py             # optional HTTP handler (Range)
+│   │   ├── chunks.py            # chat.db rows → classic-script data chunks, frozen timestamps
 │   │   └── assets/
 │   │       ├── index.html       # shell, no modules, no fetch
 │   │       ├── app.js           # router, virtualised timeline, renderers, search
@@ -184,11 +181,12 @@ it breaks nothing. Each build carries exactly one row in `chat` — the chat tha
 not a schema migration.
 
 ```sql
-meta(key TEXT PRIMARY KEY, value TEXT)          -- schema version, source app version, build date
+meta(key TEXT PRIMARY KEY, value TEXT)          -- schema version, source app version, tz, tzdata version,
+                                               -- build date
 contact(id INTEGER PRIMARY KEY, jid TEXT UNIQUE, name TEXT, is_me INTEGER DEFAULT 0)
 chat(id INTEGER PRIMARY KEY, jid TEXT UNIQUE, name TEXT, is_group INTEGER,
      first_ts INTEGER, last_ts INTEGER, message_count INTEGER)
-message(id INTEGER PRIMARY KEY, chat_id INTEGER, ts INTEGER, from_me INTEGER,
+message(id INTEGER PRIMARY KEY, chat_id INTEGER, ts INTEGER, ts_local TEXT, from_me INTEGER,
         sender_jid TEXT, kind TEXT, text TEXT,
         quoted_id INTEGER, edited_ts INTEGER, revoked INTEGER DEFAULT 0,
         status INTEGER, payload TEXT)            -- JSON for polls, locations, vcards, calls
@@ -211,7 +209,18 @@ Decisions worth stating:
   a renderer, not a migration.
 - `missing` on `media` is a first-class state: the user did not copy `Media/`, or the file was
   deleted. The site shows a labelled placeholder, never a broken image.
-- Timestamps are integer milliseconds since epoch, UTC. Formatting is the viewer's job.
+- **Two times per message, and they mean different things.** `ts` is the integer millisecond since
+  epoch (UTC) — the sortable truth, what the archive orders by. `ts_local` is the rendered wall-clock
+  with an explicit offset (`2026-11-17 14:32:05 +01:00`), **frozen at build time**. The viewer never
+  recomputes a local time from `ts`: timezone rules change, sometimes retroactively, and an archive
+  opened in ten years must show the hour it actually happened, not the hour a future tzdata would
+  derive.
+- `meta` records the timezone name the strings were rendered in (`Europe/Rome`, or whatever `--tz` was)
+  and the tzdata version used, so a later rebuild is comparable and a reader knows what the offsets
+  refer to.
+- Displayed time is always the full date and time with its offset, plus a day separator carrying the
+  full date and weekday; the tooltip adds the epoch and the UTC form. No "today", no "yesterday", no
+  locale-dependent formatting, no rewriting of history when the OS locale changes.
 
 ---
 
@@ -280,6 +289,9 @@ The archive is opened with `file://`, which is a hostile environment and decides
   highlighted and jumped to. A search on a large chat loads every chunk first (tens of MB, one
   progress bar) — `shortcut: no inverted index; add a precomputed index chunk if searches over 500k
   messages get slow`.
+- **Every visible time is absolute**: `2026-11-17 14:32:05 +01:00` on the message, a day separator with
+  `Monday, 17 November 2026`, and the epoch plus UTC value on hover. Nothing is computed from the
+  browser's clock or locale, so the same folder shows the same strings on any machine, in any year.
 - **Renderers per `kind`**, each a small function; unknown `payload` shapes fall back to a raw JSON
   disclosure rather than an exception.
 - **One page per chat**: header (name, participants, date range, message count), timeline, media
@@ -320,8 +332,10 @@ touching the output directory.
 Virtualised timeline, image/video/audio/document renderers, chat header, `--index` page.
 **Acceptance:** a 100k-message chat opens in under a second and scrolls without jank when
 **double-clicked from the file manager** in Chrome, Firefox and Edge; a 3 GB video seeks from
-`file://`; a built chat folder still works after being zipped and moved to another machine; nothing
-loads from the network.
+`file://`; every message and every day separator shows the full date and time with its offset, and the
+strings do not change when the folder is opened on a machine in a different timezone (test: two
+machines or a `TZ` change, no rebuild); a built chat folder still works after being zipped and moved;
+nothing loads from the network.
 
 ### M4 — search, dates, gallery
 Chunked search, jump-to-date, gallery, keyboard navigation.
@@ -362,7 +376,7 @@ the Linux build runs on a distro older than the one it was compiled on.
 | `Pillow` | thumbnails, EXIF | HPND (permissive) |
 | `Nuitka` (build only) | single-binary packaging at M5 | Apache-2.0 |
 | `ffmpeg`, `ffprobe` (external) | metadata, poster frames, optional transcode | LGPL/GPL builds vary |
-| Python stdlib | sqlite3 (build-time), http.server, argparse, hashlib | PSF |
+| Python stdlib | sqlite3 (build-time), argparse, hashlib, zoneinfo | PSF |
 
 **Decision (owner, taken):** wexport is **GPL-3.0-or-later** and reuses `wa-crypt-tools` instead of
 reimplementing crypt15. The alternative — our own reader (protobuf header + AES-256-GCM + the
@@ -422,10 +436,15 @@ Taken by the owner:
 10. **Missing dependencies abort at startup**, exit `5`, with an English message naming the binary and
     the install command per platform (§2). No degraded mode. `tesseract` is demanded only when the key
     is an image.
-11. **The archive opens from the filesystem.** Double-clicking `index.html` must work with no server,
-    no wexport and no browser flag; `wexport serve` is a convenience, never a requirement. That is why
-    the data is emitted as classic scripts and why there is no SQLite-WASM and no HTTP-only format
-    (§6).
+11. **The archive opens from the filesystem**, and there is no server in the product: no `serve`
+    command, no HTTP fallback. Double-clicking `index.html` must work with no wexport installed and no
+    browser flag. That is why the data is emitted as classic scripts and why there is no SQLite-WASM
+    and no HTTP-only format (§6).
+12. **Timestamps are frozen at build.** Every message carries both the epoch milliseconds and a
+    rendered ISO-8601 string with an explicit offset; the viewer never derives a local time from the
+    epoch, so reopening the archive in ten years, on a machine in another timezone, shows the time it
+    actually happened (§4, §6). `--tz` exists to fix the zone deliberately; the default is recorded in
+    the manifest.
 
 No decision is open.
 

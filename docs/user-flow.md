@@ -71,8 +71,7 @@ xdg-open ~/whatsapp/sites/2026-11-17-family-4f2a/index.html     # or Explorer / 
 
 `build` writes one folder per chat (all of them, unless you pass `--chat <jid>` for only one) plus an
 optional index at `~/whatsapp/sites/index.html`. After that, wexport is not needed any more: the folder
-opens by double-click, and `wexport serve ~/whatsapp/sites/2026-11-17-family-4f2a` exists only for the
-case where you prefer an `http://` address.
+opens by double-click, and nothing else is required on the machine that reads it.
 
 The key can be given three ways: the screenshot (`--key key.png`), the 64 digits copied from it
 (`--key 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`--key encrypted_backup.key`).
@@ -102,8 +101,9 @@ Each chat folder opens by double-clicking its `index.html`, with nothing install
 wexport, no network. Everything it needs is inside the folder — messages, images, video, voice notes.
 Sharing one chat is zipping that folder, which is why a shared chat with video can be large.
 
-If a browser refuses to open a local file properly, `wexport serve <folder>` gives the same archive over
-`http://127.0.0.1:8765` — a fallback, not the normal way.
+Every message shows its full date and time with the UTC offset — `2026-11-17 14:32:05 +01:00`, plus a
+day separator with the weekday — so opening the archive in ten years still tells you exactly when
+something was said. Those strings are written at build time and never recomputed by the browser.
 
 Keep the screenshot of the key and the chat folders together but separately stored: the key alone is
 useless without the backup, and the chat folders are the readable copy that does not need the key at all.
