@@ -62,6 +62,16 @@ class Message:
     reactions: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ChatStat:
+    chat: Chat
+    messages: int
+    first_ts: int
+    last_ts: int
+    media_count: int
+    media_bytes: int
+
+
 class Msgstore:
     """A decrypted msgstore.db, read-only."""
 
@@ -181,22 +191,83 @@ class Msgstore:
                 seen[jid] = Chat(jid=jid, name=_display_name(None, jid), is_group=jid.endswith("@g.us"))
         return sorted(seen.values(), key=lambda c: c.name.lower())
 
+    def chat_stats(self) -> list[ChatStat]:
+        """Every chat with the numbers a person needs to choose one: messages, range, media weight."""
+        cached = self._cache.get("stats")
+        if isinstance(cached, list):
+            return cached
+        if self.c_chat_row and self.chat_by_row:
+            grouping = f'm."{self.c_chat_row}"'
+        elif self.c_chat_jid:
+            grouping = f'm."{self.c_chat_jid}"'
+        else:
+            return []
+
+        totals: dict[object, tuple[int, int, int]] = {}
+        rows = self.con.execute(
+            f'SELECT {grouping}, COUNT(*), MIN(m."{self.c_ts}"), MAX(m."{self.c_ts}") '
+            f"FROM message m GROUP BY 1"
+        )
+        for key, count, first, last in rows:
+            totals[key] = (int(count), int(first or 0), int(last or 0))
+
+        media: dict[object, tuple[int, int]] = {}
+        message_col = self.media_cols["message"]
+        size_col = self.media_cols["bytes"]
+        if "message_media" in self.has and message_col:
+            size = f'COALESCE(SUM(d."{size_col}"), 0)' if size_col else "0"
+            rows = self.con.execute(
+                f'SELECT {grouping}, COUNT(*), {size} FROM message_media d '
+                f'JOIN message m ON m."{self.c_id}" = d."{message_col}" GROUP BY 1'
+            )
+            media = {key: (int(count), int(size or 0)) for key, count, size in rows}
+
+        calls = self._call_times()
+        out: list[ChatStat] = []
+        if self.chat_by_row:
+            for row_id, chat in self.chat_by_row.items():
+                count, first, last = totals.get(row_id, (0, 0, 0))
+                last = max(last, calls.get(self.chat_jid_row.get(row_id), 0))
+                first = first or last
+                count_media, size_media = media.get(row_id, (0, 0))
+                out.append(ChatStat(chat, count, first, last, count_media, size_media))
+        else:
+            for jid, (count, first, last) in totals.items():
+                if not jid:
+                    continue
+                clean = str(jid).strip()
+                count_media, size_media = media.get(jid, (0, 0))
+                out.append(
+                    ChatStat(
+                        Chat(jid=clean, name=_display_name(None, clean), is_group=clean.endswith("@g.us")),
+                        count,
+                        first,
+                        last,
+                        count_media,
+                        size_media,
+                    )
+                )
+        self._cache["stats"] = out
+        return out
+
+    def _call_times(self) -> dict[int, int]:
+        """Newest call per jid row, so a chat whose last event was a call still sorts correctly."""
+        if "call_log" not in self.has:
+            return {}
+        cols = self._cols("call_log")
+        if "jid_row_id" not in cols or "timestamp" not in cols:
+            return {}
+        return {
+            int(jid): int(stamp or 0)
+            for jid, stamp in self.con.execute("SELECT jid_row_id, MAX(timestamp) FROM call_log GROUP BY 1")
+        }
+
     def last_ts(self, chat: Chat) -> int:
-        """Newest message time in one chat, for naming the archive folder. One indexed query."""
-        where, params = self._chat_filter(chat)
-        row = self.con.execute(f'SELECT MAX(m."{self.c_ts}") FROM message m WHERE {where}', params).fetchone()
-        newest = int((row[0] if row else 0) or 0)
-        if "call_log" in self.has and self.chat_by_row:
-            wanted = [
-                self.chat_jid_row[cid] for cid, c in self.chat_by_row.items() if c.jid == chat.jid
-            ]
-            if wanted:
-                marks = ",".join("?" * len(wanted))
-                call = self.con.execute(
-                    f'SELECT MAX(timestamp) FROM call_log WHERE jid_row_id IN ({marks})', wanted
-                ).fetchone()
-                newest = max(newest, int((call[0] if call else 0) or 0))
-        return newest
+        """Newest message time in one chat, including a call as the last event."""
+        return max(
+            (stat.last_ts for stat in self.chat_stats() if stat.chat.jid == chat.jid),
+            default=0,
+        )
 
     def apply_contacts(self, path: str | Path) -> None:
         """Name the chats from `wa.db`, when the user copied it. Numbers otherwise."""

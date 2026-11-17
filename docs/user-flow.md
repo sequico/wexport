@@ -64,14 +64,24 @@ backup was never redone after enabling it): go back to step 1 and 2. wexport can
 ## 4. Run wexport
 
 ```
-wexport check ~/whatsapp/phone-copy --key key.png
-wexport build ~/whatsapp/phone-copy --key key.png --out ~/whatsapp/sites
+wexport check ~/whatsapp/phone-copy --key key.png --chats
+wexport build ~/whatsapp/phone-copy --key key.png --out ~/whatsapp/sites --chat "Family"
 xdg-open ~/whatsapp/sites/2026-11-17-family-4f2a/index.html     # or Explorer / Finder
 ```
 
-`build` writes one folder per chat (all of them, unless you pass `--chat <jid>` for only one) plus an
-optional index at `~/whatsapp/sites/index.html`. After that, wexport is not needed any more: the folder
-opens by double-click, and nothing else is required on the machine that reads it.
+`--chats` lists the conversations with their last message, size and JID, so you can choose by name:
+
+```
+last message                   msgs  media      size  chat        jid
+2026-12-02 11:04:00 +01:00        9      6    1.2 MB  Family      120363000000000001@g.us
+2026-12-02 10:04:00 +01:00        8      1    4.0 kB  Alice       393331234567@s.whatsapp.net
+```
+
+Add `--sort messages`, `--sort size` or `--sort name` to reorder, `--reverse` to flip. Then build the
+ones you want with `--chat <name or jid>`; without it, every chat is built.
+
+`build` writes one folder per chat plus an optional index at `~/whatsapp/sites/index.html`. After that,
+wexport is not needed any more: the folder opens by double-click.
 
 The key can be given three ways: the screenshot (`--key key.png`), the 64 digits copied from it
 (`--key 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`--key encrypted_backup.key`).

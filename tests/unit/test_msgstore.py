@@ -83,6 +83,22 @@ def test_reactions_are_read_and_attached(store):
     assert messages[16].reactions == ["👍"]
 
 
+def test_chat_stats_counts_messages_and_media(store):
+    stats = {stat.chat.name: stat for stat in store.chat_stats()}
+    family = stats["Family"]
+    assert family.messages == 9
+    assert family.media_count == 6
+    assert family.media_bytes > 0
+    assert family.last_ts > family.first_ts
+    assert stats["Empty chat"].messages == 0
+
+
+def test_a_call_can_be_the_last_event(store):
+    stats = {stat.chat.name: stat for stat in store.chat_stats()}
+    alice = stats["393331234567"]
+    assert any(stat.last_ts == alice.last_ts for stat in stats.values())
+
+
 def test_unknown_schema_fails_loudly(tmp_path):
     database = tmp_path / "msgstore.db"
     with sqlite3.connect(database) as con:

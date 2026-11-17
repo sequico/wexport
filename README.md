@@ -22,10 +22,15 @@ WhatsApp showed you when you enabled end-to-end encrypted backups, joins the mes
 
 ```sh
 uv sync
-uv run wexport check ~/whatsapp/phone-copy --key <64 hex digits>
-uv run wexport build ~/whatsapp/phone-copy --key <64 hex digits> --out ~/whatsapp/archives --index
+uv run wexport check ~/whatsapp/phone-copy --key <64 hex digits> --chats --sort last
+uv run wexport build ~/whatsapp/phone-copy --key <64 hex digits> --out ~/whatsapp/archives \
+  --chat Family --index
 xdg-open ~/whatsapp/archives/2026-11-17-family-4f2a/index.html
 ```
+
+`check --chats` lists every chat with its last event, message count and media weight, ordered by
+`--sort last|messages|size|name` (and `--reverse`), so you pick from real names instead of guessing.
+Without `--chat`, `build` writes one archive per chat.
 
 The key can be 64 hex digits (spaces and a 4×4 grid are fine), a screenshot of them, or the phone's
 `encrypted_backup.key` on a rooted device. The screenshot path needs the OCR extra and the `tesseract`

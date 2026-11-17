@@ -17,7 +17,7 @@ from .backup.decrypt import decrypt_to
 from .backup.merge import merge
 from .db.msgstore import Chat, Msgstore
 from .db.slim import FrozenTime
-from .errors import IncompleteBuild, UnreadableInput, WexError
+from .errors import IncompleteBuild, UnreadableInput, UnusableKey, WexError
 from .keys import load_key
 from .site.build import build_chat, write_index
 
@@ -34,6 +34,15 @@ def build_parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check", help="report what the backup contains and whether it can be opened")
     check.add_argument("input", help="the folder copied from the phone (contains Databases/)")
     check.add_argument("--key", help="64 hex digits, a screenshot, or encrypted_backup.key")
+    check.add_argument("--chats", action="store_true", help="list the chats without building anything")
+    check.add_argument(
+        "--sort",
+        choices=["last", "messages", "size", "name"],
+        default="last",
+        help="listing order: newest last message, most messages, heaviest media, or name",
+    )
+    check.add_argument("--reverse", action="store_true", help="flip the listing order")
+    check.add_argument("--tz", default=None, help="IANA timezone for the printed timestamps")
 
     build = sub.add_parser("build", help="write one archive folder per chat")
     build.add_argument("input", help="the folder copied from the phone")
@@ -91,16 +100,77 @@ def _check(args: argparse.Namespace) -> int:
     print(f"media folder  {inputs.media if inputs.media else 'MISSING (every attachment will be a placeholder)'}")
 
     preflight.require_openable(header)
+    if args.chats and not args.key:
+        raise UnusableKey(
+            "listing the chats needs --key: the names live inside the encrypted database.\n"
+            "Give the 64 digits, the screenshot, or encrypted_backup.key."
+        )
     if args.key:
         key = load_key(args.key)
         print("\nverifying    the key against the backup (this decrypts it once)")
         with tempfile.TemporaryDirectory(prefix="wexport-check-") as workspace:
             probe = Path(workspace) / "probe.db"
             decrypt_to(inputs.database, probe, key)
+            if args.chats:
+                _list_chats(inputs, probe, workspace, key, args)
+                return 0
         print("key           verified against this backup")
     print()
     print("ready to build: wexport build <input> --key <key> --out <folder>")
     return 0
+
+
+# ---------------------------------------------------------------- listing
+
+
+def _list_chats(inputs, database: Path, workspace: str, key, args: argparse.Namespace) -> None:
+    """Print the chats with what matters for choosing one, in the order asked for."""
+    time = FrozenTime(args.tz or _system_zone())
+    with Msgstore(database) as store:
+        if inputs.contacts is not None:
+            contacts = _contacts_database(inputs.contacts, workspace, key)
+            if contacts is not None:
+                store.apply_contacts(contacts)
+        stats = store.chat_stats()
+
+    def last(stat) -> float:
+        return stat.last_ts
+
+    sorters = {
+        "last": (last, True),
+        "messages": (lambda stat: stat.messages, True),
+        "size": (lambda stat: stat.media_bytes, True),
+        "name": (lambda stat: stat.chat.name.lower(), False),
+    }
+    keyfunc, descending = sorters[args.sort]
+    if args.reverse:
+        descending = not descending
+    stats.sort(key=lambda stat: (keyfunc(stat), stat.chat.name.lower()), reverse=descending)
+
+    width = max((len(stat.chat.name) for stat in stats), default=8)
+    print(f"\n{'last message':<27} {'msgs':>7} {'media':>6} {'size':>9}  {'chat':<{width}}  jid")
+    for stat in stats:
+        stamp = time.local(stat.last_ts) if stat.last_ts else "—"
+        print(
+            f"{stamp:<27} {stat.messages:>7} {stat.media_count:>6} "
+            f"{_human_bytes(stat.media_bytes):>9}  {stat.chat.name:<{width}}  {stat.chat.jid}"
+        )
+    total_messages = sum(stat.messages for stat in stats)
+    total_bytes = sum(stat.media_bytes for stat in stats)
+    print(
+        f"\n{len(stats)} chat(s), {total_messages} message(s), "
+        f"{_human_bytes(total_bytes)} of media\n"
+        "Build one or more: wexport build <input> --key <key> --out <folder> --chat <name|jid>"
+    )
+
+
+def _human_bytes(count: int) -> str:
+    size = float(count)
+    for unit in ("B", "kB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"  # pragma: no cover - the loop always returns
 
 
 # ---------------------------------------------------------------- build
