@@ -1,7 +1,8 @@
 # Implementation plan
 
-Status: planning. Android only, `crypt15` backups, 64-digit key, media folder copied by the user.
-Everything below is the v1 target; nothing is implemented yet.
+Status: v0.1.0 implemented. This document remains the **specification** — what the product must be;
+`README.md` says what is done and what is still open. Android only, `crypt15` backups, 64-digit key,
+media folder copied by the user.
 
 ---
 
@@ -195,7 +196,7 @@ message(id INTEGER PRIMARY KEY, chat_id INTEGER, ts INTEGER, ts_local TEXT, from
         status INTEGER, payload TEXT)            -- JSON for polls, locations, vcards, calls
 media(id INTEGER PRIMARY KEY, message_id INTEGER, kind TEXT, path TEXT,
       mime TEXT, bytes INTEGER, width INTEGER, height INTEGER, duration_ms INTEGER,
-      thumb TEXT, peaks TEXT, sha256 TEXT, missing INTEGER DEFAULT 0)
+      thumb TEXT, peaks TEXT, sha256 TEXT, alt TEXT, name TEXT, missing INTEGER DEFAULT 0)
 reaction(message_id INTEGER, sender_jid TEXT, emoji TEXT, ts INTEGER)
 receipt(message_id INTEGER, delivered_ts INTEGER, read_ts INTEGER, played_ts INTEGER)
 ```
@@ -211,7 +212,12 @@ Decisions worth stating:
 - Exotic types go in `payload` as JSON instead of one table each. A new WhatsApp feature then costs
   a renderer, not a migration.
 - `missing` on `media` is a first-class state: the user did not copy `Media/`, or the file was
-  deleted. The site shows a labelled placeholder, never a broken image.
+  deleted. The archive shows a labelled placeholder, never a broken image.
+- `alt` is the only optional derivative that is not a thumbnail: the M4A track from
+  `--transcode audio` (Safari's Opus support) or the 720p MP4 from `--transcode video`. Present only
+  when the build asked for it.
+- `name` keeps the original filename for display: the file on disk is content-addressed, but a person
+  reading the archive needs to see `IMG-20261101-WA0003.jpg`, not a SHA-256.
 - **Two times per message, and they mean different things.** `ts` is the integer millisecond since
   epoch (UTC) — the sortable truth, what the archive orders by. `ts_local` is the rendered wall-clock
   with an explicit offset (`2026-11-17 14:32:05 +01:00`), **frozen at build time**. The viewer never
@@ -410,6 +416,7 @@ audio` / `video` / `all` are the explicit paths that re-encode, and the default 
 | Opus in OGG on Safari | voice notes do not play | optional M4A track on demand (`--transcode audio`) |
 | Screenshot-key OCR lives on `wa-crypt-tools` main, not in 0.2.0 | `--key key.png` missing on the released version | pinned git ref (decided) + header fixture test; revisit when the release lands |
 | Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `--chat` builds only what is wanted |
+| Poll options and votes are not decoded (`shortcut:` in `db/msgstore.py`) | a poll shows its question, not its choices | decode the add-on payload when a real backup with polls is available; the record already carries `kind: poll` |
 | Nuitka one-file needs a C toolchain and a long build on each platform | releases become a slow manual step, hard to repeat | fixed build images (Ubuntu + Windows runner), one build per release; the AppImage wrapper, if ever wanted, is a second step on the same binary |
 | Single binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first run fails on a clean machine | exit `5` at startup, naming the missing binary and the install command for that platform (§2); bundling deferred with the Rust work (§12) |
 | The archive is a folder, not one file | sending it means zipping; a chat with video is large | the folder is the unit, and the user flow says zip it; media are duplicated per chat on purpose so a folder stands alone |
