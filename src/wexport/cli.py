@@ -70,9 +70,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _check(args: argparse.Namespace) -> int:
-    preflight.require_binaries("ffmpeg", "ffprobe")
+    # The report first: `require_binaries` tells the user to run `check`, which is only useful if
+    # this command prints the environment before it refuses.
     for line in preflight.environment_report():
         print(line)
+    preflight.require_binaries("ffmpeg", "ffprobe")
 
     inputs = preflight.discover(args.input)
     header = preflight.read_header(inputs.database)
@@ -152,8 +154,8 @@ def _build(args: argparse.Namespace) -> int:
                     f"{summary.media} media ({summary.missing} missing), "
                     f"{summary.bytes / 1e6:.1f} MB"
                 )
-                if summary.failures:
-                    print(f"    {len(summary.failures)} file(s) could not be processed")
+                if summary.failure_count:
+                    print(f"    {summary.failure_count} file(s) could not be processed")
                     for failure in summary.failures[:5]:
                         print(f"      {failure}")
 
@@ -161,7 +163,7 @@ def _build(args: argparse.Namespace) -> int:
         page = write_index(out_root, summaries, header.app_version)
         print(f"index        {page}")
 
-    failures = sum(len(summary.failures) for summary in summaries)
+    failures = sum(summary.failure_count for summary in summaries)
     print()
     print(f"done: {len(summaries)} archive(s) in {out_root}")
     if failures:

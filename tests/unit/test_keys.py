@@ -35,6 +35,14 @@ def test_non_key_file_is_refused(tmp_path):
         load_key(str(bogus))
 
 
+def test_a_text_file_with_the_digits_is_a_key(tmp_path):
+    from wexport.keys import load_key
+
+    stored = tmp_path / "key.txt"
+    stored.write_text("0123 4567 89ab cdef\n" * 4, encoding="utf-8")
+    assert load_key(str(stored)) is not None
+
+
 def test_screenshot_without_tesseract_says_what_to_install(tmp_path, monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     image = tmp_path / "key.png"

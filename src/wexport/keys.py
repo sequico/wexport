@@ -55,6 +55,14 @@ def load_key(spec: str) -> Any:
     try:
         return KeyFactory.new(path)
     except Exception as exc:
+        # A text file holding the 64 digits is a common way people store the key.
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            text = ""
+        hexkey = normalize_hex(text)
+        if hexkey:
+            return KeyFactory.from_hex(hexkey)
         raise UnusableKey(
             f"{path.name} is not a usable key file: {exc}\n"
             "It must be the phone's encrypted_backup.key, or the 64 hex digits in a text file."

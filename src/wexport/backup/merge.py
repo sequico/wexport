@@ -45,10 +45,13 @@ def merge(base: str | Path, increments: Iterable[str | Path]) -> Path:
 
 
 def _apply_one(base: Path, inc: Path) -> None:
+    con: sqlite3.Connection | None = None
     try:
         con = sqlite3.connect(base)
         con.execute("ATTACH DATABASE ? AS inc", (str(inc),))
     except sqlite3.Error as exc:
+        if con is not None:
+            con.close()
         raise UnreadableInput(f"{inc.name} cannot be attached: {exc}") from exc
 
     try:

@@ -26,6 +26,7 @@ from . import chunks
 
 ASSETS = Path(__file__).parent / "assets"
 BATCH = 256
+FAILURE_SAMPLES = 20
 
 
 @dataclass
@@ -35,8 +36,16 @@ class Summary:
     messages: int = 0
     media: int = 0
     missing: int = 0
-    failures: list[str] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)  # a sample, not everything
+    failure_count: int = 0
     bytes: int = 0
+
+
+def _record_failure(summary: Summary, text: str) -> None:
+    """Count every failure, keep a bounded sample: a broken folder must not fill memory."""
+    summary.failure_count += 1
+    if len(summary.failures) < FAILURE_SAMPLES:
+        summary.failures.append(text)
 
 
 def build_chat(
@@ -158,7 +167,7 @@ def _preparer(
                 media.kind, source, archive, placed.sha256, probe=probe, run=run
             )
         except Exception as exc:
-            summary.failures.append(f"{message.id}: {media.rel_path}: {_first_line(exc)}")
+            _record_failure(summary, f"{message.id}: {media.rel_path}: {_first_line(exc)}")
             return row
         row.update(
             width=media.width or derived.width,
@@ -211,7 +220,7 @@ def _transcode(
             )
         return rel.as_posix()
     except Exception as exc:
-        summary.failures.append(f"{message.id}: transcode {kind}: {_first_line(exc)}")
+        _record_failure(summary, f"{message.id}: transcode {kind}: {_first_line(exc)}")
         return None
 
 
