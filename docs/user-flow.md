@@ -65,11 +65,13 @@ backup was never redone after enabling it): go back to step 1 and 2. wexport can
 
 ```
 wexport check ~/whatsapp/phone-copy --key key.png
-wexport build ~/whatsapp/phone-copy --key key.png --out ~/whatsapp/site
-wexport serve ~/whatsapp/site
+wexport build ~/whatsapp/phone-copy --key key.png --out ~/whatsapp/sites
+wexport serve ~/whatsapp/sites/2026-11-17-family-4f2a
 ```
 
-Then open the printed `http://127.0.0.1:8765` address.
+`build` writes one folder per chat (all of them, unless you pass `--chat <jid>` for only one) plus an
+optional index at `~/whatsapp/sites/index.html`. `serve` takes one chat folder, and prints the
+`http://127.0.0.1:8765` address to open.
 
 The key can be given three ways: the screenshot (`--key key.png`), the 64 digits copied from it
 (`--key 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`--key encrypted_backup.key`).
@@ -90,5 +92,9 @@ The key can be given three ways: the screenshot (`--key key.png`), the 64 digits
 `wexport serve` to open (a browser opening the HTML file directly cannot read the data file or seek in
 a video), and it never phones home.
 
-Keep the screenshot of the key and `site/` together but separately stored: the key alone is useless
-without the backup, and the site is the readable copy that does not need the key at all.
+Each chat folder stands alone, so sharing one is zipping that one folder — with all of its media, which
+is why a shared chat can be large. Nothing outside the folder is needed, and nothing about the other
+chats is inside it.
+
+Keep the screenshot of the key and the sites together but separately stored: the key alone is useless
+without the backup, and the sites are the readable copy that does not need the key at all.

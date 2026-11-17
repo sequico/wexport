@@ -12,9 +12,9 @@ phone ──► folder you copy by USB ──► wexport ──► site/ (HTML +
 
 `wexport` reads `msgstore.db.crypt15` (and the daily incrementals), decrypts it with the 64-digit
 key WhatsApp showed you when you enabled end-to-end encrypted backups, joins the messages with the
-`Media/` folder you copied, and writes a site with no external dependencies — a virtualised chat
-view, thumbnails, video posters, voice-note waveforms and full-text search — that `wexport serve`
-opens in your browser.
+`Media/` folder you copied, and writes one self-contained site per chat — a virtualised timeline,
+thumbnails, video posters, voice-note waveforms and full-text search — that `wexport serve` opens in
+your browser. A chat folder can be zipped and given to someone without exposing the others.
 
 It runs entirely offline. Nothing is uploaded anywhere.
 
@@ -38,7 +38,8 @@ backups, legacy `crypt12`/`crypt14`, re-encrypting anything back.
 ## Status
 
 Planning stage: no code yet. Milestone M0 not started — see the plan for milestones and acceptance
-criteria. Owner decisions taken: GPL-3.0-or-later, transcoding opt-in.
+criteria. Owner decisions taken: GPL-3.0-or-later, transcode opt-in, one site per chat, English
+throughout, plaintext archive with a warning. Packaging is the one decision still open.
 
 ## License
 
