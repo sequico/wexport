@@ -166,7 +166,7 @@ def _build(args: argparse.Namespace) -> int:
                         print(f"      {failure}")
 
     if args.index:
-        page = write_index(out_root, summaries, header.app_version)
+        page = write_index(out_root, summaries)
         print(f"index        {page}")
 
     failures = sum(summary.failure_count for summary in summaries)

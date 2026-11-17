@@ -46,6 +46,12 @@ def test_two_archives_and_an_index(built):
     assert (built / "index.html").is_file()
 
 
+def test_the_index_credits_the_builder_not_whatsapp(built):
+    page = (built / "index.html").read_text(encoding="utf-8")
+    assert "Built with wexport 0.1.0" in page
+    assert "2.26.34.7" not in page
+
+
 def test_each_archive_is_self_contained(built):
     for archive in _archives(built):
         for name in ("index.html", "app.js", "app.css", "README.txt", "data/manifest.js"):

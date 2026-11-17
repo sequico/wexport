@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import html
+import json
 import re
 import shutil
 from collections.abc import Callable, Iterable, Iterator
@@ -79,7 +80,6 @@ def build_chat(
     summary = Summary(archive=archive, name=chat.name)
     with ChatDB(chat_db, time, app_version) as db:
         db.add_chat(chat.jid, chat.name, chat.is_group)
-        first_ts = last_ts = 0
         messages = msgstore.messages(chat)
         prepare = _preparer(archive, copy_root, media_root, link, transcode, probe, run, summary)
         with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
@@ -97,14 +97,12 @@ def build_chat(
                         if media_row.get("missing"):
                             summary.missing += 1
                     if summary.messages == 0:
-                        first_ts = message.ts
                         summary.first_ts = message.ts
-                    last_ts = message.ts
                     summary.last_ts = message.ts
                     if message.sender:
                         summary.people.add(message.sender)
                     summary.messages += 1
-        db.set_chat_range(first_ts, last_ts, summary.messages)
+        db.set_chat_range(summary.first_ts, summary.last_ts, summary.messages)
         db.commit()
 
         if summary.messages == 0:
@@ -128,7 +126,7 @@ def build_chat(
     return summary
 
 
-def write_index(out_root: Path, summaries: Iterable[Summary], app_version: str) -> Path:
+def write_index(out_root: Path, summaries: Iterable[Summary]) -> Path:
     """The only page that lists chats together; it never lives inside a chat folder."""
     items = "\n".join(
         f'<li><a href="{html.escape(summary.archive.name)}/index.html">'
@@ -146,7 +144,7 @@ server or wexport installed.</p>
 <ul>
 {items}
 </ul>
-<p>Built with wexport {html.escape(app_version)}.</p>
+<p>Built with wexport {html.escape(__version__)}.</p>
 </html>
 """
     target = out_root / "index.html"
@@ -184,7 +182,7 @@ def _preparer(
             derived = derive_mod.derive(
                 media.kind, source, archive, placed.sha256, probe=probe, run=run
             )
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             _record_failure(summary, f"{message.id}: {media.rel_path}: {_first_line(exc)}")
             return row
         row.update(
@@ -194,8 +192,6 @@ def _preparer(
             thumb=derived.thumb,
         )
         if derived.peaks is not None:
-            import json
-
             row["peaks"] = json.dumps(derived.peaks, separators=(",", ":"))
         if _wants_transcode(transcode, media.kind):
             row["alt"] = _transcode(media.kind, source, archive, placed.sha256, run, summary, message)
