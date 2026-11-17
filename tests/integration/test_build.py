@@ -89,6 +89,12 @@ def test_missing_media_becomes_a_placeholder(built):
     assert '"mi":1' in chunk
 
 
+def test_reactions_reach_the_archive(built):
+    family = next(a for a in _archives(built) if "family" in a.name)
+    chunk = (family / "data" / "2026-12.js").read_text(encoding="utf-8")
+    assert '"rx":["👍"]' in chunk
+
+
 def test_viewer_uses_no_fetch_modules_or_workers(built):
     for archive in _archives(built):
         script = (archive / "app.js").read_text(encoding="utf-8")

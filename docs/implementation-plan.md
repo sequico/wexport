@@ -191,13 +191,13 @@ contact(id INTEGER PRIMARY KEY, jid TEXT UNIQUE, name TEXT, is_me INTEGER DEFAUL
 chat(id INTEGER PRIMARY KEY, jid TEXT UNIQUE, name TEXT, is_group INTEGER,
      first_ts INTEGER, last_ts INTEGER, message_count INTEGER)
 message(id INTEGER PRIMARY KEY, chat_id INTEGER, ts INTEGER, ts_local TEXT, from_me INTEGER,
-        sender_jid TEXT, kind TEXT, text TEXT,
-        quoted_id INTEGER, edited_ts INTEGER, revoked INTEGER DEFAULT 0,
+        sender TEXT, kind TEXT, text TEXT,
+        quoted_id INTEGER, edited INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0,
         status INTEGER, payload TEXT)            -- JSON for polls, locations, vcards, calls
 media(id INTEGER PRIMARY KEY, message_id INTEGER, kind TEXT, path TEXT,
       mime TEXT, bytes INTEGER, width INTEGER, height INTEGER, duration_ms INTEGER,
       thumb TEXT, peaks TEXT, sha256 TEXT, alt TEXT, name TEXT, missing INTEGER DEFAULT 0)
-reaction(message_id INTEGER, sender_jid TEXT, emoji TEXT, ts INTEGER)
+reaction(message_id INTEGER, sender_jid TEXT, emoji TEXT, ts INTEGER)   -- sender stays NULL for now
 receipt(message_id INTEGER, delivered_ts INTEGER, read_ts INTEGER, played_ts INTEGER)
 ```
 
@@ -207,8 +207,10 @@ Decisions worth stating:
   folder can be moved or copied to another disk without a rebuild. The absolute source path is never
   stored: the archive is not a permanent fixture of one machine.
 - `kind` is a small closed vocabulary (`text`, `image`, `video`, `audio`, `document`, `sticker`,
-  `gif`, `ptv`, `location`, `contact`, `poll`, `call`, `system`, `deleted`), not WhatsApp's numeric
-  types: the mapping lives in `db/msgstore.py` and nowhere else.
+  `gif`, `location`, `contact`, `call`, `system`, `deleted`), not WhatsApp's numeric types: the
+  mapping lives in `db/msgstore.py` and nowhere else. A poll is currently a `text` message with its
+  question — distinguishing it needs the add-on payload, which is the same row a link preview uses,
+  so guessing there mislabels ordinary messages.
 - Exotic types go in `payload` as JSON instead of one table each. A new WhatsApp feature then costs
   a renderer, not a migration.
 - `missing` on `media` is a first-class state: the user did not copy `Media/`, or the file was
@@ -417,7 +419,7 @@ audio` / `video` / `all` are the explicit paths that re-encode, and the default 
 | Opus in OGG on Safari | voice notes do not play | optional M4A track on demand (`--transcode audio`) |
 | Screenshot-key OCR lives on `wa-crypt-tools` main, not in 0.2.0 | `--key key.png` missing on the released version | pinned git ref (decided) + header fixture test; revisit when the release lands |
 | Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `--chat` builds only what is wanted |
-| Poll options and votes are not decoded (`shortcut:` in `db/msgstore.py`) | a poll shows its question, not its choices | decode the add-on payload when a real backup with polls is available; the record already carries `kind: poll` |
+| Poll options and votes are not decoded (a poll renders as its question text) | a poll loses its choices | decode the add-on payload when a real backup with polls is available; the add-on row is already read for reactions |
 | Nuitka one-file needs a C toolchain and a long build on each platform | releases become a slow manual step, hard to repeat | fixed build images (Ubuntu + Windows runner), one build per release; the AppImage wrapper, if ever wanted, is a second step on the same binary |
 | Single binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first run fails on a clean machine | exit `5` at startup, naming the missing binary and the install command for that platform (§2); bundling deferred with the Rust work (§12) |
 | The archive is a folder, not one file | sending it means zipping; a chat with video is large | the folder is the unit, and the user flow says zip it; media are duplicated per chat on purpose so a folder stands alone |

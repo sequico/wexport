@@ -42,7 +42,7 @@ def test_every_kind_is_mapped(store):
     chats = {chat.name: chat for chat in store.chats()}
     family = store.messages(chats["Family"])
     kinds = {message.kind for message in family}
-    assert {"text", "image", "audio", "video", "document", "sticker", "gif", "system", "poll"} <= kinds
+    assert {"text", "image", "audio", "video", "document", "sticker", "gif", "system"} <= kinds
 
     alice = list(store.messages(chats["393331234567"]))
     kinds = {message.kind for message in alice}
@@ -69,6 +69,18 @@ def test_call_log_is_attributed_to_its_chat(store):
     calls = [m for m in store.messages(chat) if m.kind == "call"]
     assert len(calls) == 1
     assert calls[0].payload == {"duration_s": 332, "video": True, "missed": False}
+
+
+def test_a_link_preview_add_on_does_not_turn_a_message_into_a_poll(store):
+    chat = next(c for c in store.chats() if c.jid.startswith("393331234567"))
+    messages = {message.id: message for message in store.messages(chat)}
+    assert messages[2].kind == "text"  # it has an add-on row, and it is still a text message
+
+
+def test_reactions_are_read_and_attached(store):
+    chat = next(c for c in store.chats() if c.jid == "120363000000000001@g.us")
+    messages = {message.id: message for message in store.messages(chat)}
+    assert messages[16].reactions == ["👍"]
 
 
 def test_unknown_schema_fails_loudly(tmp_path):

@@ -19,8 +19,8 @@ CREATE TABLE contact (id INTEGER PRIMARY KEY, jid TEXT UNIQUE, name TEXT, is_me 
 CREATE TABLE chat (id INTEGER PRIMARY KEY, jid TEXT UNIQUE, name TEXT, is_group INTEGER,
                    first_ts INTEGER, last_ts INTEGER, message_count INTEGER);
 CREATE TABLE message (id INTEGER PRIMARY KEY, chat_id INTEGER, ts INTEGER, ts_local TEXT,
-                      from_me INTEGER, sender_jid TEXT, kind TEXT, text TEXT,
-                      quoted_id INTEGER, edited_ts INTEGER, revoked INTEGER DEFAULT 0,
+                      from_me INTEGER, sender TEXT, kind TEXT, text TEXT,
+                      quoted_id INTEGER, edited INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0,
                       status INTEGER, payload TEXT);
 CREATE TABLE media (id INTEGER PRIMARY KEY, message_id INTEGER, kind TEXT, path TEXT,
                     mime TEXT, bytes INTEGER, width INTEGER, height INTEGER, duration_ms INTEGER,
@@ -94,8 +94,8 @@ class ChatDB:
     def add_message(self, message) -> int:
         assert self.chat_id is not None
         cursor = self.con.execute(
-            "INSERT INTO message(id, chat_id, ts, ts_local, from_me, sender_jid, kind, text,"
-            " quoted_id, edited_ts, revoked, status, payload)"
+            "INSERT INTO message(id, chat_id, ts, ts_local, from_me, sender, kind, text,"
+            " quoted_id, edited, revoked, status, payload)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 message.id,
@@ -103,11 +103,11 @@ class ChatDB:
                 message.ts,
                 self.time.local(message.ts),
                 int(message.from_me),
-                message.sender_jid,
+                message.sender,
                 message.kind,
                 message.text,
                 message.quoted_id,
-                message.ts if message.edited else None,
+                int(message.edited),
                 int(message.revoked),
                 message.status,
                 None if not message.payload else _json(message.payload),

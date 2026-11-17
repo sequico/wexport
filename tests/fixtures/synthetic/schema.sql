@@ -39,7 +39,11 @@ CREATE TABLE message_media (
 
 CREATE TABLE message_revoked (message_row_id INTEGER PRIMARY KEY);
 CREATE TABLE message_system (message_row_id INTEGER PRIMARY KEY);
-CREATE TABLE message_add_on (message_row_id INTEGER PRIMARY KEY, message_add_on_type INTEGER);
+CREATE TABLE message_add_on (
+    _id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_row_id INTEGER,
+    message_add_on_type INTEGER
+);
 CREATE TABLE message_add_on_reaction (message_add_on_row_id INTEGER, reaction TEXT);
 CREATE TABLE message_vcard (message_row_id INTEGER PRIMARY KEY, display_name TEXT);
 

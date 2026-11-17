@@ -74,12 +74,17 @@ def build_chat(
                 prepared = list(pool.map(prepare, batch))
                 for message, media_row in zip(batch, prepared, strict=False):
                     db.add_message(message)
+                    for emoji in message.reactions:
+                        # shortcut: the add-on author is not read, so the sender stays NULL; the
+                        # viewer shows the emoji only. Read message_add_on.sender_jid when needed.
+                        db.add_reaction(message.id, None, emoji, message.ts)
                     if media_row is not None:
                         db.add_media(message.id, media_row)
                         summary.media += 1
                         if media_row.get("missing"):
                             summary.missing += 1
-                    first_ts = first_ts or message.ts
+                    if summary.messages == 0:
+                        first_ts = message.ts
                     last_ts = message.ts
                     summary.messages += 1
         db.set_chat_range(first_ts, last_ts, summary.messages)
@@ -140,13 +145,15 @@ def _preparer(
         if media is None:
             return None
         row: dict = {"kind": media.kind, "mime": media.mime, "name": Path(media.rel_path).name}
-        source = resolve_mod.source_for(media.rel_path, media_root, copy_root)
-        if source is None:
-            row["missing"] = 1
-            return row
-        placed = resolve_mod.place(source, archive, link=link)
-        row.update(sha256=placed.sha256, path=placed.rel_path, bytes=media.bytes or source.stat().st_size)
         try:
+            source = resolve_mod.source_for(media.rel_path, media_root, copy_root)
+            if source is None:
+                row["missing"] = 1
+                return row
+            placed = resolve_mod.place(source, archive, link=link)
+            row.update(
+                sha256=placed.sha256, path=placed.rel_path, bytes=media.bytes or source.stat().st_size
+            )
             derived = derive_mod.derive(
                 media.kind, source, archive, placed.sha256, probe=probe, run=run
             )

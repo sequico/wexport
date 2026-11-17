@@ -51,13 +51,14 @@ class Message:
     from_me: bool
     kind: str
     text: str = ""
-    sender_jid: str | None = None
+    sender: str | None = None  # display name of the group sender, not the raw JID
     quoted_id: int | None = None
     edited: bool = False
     revoked: bool = False
     status: int | None = None
     payload: dict = field(default_factory=dict)
     media: Media | None = None
+    reactions: list[str] = field(default_factory=list)
 
 
 class Msgstore:
@@ -137,6 +138,9 @@ class Msgstore:
         self.chat_jid_row: dict[int, int] = {}
         self.contact_names: dict[str, str] = {}
         self.chat_by_row = self._resolve_chats()
+        # Row sets and joins that do not change while the database is open; one read per build run,
+        # not one per chat.
+        self._cache: dict[str, dict[int, object]] = {}
         self._system_ids = self._id_set("message_system", "message_row_id")
 
     def _resolve_chats(self) -> dict[int, Chat]:
@@ -156,7 +160,7 @@ class Msgstore:
         self.chat_jid_row: dict[int, int] = {}
         for row in rows:
             jid = (row[1] or "").strip()
-            if not jid:
+            if not jid or row[3] is None:
                 continue
             out[row[0]] = Chat(jid=jid, name=_display_name(row[2], jid), is_group=jid.endswith("@g.us"))
             self.chat_jid_row[row[0]] = int(row[3])
@@ -227,7 +231,7 @@ class Msgstore:
     def messages(self, chat: Chat) -> Iterator[Message]:
         """Every message of one chat in time order, call-log entries included."""
         revoked = self._id_set("message_revoked", "message_row_id")
-        polls = self._id_set("message_add_on", "message_row_id")
+        reactions = self._reactions()
         media_rows = self._media_rows()
         vcards = self._vcard_rows()
 
@@ -253,20 +257,21 @@ class Msgstore:
         for row in self.con.execute(query, params):
             media = self._media_object(media_rows.get(row["id"]), row["wa_type"])
             caption = self._caption(media_rows.get(row["id"])) or ""
-            kind, payload = self._kind(row, media, vcards.get(row["id"]), row["id"] in polls)
+            kind, payload = self._kind(row, media, vcards.get(row["id"]))
             yield Message(
                 id=row["id"],
                 ts=int(row["ts"] or 0),
                 from_me=bool(row["from_me"]),
                 kind="deleted" if row["id"] in revoked else kind,
                 text=(row["text"] or "") or caption,
-                sender_jid=(self._person_name(row["remote"]) if not row["from_me"] else None),
+                sender=(self._person_name(row["remote"]) if not row["from_me"] else None),
                 quoted_id=row["quoted"] or None,
                 edited=bool(row["edit"]),
                 revoked=row["id"] in revoked,
                 status=row["status"],
                 payload=payload,
                 media=media,
+                reactions=reactions.get(row["id"], []),
             )
         yield from self._calls(chat)
 
@@ -286,15 +291,68 @@ class Msgstore:
         return f'm."{self.c_chat_jid}" IN ({",".join("?" * len(variants))})', list(variants)
 
     def _id_set(self, table: str, column: str) -> set[int]:
+        cached = self._cache.get(f"{table}.{column}")
+        if cached is not None:
+            return set(cached)  # type: ignore[arg-type]
         if table not in self.has or column not in self._cols(table):
+            self._cache[f"{table}.{column}"] = {}
             return set()
-        return {row[0] for row in self.con.execute(f'SELECT "{column}" FROM "{table}"')}
+        values = {row[0] for row in self.con.execute(f'SELECT "{column}" FROM "{table}"')}
+        self._cache[f"{table}.{column}"] = dict.fromkeys(values, True)  # type: ignore[assignment]
+        return values
+
+    def _reactions(self) -> dict[int, list[str]]:
+        """Emoji per message, from the add-on table, whichever of the two shapes the schema has."""
+        cached = self._cache.get("reactions")
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+        out: dict[int, list[str]] = {}
+        if "message_add_on" in self.has:
+            columns = self._cols("message_add_on")
+            message_col = next((c for c in ("message_row_id", "message_id") if c in columns), None)
+            if message_col:
+                if "reaction" in columns:
+                    rows = self.con.execute(
+                        f'SELECT "{message_col}", reaction FROM message_add_on WHERE reaction IS NOT NULL'
+                    )
+                    for message_id, emoji in rows:
+                        if emoji:
+                            out.setdefault(message_id, []).append(emoji)
+                elif "message_add_on_reaction" in self.has:
+                    id_col = next(
+                        (c for c in ("_id", "id", "message_add_on_id") if c in columns), None
+                    )
+                    parent = next(
+                        (
+                            c
+                            for c in ("message_add_on_row_id", "message_add_on_id", "parent_row_id")
+                            if c in self._cols("message_add_on_reaction")
+                        ),
+                        None,
+                    )
+                    if id_col and parent:
+                        rows = self.con.execute(
+                            f'SELECT a."{message_col}", r.reaction FROM message_add_on a '
+                            f'JOIN message_add_on_reaction r ON r."{parent}" = a."{id_col}"'
+                        )
+                        for message_id, emoji in rows:
+                            if emoji:
+                                out.setdefault(message_id, []).append(emoji)
+        self._cache["reactions"] = out  # type: ignore[assignment]
+        return out
 
     def _media_rows(self) -> dict[int, sqlite3.Row]:
+        cached = self._cache.get("media")
+        if cached is not None:
+            return cached  # type: ignore[return-value]
         key = self.media_cols["message"]
-        if "message_media" not in self.has or not key:
-            return {}
-        return {row[key]: row for row in self.con.execute("SELECT * FROM message_media")}
+        rows = (
+            {}
+            if "message_media" not in self.has or not key
+            else {row[key]: row for row in self.con.execute("SELECT * FROM message_media")}
+        )
+        self._cache["media"] = rows  # type: ignore[assignment]
+        return rows
 
     def _caption(self, row: sqlite3.Row | None) -> str | None:
         column = self.media_cols["caption"]
@@ -318,19 +376,25 @@ class Msgstore:
         )
 
     def _vcard_rows(self) -> dict[int, dict]:
-        if "message_vcard" not in self.has:
-            return {}
-        cols = self._cols("message_vcard")
-        key = next((c for c in ("message_row_id", "message_id") if c in cols), None)
-        name = next((c for c in ("display_name", "formatted_name", "vcard") if c in cols), None)
-        if key is None or name is None:
-            return {}
-        rows = self.con.execute(f'SELECT "{key}", "{name}" FROM message_vcard')
-        return {row[0]: {"name": row[1] or ""} for row in rows}
+        cached = self._cache.get("vcards")
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+        rows: dict[int, dict] = {}
+        if "message_vcard" in self.has:
+            cols = self._cols("message_vcard")
+            key = next((c for c in ("message_row_id", "message_id") if c in cols), None)
+            name = next((c for c in ("display_name", "formatted_name", "vcard") if c in cols), None)
+            if key is not None and name is not None:
+                rows = {
+                    row[0]: {"name": row[1] or ""}
+                    for row in self.con.execute(f'SELECT "{key}", "{name}" FROM message_vcard')
+                }
+        self._cache["vcards"] = rows  # type: ignore[assignment]
+        return rows
 
-    def _kind(
-        self, row: sqlite3.Row, media: Media | None, vcard: dict | None, is_poll: bool
-    ) -> tuple[str, dict]:
+    def _kind(self, row: sqlite3.Row, media: Media | None, vcard: dict | None) -> tuple[str, dict]:
+        # A message with a link preview also has an add-on row, which is why add-ons are read for
+        # reactions only: treating them as "a poll" mislabelled every message containing a link.
         if row["id"] in self._system_ids:
             return "system", {}
         if media is not None:
@@ -339,9 +403,6 @@ class Msgstore:
             return "location", {"lat": row["lat"], "lon": row["lon"]}
         if vcard is not None:
             return "contact", {"name": vcard.get("name", "")}
-        if is_poll:
-            # shortcut: poll options and votes are not decoded; it renders as a card with its text.
-            return "poll", {"type": "poll"}
         return "text", {}
 
     def _calls(self, chat: Chat) -> Iterator[Message]:
@@ -349,9 +410,15 @@ class Msgstore:
             return
         cols = self._cols("call_log")
         jid_col = next((c for c in ("jid_row_id", "key_remote_jid") if c in cols), None)
-        if jid_col is None or not self.chat_by_row:
+        if jid_col is None or not self.chat_by_row or "timestamp" not in cols:
             return
-        wanted = {self.chat_jid_row[cid] for cid, c in self.chat_by_row.items() if c.jid == chat.jid}
+        wanted: set[object] = set()
+        for cid, chat_row in self.chat_by_row.items():
+            if chat_row.jid != chat.jid:
+                continue
+            wanted.add(self.chat_jid_row.get(cid))
+            wanted.add(chat_row.jid)
+        wanted.discard(None)
         if not wanted:
             return
         duration = next((c for c in ("duration", "call_duration") if c in cols), None)

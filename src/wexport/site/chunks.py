@@ -68,8 +68,8 @@ def _write_chunk(destination: Path, name: str, records: list[dict]) -> Chunk:
 
 
 _MESSAGE_QUERY = """
-SELECT m.id, m.ts, m.ts_local, m.from_me, m.sender_jid, m.kind, m.text, m.quoted_id,
-       m.edited_ts, m.revoked, m.status, m.payload,
+SELECT m.id, m.ts, m.ts_local, m.from_me, m.sender, m.kind, m.text, m.quoted_id,
+       m.edited, m.revoked, m.status, m.payload,
        d.path AS media_path, d.mime AS media_mime, d.bytes AS media_bytes,
        d.width AS media_width, d.height AS media_height, d.duration_ms AS media_duration,
        d.thumb AS media_thumb, d.peaks AS media_peaks, d.missing AS media_missing,
@@ -84,13 +84,13 @@ def _record(row: sqlite3.Row, reactions: list[str]) -> dict:
     record: dict = {"i": row["id"], "t": row["ts"], "s": row["ts_local"], "k": row["kind"]}
     if row["from_me"]:
         record["f"] = 1
-    if row["sender_jid"]:
-        record["a"] = row["sender_jid"].split("@")[0]
+    if row["sender"]:
+        record["a"] = row["sender"]
     if row["text"]:
         record["x"] = row["text"]
     if row["quoted_id"]:
         record["q"] = row["quoted_id"]
-    if row["edited_ts"]:
+    if row["edited"]:
         record["e"] = 1
     if row["revoked"]:
         record["r"] = 1

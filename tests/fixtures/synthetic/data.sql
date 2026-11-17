@@ -57,8 +57,8 @@ VALUES
 
 INSERT INTO message_revoked (message_row_id) VALUES (14);
 INSERT INTO message_system (message_row_id) VALUES (15);
-INSERT INTO message_add_on (message_row_id, message_add_on_type) VALUES (16, 1);
-INSERT INTO message_add_on_reaction (message_add_on_row_id, reaction) VALUES (16, '👍');
+INSERT INTO message_add_on (_id, message_row_id, message_add_on_type) VALUES (1, 16, 1), (2, 2, 2);
+INSERT INTO message_add_on_reaction (message_add_on_row_id, reaction) VALUES (1, '👍');
 INSERT INTO message_vcard (message_row_id, display_name) VALUES (13, 'Bob');
 INSERT INTO call_log (_id, jid_row_id, from_me, timestamp, duration, video_call, missed_call) VALUES
     (1, 1, 0, CAST((julianday('2026-12-02T11:00:00Z') - 2440587.5) * 86400000 AS INTEGER), 332, 1, 0);

@@ -18,7 +18,7 @@ def chat_db(tmp_path):
     con.executescript(
         """
         CREATE TABLE message (id INTEGER PRIMARY KEY, ts INTEGER, ts_local TEXT, from_me INTEGER,
-            sender_jid TEXT, kind TEXT, text TEXT, quoted_id INTEGER, edited_ts INTEGER,
+            sender TEXT, kind TEXT, text TEXT, quoted_id INTEGER, edited INTEGER,
             revoked INTEGER, status INTEGER, payload TEXT);
         CREATE TABLE media (message_id INTEGER, path TEXT, mime TEXT, bytes INTEGER, width INTEGER,
             height INTEGER, duration_ms INTEGER, thumb TEXT, peaks TEXT, alt TEXT, name TEXT,
