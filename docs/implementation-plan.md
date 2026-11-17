@@ -321,12 +321,12 @@ The archive is opened with `file://`, which is a hostile environment and decides
 Each milestone ends with something runnable and a stated acceptance test.
 
 ### M0 — skeleton and preflight
-`pyproject.toml`, CLI, `errors.py`, `keys.py`, `preflight.py`, header parsing, and the synthetic
-`crypt15` fixture generator in `tests/fixtures/synthetic/` (M0 cannot be tested without one).
+`py/pyproject.toml`, CLI, `errors.py`, `keys.py`, `preflight.py`, header parsing, and the synthetic
+`crypt15` fixture generator in `py/tests/fixtures/synthetic/` (M0 cannot be tested without one).
 **Acceptance:** `wexport <dir> --list` on the synthetic fixture and on a real backup lists the chats
 with format-aware discovery, and `--key` verification either opens the backup or names the problem. On
 `crypt14`, on a password backup and on a passkey backup it exits `3` with a message that names the case
-and the way out. On a screenshot key it either reads it or says the digits must be typed. `pyproject.toml` records the pinned `wa-crypt-tools` ref,
+and the way out. On a screenshot key it either reads it or says the digits must be typed. `py/pyproject.toml` records the pinned `wa-crypt-tools` ref,
 and a test fails if the header fields we parse stop matching the tested version.
 
 ### M1 — decrypt, merge, read
@@ -398,11 +398,11 @@ the Linux build runs on a distro older than the one it was compiled on.
 reimplementing crypt15. The alternative — our own reader (protobuf header + AES-256-GCM + the
 HMAC-based key derivation, ~200 lines with `cryptography`) — would allow MIT/Apache and would need a
 test suite trusted more than the reference implementation; not worth a milestone. The full licence
-text lands with M0; `README.md` and `pyproject.toml` carry the same SPDX identifier.
+text lands with M0; `README.md` and `py/pyproject.toml` carry the same SPDX identifier.
 
 One caveat that became a decision: the OCR-of-the-screenshot feature sits upstream under
 **"Unreleased"** — the released version is 0.2.0. wexport therefore **pins a git ref** of
-`wa-crypt-tools`, recorded in `pyproject.toml`, and a test asserts the header fields we parse are the
+`wa-crypt-tools`, recorded in `py/pyproject.toml`, and a test asserts the header fields we parse are the
 ones we tested. The OCR path also needs the `tesseract` binary on the host; the CLI degrades to typed
 digits, with a message, when it is missing.
 

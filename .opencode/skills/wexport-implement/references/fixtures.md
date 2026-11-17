@@ -6,7 +6,7 @@ itself, from a `msgstore.db` we also build ourselves.
 ## Shape
 
 ```
-tests/fixtures/
+py/tests/fixtures/
 ├── synthetic/
 │   ├── schema.sql          # the WhatsApp tables we read, minimal columns
 │   ├── data.sql            # one row per message kind, plus reactions, quotes, edits, revokes, calls
