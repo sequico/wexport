@@ -22,20 +22,30 @@ WhatsApp showed you when you enabled end-to-end encrypted backups, joins the mes
 
 ```sh
 uv sync
-uv run wexport check ~/whatsapp/phone-copy --key <64 hex digits> --chats --sort last
-uv run wexport build ~/whatsapp/phone-copy --key <64 hex digits> --out ~/whatsapp/archives \
-  --chat Family --index
-xdg-open ~/whatsapp/archives/2026-11-17-family-4f2a/index.html
+uv run wexport ~/whatsapp/phone-copy
 ```
 
-`check --chats` lists every chat with its last event, message count and media weight, ordered by
-`--sort last|messages|size|name` (and `--reverse`), so you pick from real names instead of guessing.
-`--match <text>` narrows by name or JID and `--limit N` caps the output — the default shows 50 of
-them, `--limit 0` shows all, which matters on a phone with a thousand conversations.
-Without `--chat`, `build` writes one archive per chat.
+It finds the backup, asks for the key if it cannot find `key.png`/`key.txt` beside it, prints the
+chats numbered by most recent event, and asks which to build:
 
-`wexport -h` prints the full reference: every option of both commands, the exit codes, the
-requirements and worked examples. `wexport check -h` and `wexport build -h` do the same per command.
+```
+  #  last event                     msgs  media      size  chat        jid
+  1  2026-12-02 12:00:00 +01:00        7      1     100 B  Alice       393331234567@s.whatsapp.net
+  2  2026-12-02 11:04:00 +01:00        9      6    7.1 kB  Family      120363000000000001@g.us
+
+which? numbers or part of a name [the 10 most recent: 1, 2]:
+```
+
+Archives land in `<folder>/archives/`, one folder per chat, plus an `index.html`; the media part runs
+behind a progress bar. For scripts the same thing without questions:
+
+```sh
+uv run wexport ~/whatsapp/phone-copy --list            # only the list
+uv run wexport ~/whatsapp/phone-copy --chat 2          # one chat
+uv run wexport ~/whatsapp/phone-copy --yes             # everything
+```
+
+`wexport -h` prints the flags, the exit codes, the requirements and worked examples.
 
 The key can be 64 hex digits (spaces and a 4×4 grid are fine), a screenshot of them, or the phone's
 `encrypted_backup.key` on a rooted device. The screenshot path needs the OCR extra and the `tesseract`
@@ -54,11 +64,12 @@ See [the user flow](docs/user-flow.md).
 
 v0.1.0, working end to end:
 
-- implemented — `check` and `build`; crypt15 decrypt and incremental merge; msgstore adapter for the
-  tables in `docs/android-backup-formats.md`; content-addressed media with thumbnails, posters and
-  waveform peaks; month chunks; the `file://` viewer with virtualised rendering, search and
-  jump-to-date; the plaintext warning and the `README.txt` in each archive.
-- checks — 84 tests collected, all green except the one that skips by design without a real backup;
+- implemented — one command with the numbered picker and a media progress bar; crypt15 decrypt and
+  incremental merge; msgstore adapter for the tables in `docs/android-backup-formats.md`;
+  content-addressed media with thumbnails, posters and waveform peaks; month chunks; the `file://`
+  viewer with virtualised rendering, search and jump-to-date; the plaintext warning and the
+  `README.txt` in each archive.
+- checks — 94 tests collected, all green except the one that skips by design without a real backup;
   `ruff check` clean.
   The viewer was verified in Chromium over `http` with Playwright; **double-clicking from `file://`
   in Chrome, Firefox and Edge still needs a manual pass** (the plan's M3 criterion), because the

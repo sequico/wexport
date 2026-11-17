@@ -6,6 +6,7 @@ the only place that turns a backup into one of the plan's exit codes (plan §2).
 
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 from dataclasses import dataclass
@@ -54,14 +55,17 @@ class Inputs:
 def discover(root: str | Path) -> Inputs:
     """Find the backup inside a folder the user copied from the phone."""
     root = Path(root).expanduser().resolve()
+    if root.is_file():  # someone pointed straight at msgstore.db.crypt15
+        root = root.parent
     if not root.is_dir():
         raise UnreadableInput(f"not a folder: {root}")
 
-    databases = _first_dir(root, "Databases", "WhatsApp/Databases", "WhatsApp Business/Databases")
+    databases = _find_databases(root)
     if databases is None:
         raise UnreadableInput(
-            f"no Databases/ folder under {root}\n"
-            "Copy Android/media/com.whatsapp/WhatsApp (or WhatsApp Business) and point me at it."
+            f"no Databases/ folder with a msgstore backup under {root}\n"
+            "Point me at the folder you copied from the phone: it must contain Databases/msgstore.db.crypt15.\n"
+            "Copy Android/media/com.whatsapp/WhatsApp (or WhatsApp Business) and try again."
         )
 
     crypt15 = sorted(databases.glob("msgstore*.crypt15"))
@@ -91,16 +95,20 @@ def discover(root: str | Path) -> Inputs:
     # They are not ours to read, and silence about them is what makes a person pick the wrong file.
     ignored = tuple(p for p in crypt14 if p.name.startswith("msgstore"))
 
-    backups = _first_dir(root, "Backups", "WhatsApp/Backups", "WhatsApp Business/Backups")
-    contacts = None
-    if backups is not None:
-        for name in ("wa.db.crypt15", "wa.db"):
-            candidate = backups / name
-            if candidate.is_file():
-                contacts = candidate
-                break
+    # The media and the contacts sit beside the backup, not necessarily beside the folder the user
+    # pointed at: look in both places (a copy can be rooted at the phone folder or one level down).
+    contacts: Path | None = None
+    media: Path | None = None
+    for candidate_root in (root, databases.parent):
+        backups = _first_dir(candidate_root, "Backups", "WhatsApp/Backups", "WhatsApp Business/Backups")
+        if backups is not None and contacts is None:
+            for name in ("wa.db.crypt15", "wa.db"):
+                candidate = backups / name
+                if candidate.is_file():
+                    contacts = candidate
+                    break
+        media = media or _first_dir(candidate_root, "Media", "WhatsApp/Media", "WhatsApp Business/Media")
 
-    media = _first_dir(root, "Media", "WhatsApp/Media", "WhatsApp Business/Media")
     return Inputs(
         root=root,
         database=full,
@@ -116,6 +124,33 @@ def _first_dir(root: Path, *candidates: str) -> Path | None:
         path = root / rel
         if path.is_dir():
             return path
+    return None
+
+
+def _find_databases(root: Path) -> Path | None:
+    """The folder holding the backup, wherever the copy put it.
+
+    A phone copy can arrive as `<root>/Databases`, as `<root>/WhatsApp/Databases`, as the whole
+    `Android/media/com.whatsapp/WhatsApp/Databases` chain, or as the folder the file lives in —
+    an MTP drag is not obliged to preserve any of it. Look a few levels down, skip the media tree
+    (tens of thousands of files that cannot contain a backup), and never guess beyond that.
+    """
+    if root.name in {"Databases", "databases"} and any(root.glob("msgstore*.crypt1*")):
+        return root
+    explicit = _first_dir(root, "Databases", "WhatsApp/Databases", "WhatsApp Business/Databases")
+    if explicit is not None:
+        return explicit
+
+    max_depth = 6
+    skip = {"node_modules", ".git"}
+    for current, directories, files in os.walk(root):
+        depth = len(Path(current).relative_to(root).parts)
+        if depth >= max_depth:
+            directories[:] = []
+            continue
+        directories[:] = [d for d in directories if d not in skip]
+        if any(name.startswith("msgstore") and ".crypt1" in name for name in files):
+            return Path(current)
     return None
 
 

@@ -35,7 +35,7 @@ A phone that has had end-to-end encryption turned on recently keeps **both chain
 `msgstore.db.crypt15` is the current one and the only usable one; the older
 `msgstore-YYYY-MM-DD.1.db.crypt14` and `msgstore-increment-*-….crypt14` files belong to the previous
 chain and can never be mixed with it — they need the key file from app-private storage, which needs
-root. `wexport check` names them as ignored instead of silently skipping them.
+root. The listing names them as ignored instead of silently skipping them.
 
 ---
 
@@ -57,8 +57,8 @@ root. `wexport check` names them as ignored instead of silently skipping them.
   from level 1 to level 9, and current backups carry an extra varint the 2023 schema did not model).
 - A backup that is not a `msgstore` (`wa.db`, `chatsettingsbackup.db`, stickers) uses the same
   container with a different payload.
-- The header is enough to answer "can this be opened?" before decrypting a byte — this is what
-  `wexport check` relies on.
+- The header is enough to answer "can this be opened?" before decrypting a byte — this is what the
+  discovery step relies on.
 
 ### `key_type` — the decisive field
 

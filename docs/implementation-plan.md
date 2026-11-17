@@ -73,42 +73,37 @@ Stage contracts:
 ### CLI surface
 
 ```
-wexport check <input-dir> [--key <hex|png|keyfile>] [--tz <IANA name>]
-              [--chats] [--sort last|messages|size|name] [--reverse]
-              [--match <text>] [--limit <N>]
-wexport build <input-dir> --key <hex|png|keyfile> --out <out-dir>
-              [--all | --chat <jid|name> ...] [--index] [--jobs N] [--tz <IANA name>]
-              [--transcode {none,audio,video,all}] [--link]
+wexport [folder] [--key <hex|png|keyfile>] [--chat <n|name>]... [--list] [--yes] [--out <dir>]
 ```
 
-`check --chats` needs the key — names live inside the encrypted database — and prints one row per
-chat: last event as a frozen timestamp, message count, media count, media weight, name and JID. It is
-how a person decides what to build, without building it. `--sort` orders by newest last event
-(default), message count, media weight or name; `--reverse` flips any of them. `--match` filters on
-name or JID, accent- and case-insensitive, and `--limit` caps the rows (default 50, `0` for all):
-a phone with 1200 chats is listed in two queries, not in two queries per chat.
+One command, one argument. It finds the backup wherever the copy put it (`Databases/`, `WhatsApp/`,
+`Android/media/com.whatsapp/WhatsApp`, a folder holding `msgstore.db.crypt15`, or the file itself),
+looks for the key beside the backup (`key.png`, `key.txt`, `encrypted_backup.key`), and otherwise asks
+for it once. Then it prints the chats numbered, by newest event first:
 
-`build` defaults to `--all` (one folder per chat). `--chat` takes one or more JIDs and produces only
-those folders, which is the sharing path: hand someone the one folder you chose. `--index` additionally
-writes `<out>/index.html` with the list of built chats, and that file is deliberately kept outside
-every chat folder, because a chat archive must never reveal what else exists.
+```
+  #  last event                     msgs  media      size  chat        jid
+  1  2026-12-02 12:00:00 +01:00        7      1     100 B  Alice       393331234567@s.whatsapp.net
+  2  2026-12-02 11:04:00 +01:00        9      6    7.1 kB  Family      120363000000000001@g.us
+```
 
-`--tz <IANA name>` fixes the timezone used to render every timestamp (default: the machine's zone,
-which is recorded in the manifest). See §4 for why the rendered strings are frozen at build time.
-
-Two commands, `argparse` only. Exit codes: `0` ok, `1` unreadable input, `2` unusable key,
-`3` wrong backup type (crypt14 / password / passkey), `4` build incomplete (some derivatives could
-not be produced; the archive is written and usable), `5` missing external dependency.
+and asks `which?` — row numbers, part of a name, `all`, or an empty answer for the ten most recent.
+`--chat` answers the same question without a terminal, `--yes` builds everything, `--list` only looks.
+Archives go to `<folder>/archives` unless `--out` says otherwise, and `<out>/index.html` is always
+written: it stays outside every chat folder, because a chat archive must never reveal what else exists.
 
 Media that the user did not copy is **not** an error: it is the normal state of a partial archive,
-reported in the build summary and visible in the site as a placeholder. Only a derivative that was
+reported in the build summary and visible in the archive as a placeholder. Only a derivative that was
 attempted and failed (a corrupt image, an unreadable video) produces exit `4`.
+
+Exit codes: `0` ok, `1` unreadable input or a question that could not be asked without a terminal,
+`2` unusable key, `3` wrong backup type (crypt14 / password / passkey), `4` build incomplete (the
+archive is written and usable), `5` missing external dependency.
 
 ### Dependency gate
 
-Before any work, every command except `--help` and `--version` checks its external binaries.
-A missing one is **fatal, not a downgrade**: exit `5`, with the name of the binary and the command
-that installs it, on one screen and in English:
+Before any work, the command checks its external binaries; a missing one is **fatal, not a
+downgrade**: exit `5`, with the name of the binary and the command that installs it, in English:
 
 ```
 wexport: ffprobe not found on PATH.
@@ -116,12 +111,12 @@ wexport: ffprobe not found on PATH.
   Fedora/RHEL     sudo dnf install ffmpeg
   Arch            sudo pacman -S ffmpeg
   Windows         winget install Gyan.FFmpeg
-Then re-run the same command. `wexport check` prints the full environment report.
+Then re-run the same command.
 ```
 
-`ffmpeg` and `ffprobe` are required for `check` and `build`. `tesseract` is required only when the key
-is given as a screenshot: it is checked at that moment, with the same message shape, so a user who
-types the 64 digits never needs it.
+`ffmpeg` and `ffprobe` are required always. `tesseract` is required only when the key is a screenshot:
+it is checked at that moment, with the same message shape, so a user who types the 64 digits never
+needs it.
 
 ---
 
@@ -145,7 +140,7 @@ wexport/
 ├── src/wexport/
 │   ├── __init__.py
 │   ├── __main__.py              # `python -m wexport`, and the packager's entry point
-│   ├── cli.py                   # argparse, 2 subcommands, exit codes
+│   ├── cli.py                   # argparse, one command, the numbered picker, exit codes
 │   ├── errors.py                # exceptions that carry a user-facing message + exit code
 │   ├── preflight.py             # discovery + header read + key-type gate + binary gate
 │   ├── keys.py                  # hex | png (OCR) | key file → 32 bytes
@@ -229,9 +224,8 @@ Decisions worth stating:
   a renderer, not a migration.
 - `missing` on `media` is a first-class state: the user did not copy `Media/`, or the file was
   deleted. The archive shows a labelled placeholder, never a broken image.
-- `alt` is the only optional derivative that is not a thumbnail: the M4A track from
-  `--transcode audio` (Safari's Opus support) or the 720p MP4 from `--transcode video`. Present only
-  when the build asked for it.
+- `alt` is reserved for an optional re-encoded track (an M4A beside an Opus voice note, a 720p MP4
+  beside a video). v1 never fills it: transcoding is off and not exposed.
 - `name` keeps the original filename for display: the file on disk is content-addressed, but a person
   reading the archive needs to see `IMG-20261101-WA0003.jpg`, not a SHA-256.
 - **Two times per message, and they mean different things.** `ts` is the integer millisecond since
@@ -240,9 +234,9 @@ Decisions worth stating:
   recomputes a local time from `ts`: timezone rules change, sometimes retroactively, and an archive
   opened in ten years must show the hour it actually happened, not the hour a future tzdata would
   derive.
-- `meta` records the timezone name the strings were rendered in (`Europe/Rome`, or whatever `--tz` was)
-  and the tzdata version used, so a later rebuild is comparable and a reader knows what the offsets
-  refer to.
+- `meta` records the timezone name the strings were rendered in (the machine's zone, e.g.
+  `Europe/Rome`) and the tzdata version used, so a later rebuild is comparable and a reader knows what
+  the offsets refer to.
 - Displayed time is always the full date and time with its offset, plus a day separator carrying the
   full date and weekday; the tooltip adds the epoch and the UTC form. No "today", no "yesterday", no
   locale-dependent formatting, no rewriting of history when the OS locale changes.
@@ -254,8 +248,8 @@ Decisions worth stating:
 | Kind | What the build produces | Notes |
 |---|---|---|
 | image | 320 px WebP thumbnail + original | EXIF rotated; original kept as-is |
-| video, gif | poster JPEG + duration + dimensions, original MP4 | `-movflags +faststart` copy when needed; 720p transcode only with `--transcode video` |
-| audio (voice note) | peak array (~500 ints) as JSON, original OGG/Opus | waveform drawn without decoding audio in the browser; M4A/AAC track only with `--transcode audio` |
+| video, gif | poster JPEG + duration + dimensions, original MP4 | `-movflags +faststart` copy when needed; no transcoding |
+| audio (voice note) | peak array (~500 ints) as JSON, original OGG/Opus | waveform drawn without decoding audio in the browser; no re-encode |
 | sticker | original WebP/PNG + size class | no thumbnail |
 | document | mime icon + filename + size | no preview in v1 |
 
@@ -266,8 +260,8 @@ Decisions worth stating:
   would break that promise.
 - The chat grouping lives only in `chat.db` (`media.message_id` → `message.chat_id`), never in a path.
   Renaming a chat, or moving a file between chats, never touches the archive on disk.
-- The build copies by default, or hardlinks with `--link` (same filesystem only).
-- Transcoding is opt-in. Default build touches no video and no audio beyond metadata read.
+- The build hardlinks when the filesystem allows it and copies otherwise: same bytes either way.
+- No transcoding: the build touches no video and no audio beyond reading metadata.
 - `ffmpeg`/`ffprobe` are **required**, not optional: the startup gate (§2) refuses to run without
   them and prints the install command for the detected platform. No silent degradation — a site
   without thumbnails or playable video is a broken site that looks finished.
@@ -335,10 +329,10 @@ Each milestone ends with something runnable and a stated acceptance test.
 ### M0 — skeleton and preflight
 `pyproject.toml`, CLI, `errors.py`, `keys.py`, `preflight.py`, header parsing, and the synthetic
 `crypt15` fixture generator in `tests/fixtures/synthetic/` (M0 cannot be tested without one).
-**Acceptance:** `wexport check <dir>` on the synthetic fixture and on a real backup prints format,
-app version, key type, file list, total size. On `crypt14`, on a password backup and on a passkey
-backup it exits `3` with a message that names the case and the way out. On a screenshot key it either
-reads it or says the digits must be typed. `pyproject.toml` records the pinned `wa-crypt-tools` ref,
+**Acceptance:** `wexport <dir> --list` on the synthetic fixture and on a real backup lists the chats
+with format-aware discovery, and `--key` verification either opens the backup or names the problem. On
+`crypt14`, on a password backup and on a passkey backup it exits `3` with a message that names the case
+and the way out. On a screenshot key it either reads it or says the digits must be typed. `pyproject.toml` records the pinned `wa-crypt-tools` ref,
 and a test fails if the header fields we parse stop matching the tested version.
 
 ### M1 — decrypt, merge, read
@@ -348,15 +342,15 @@ and a test fails if the header fields we parse stop matching the tested version.
 count the phone shows; re-running is deterministic (same hashes, same order).
 
 ### M2 — media
-`media/resolve.py`, `media/derive.py`, the startup dependency gate (§2), `--jobs` parallelism,
-idempotency.
+`media/resolve.py`, `media/derive.py`, the dependency gate (§2), parallel media work with a progress
+bar, idempotency.
 **Acceptance:** every `media` row is either present with a derivative or `missing=1` with a reason;
 second run copies nothing; a 20 GB `Media/` folder finishes without loading files into memory; on a
 machine without `ffmpeg`, `build` exits `5` with the install command for that platform and without
 touching the output directory.
 
 ### M3 — viewer MVP
-Virtualised timeline, image/video/audio/document renderers, chat header, `--index` page.
+Virtualised timeline, image/video/audio/document renderers, chat header, the index page.
 **Acceptance:** a 100k-message chat opens in under a second and scrolls without jank when
 **double-clicked from the file manager** in Chrome, Firefox and Edge; a 3 GB video seeks from
 `file://`; every message and every day separator shows the full date and time with its offset, and the
@@ -418,8 +412,8 @@ One caveat that became a decision: the OCR-of-the-screenshot feature sits upstre
 ones we tested. The OCR path also needs the `tesseract` binary on the host; the CLI degrades to typed
 digits, with a message, when it is missing.
 
-**Decision (owner, taken):** transcoding is opt-in. `wexport build` reads metadata only; `--transcode
-audio` / `video` / `all` are the explicit paths that re-encode, and the default build never does.
+**Decision (owner, taken):** no transcoding in v1. The build reads metadata only, keeps the original
+bytes, and leaves `media.alt` for the day a browser forces the issue.
 
 ---
 
@@ -431,8 +425,8 @@ audio` / `video` / `all` are the explicit paths that re-encode, and the default 
 | Incremental merge ordering (edits, revokes, deletions) | duplicated or resurrected messages | merge test with a hand-built delta pair; compare against phone counts |
 | User copies an old `crypt14`, or a backup made before enabling the key | nothing to open | preflight refuses with exit `3`; user flow says "force a full backup after enabling E2EE" |
 | Users lose the 64-digit key | their local backups become unreadable too | screenshot step is mandatory in the flow, with an explicit confirmation |
-| Huge `Media/` (tens of GB) | slow builds, disk pressure | no-transcode default, `--link`, per-file streaming, progress output |
-| Opus in OGG on Safari | voice notes do not play | optional M4A track on demand (`--transcode audio`) |
+| Huge `Media/` (tens of GB) | slow builds, disk pressure | no transcoding, hardlink when possible, per-file streaming, progress bar |
+| Opus in OGG on Safari | voice notes do not play | not expected: OGG/Opus plays in Chrome, Firefox and Edge; if Safari needs it, fill `media.alt` with an M4A |
 | Screenshot-key OCR lives on `wa-crypt-tools` main, not in 0.2.0 | `--key key.png` missing on the released version | pinned git ref (decided) + header fixture test; revisit when the release lands |
 | Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `--chat` builds only what is wanted |
 | Poll options and votes are not decoded (a poll renders as its question text) | a poll loses its choices | decode the add-on payload when a real backup with polls is available; the add-on row is already read for reactions |
@@ -451,14 +445,15 @@ Taken by the owner:
    (§9). Tesseract is a host dependency; typed digits always work.
 2. **Repository**: private now, public later. Everything is written as if it were public — English
    docs, GPL headers, no hardcoded personal paths.
-3. **One site per chat**, `--index` as the only page that lists chats together (§2, §6).
+3. **One site per chat**; the `<out>/index.html` page is the only place that lists chats together
+   (§2, §6).
 4. **English** in code, CLI, UI and documentation. If the eventual recipient cannot read English, add
    `docs/user-flow.it.md` as a short quick-start; the main artifact stays English.
 5. **The archive is plaintext on disk**, with an explicit warning in the build summary. No encrypted
    archive mode.
 6. **GPL-3.0-or-later**, reusing `wa-crypt-tools` (§9).
-7. **Transcoding opt-in** (§5).
-8. **`wexport check` never touches the network.** No update check, ever.
+7. **No transcoding** (§5).
+8. **`wexport` never touches the network.** No update check, ever.
 9. **Packaging: Nuitka `--onefile`**, one single binary per platform, **Linux and Windows only**
    (macOS not built, AppImage not built — the same binary can be wrapped in one later without changing
    anything). `uv tool install wexport` stays the technical path for development. This is §7 M5.
@@ -472,8 +467,8 @@ Taken by the owner:
 12. **Timestamps are frozen at build.** Every message carries both the epoch milliseconds and a
     rendered ISO-8601 string with an explicit offset; the viewer never derives a local time from the
     epoch, so reopening the archive in ten years, on a machine in another timezone, shows the time it
-    actually happened (§4, §6). `--tz` exists to fix the zone deliberately; the default is recorded in
-    the manifest.
+    actually happened (§4, §6). The zone is the machine's, recorded in the manifest; there is no flag
+    to change it in v1, because a wrong zone is better fixed by building on the right machine.
 
 No decision is open.
 

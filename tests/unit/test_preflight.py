@@ -62,6 +62,39 @@ def test_a_crypt14_chain_next_to_crypt15_is_reported_not_used(phone, tmp_path):
     }
 
 
+def test_a_nested_android_media_copy_is_found(phone, tmp_path):
+    """An MTP drag often keeps Android/media/com.whatsapp/WhatsApp: find the backup anyway."""
+    nested = tmp_path / "Chats" / "Android" / "media" / "com.whatsapp" / "WhatsApp"
+    shutil.copytree(phone, nested)
+    inputs = preflight.discover(tmp_path / "Chats")
+    assert inputs.database.name == "msgstore.db.crypt15"
+    assert inputs.media is not None
+
+
+def test_pointing_straight_at_the_databases_folder_works(phone, tmp_path):
+    copy = tmp_path / "phone"
+    shutil.copytree(phone, copy)
+    inputs = preflight.discover(copy / "Databases")
+    assert inputs.database.name == "msgstore.db.crypt15"
+
+
+def test_pointing_at_the_whatsapp_folder_works(phone, tmp_path):
+    copy = tmp_path / "phone"
+    shutil.copytree(phone, copy)
+    inputs = preflight.discover(copy / "Databases" / "msgstore.db.crypt15")
+    assert inputs.database.name == "msgstore.db.crypt15"
+
+
+def test_a_folder_without_a_backup_says_what_to_copy(tmp_path):
+    from wexport.errors import UnreadableInput
+
+    (tmp_path / "Chats").mkdir()
+    (tmp_path / "Chats" / "notes.txt").write_text("nothing here")
+    with pytest.raises(UnreadableInput) as error:
+        preflight.discover(tmp_path / "Chats")
+    assert "Databases/msgstore.db.crypt15" in str(error.value)
+
+
 def test_header_of_another_format_is_refused():
     header = preflight.Header(path=__file__, format="crypt12", app_version="", key_type="", size=1)
     with pytest.raises(WrongBackupType) as error:

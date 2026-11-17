@@ -64,23 +64,20 @@ backup was never redone after enabling it): go back to step 1 and 2. wexport can
 ## 4. Run wexport
 
 ```
-wexport check ~/whatsapp/phone-copy --key key.png --chats
-wexport build ~/whatsapp/phone-copy --key key.png --out ~/whatsapp/sites --chat "Family"
-xdg-open ~/whatsapp/sites/2026-11-17-family-4f2a/index.html     # or Explorer / Finder
+wexport ~/whatsapp/phone-copy
+wexport ~/whatsapp/phone-copy --list
+wexport ~/whatsapp/phone-copy --chat 2
+xdg-open ~/whatsapp/phone-copy/archives/index.html     # or Explorer / Finder
 ```
 
-`--chats` lists the conversations with their last message, size and JID, so you can choose by name:
+Point it at the folder you copied and it does the rest: finds the backup wherever the copy put it
+(`Databases/`, `Chats/`, `Android/media/com.whatsapp/WhatsApp`, or the file itself), looks for the key
+beside it, verifies it, lists the chats numbered by most recent event, and asks which to build —
+numbers, part of a name, `all`, or an empty answer for the ten most recent. `--chat` and `--yes`
+answer that question for scripts, `--list` only looks.
 
-```
-last message                   msgs  media      size  chat        jid
-2026-12-02 11:04:00 +01:00        9      6    1.2 MB  Family      120363000000000001@g.us
-2026-12-02 10:04:00 +01:00        8      1    4.0 kB  Alice       393331234567@s.whatsapp.net
-```
-
-Add `--sort messages`, `--sort size` or `--sort name` to reorder, `--reverse` to flip. With many
-conversations, `--match <text>` filters on the name or JID and `--limit 0` prints all of them
-(the default shows the first 50). Then build the ones you want with `--chat <name or jid>`; without
-it, every chat is built.
+With many conversations `--list` shows them all and you pick by number; there is nothing else to
+tune.
 
 `build` writes one folder per chat plus an optional index at `~/whatsapp/sites/index.html`. After that,
 wexport is not needed any more: the folder opens by double-click.

@@ -70,6 +70,7 @@ def build_chat(
     built: str | None = None,
     probe: derive_mod.Prober = derive_mod.ffprobe,
     run: derive_mod.Runner = derive_mod.ffmpeg,
+    on_media: Callable[[int], None] | None = None,
 ) -> Summary:
     """Write one chat archive under `out_root` and return what it contains."""
     archive = out_root / _archive_name(chat, msgstore, time)
@@ -98,6 +99,8 @@ def build_chat(
                         summary.media += 1
                         if media_row.get("missing"):
                             summary.missing += 1
+                        if on_media is not None:
+                            on_media(1)
                     if summary.messages == 0:
                         summary.first_ts = message.ts
                     summary.last_ts = message.ts
