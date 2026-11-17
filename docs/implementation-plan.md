@@ -12,8 +12,8 @@ Everything below is the v1 target; nothing is implemented yet.
 | | |
 |---|---|
 | Platform | Android (WhatsApp and WhatsApp Business) |
-| Backup format | `msgstore.db.crypt15` + `msgstore-increment-*.db.crypt15` |
-| Key | 32-byte root key: 64 hex digits typed in, a `.png` screenshot, or an `encrypted_backup.key` file |
+| Backup format | `msgstore.db.crypt15` + `msgstore-increment-*.db.crypt15`, plus the rolling `msgstore-YYYY-MM-DD.1.db.crypt15` copies when present |
+| Key | 32-byte root key: 64 hex digits typed in, a `.png` screenshot, or an `encrypted_backup.key` file (root only) |
 | Input | A folder the user copied from the phone over USB/MTP (`Databases/`, `Backups/`, `Media/`) |
 | Output | `site/` — static HTML + JS + media + `chat.db`, opened through `wexport serve` |
 
@@ -138,7 +138,8 @@ Rules that follow from the layout:
 - No file at `src/wexport/` root except `__init__.py`, `cli.py`, `preflight.py`, `keys.py`,
   `errors.py`: the four modules every other module imports, plus the package marker.
 - `db/msgstore.py` is the **only** place a WhatsApp column name or table name appears.
-- Tests never import `cli.py`; they call the module functions, and the CLI gets one end-to-end test.
+- Tests exercise module functions, never a subprocess. The CLI is covered through `main(argv)` for
+  argument parsing and exit codes, which is where its logic lives.
 - `site/assets/` is plain ES modules — no bundler, no node toolchain. If the viewer ever needs a
   build step it is because a dependency was added that should not have been.
 
@@ -189,7 +190,7 @@ Decisions worth stating:
 | Kind | What the build produces | Notes |
 |---|---|---|
 | image | 320 px WebP thumbnail + original | EXIF rotated; original kept as-is |
-| video, gif, ptv | poster JPEG + duration + dimensions, original MP4 | `-movflags +faststart` copy when needed; 720p transcode only with `--transcode` |
+| video, gif, ptv | poster JPEG + duration + dimensions, original MP4 | `-movflags +faststart` copy when needed; 720p transcode only with `--transcode video` |
 | audio (voice note) | peak array (~500 ints) as JSON, original OGG/Opus | waveform drawn without decoding audio in the browser; M4A/AAC track only with `--transcode audio` |
 | sticker | original WebP/PNG + size class | no thumbnail |
 | document | mime icon + filename + size | no preview in v1 |
@@ -203,8 +204,6 @@ Decisions worth stating:
 - Transcoding is opt-in. Default build touches no video and no audio beyond metadata read.
 - `ffmpeg`/`ffprobe` are external: probed at startup, and a missing binary downgrades to
   "no derivatives" with a warning instead of failing the build.
-- Filenames from WhatsApp contain spaces, `-`, and sometimes characters illegal on Windows; the
-  output name is derived from the hash, the original name only survives in the DB.
 
 ---
 
@@ -273,8 +272,9 @@ Python, using only the release binary.
   in git, ever.
 - **Integration**: real backup supplied out of band via `WEXPORT_REAL_BACKUP`; skipped when unset.
   The reason is stated in the test docstring so nobody "fixes" the skip into a fake.
-- **Golden site**: build from the synthetic fixture and diff `site/index.html` + `chat.db` schema
-  dump against a committed snapshot.
+- **Golden data**, not golden HTML: the viewer renders through a virtualised list, so comparing markup
+  proves nothing. The snapshot is `chat.db` (schema plus rows in a fixed order) and the site manifest;
+  the viewer is judged in M3 by behaviour.
 - **No gate is run per change**; the project's checks run once before a push, whole tree, per the
   owner's rules.
 
@@ -287,7 +287,7 @@ Python, using only the release binary.
 | `wa-crypt-tools` | reference crypt15 decrypt + key-type parsing + OCR of the key screenshot (OCR is the `[ocr]` extra, and needs the `tesseract` binary) | **GPL-3.0-or-later** |
 | `Pillow` | thumbnails, EXIF | HPND (permissive) |
 | `ffmpeg`, `ffprobe` (external) | metadata, poster frames, optional transcode | LGPL/GPL builds vary |
-| SQLite-WASM build (vendored asset) | viewer data access | public domain / Apache-2.0 |
+| SQLite-WASM build (vendored asset) | viewer data access | public domain / Apache-2.0 (confirm at vendoring) |
 | Python stdlib | sqlite3, http.server, argparse, hashlib | PSF |
 
 **Decision (owner, taken):** wexport is **GPL-3.0-or-later** and reuses `wa-crypt-tools` instead of
@@ -316,7 +316,6 @@ audio` / `video` / `all` are the explicit paths that re-encode, and the default 
 | Users lose the 64-digit key | their local backups become unreadable too | screenshot step is mandatory in the flow, with an explicit confirmation |
 | Huge `Media/` (tens of GB) | slow builds, disk pressure | no-transcode default, `--link`, per-file streaming, progress output |
 | Opus in OGG on Safari | voice notes do not play | optional M4A track on demand (`--transcode audio`) |
-| Long Windows paths | build fails on deep archive structures | hash-derived short names in `site/media/` |
 | Screenshot-key OCR lives on `wa-crypt-tools` main, not in 0.2.0 | `--key key.png` missing on the released version | pin the git ref, or ship typed digits first and add the image path when it ships |
 | `site/` is a folder, not a single file | user copies it somewhere else and nothing opens | `site/` opens through `wexport serve`; relative paths only, and the user flow says so |
 

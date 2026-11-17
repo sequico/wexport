@@ -11,14 +11,14 @@ GB).
 
 ## 1. Choose the key (once, irreversibly)
 
-WhatsApp → **Impostazioni → Chat → Backup delle chat → Backup crittografato end-to-end → Attiva**.
+WhatsApp → **Settings → Chats → Chat Backup → End-to-end encrypted backup → Turn on**.
 
-When asked how to protect it, choose **"usa chiave a 64 cifre"**. Never the password, never a
-passkey: with those, the key lives on WhatsApp's servers and the backup cannot be opened by anyone
-except WhatsApp itself.
+When asked how to protect it, choose **"Use 64-digit encryption key instead"**. Never the password,
+never a passkey: with those, the key lives on WhatsApp's servers and the backup cannot be opened by
+anyone except WhatsApp itself.
 
-WhatsApp shows the key **once**: 16 groups of 4 hex digits. Take a screenshot and store it outside
-the phone (photo library synced elsewhere, password manager, printed sheet).
+WhatsApp shows the key **once**: 64 hex digits, four rows of four groups. Take a screenshot and store
+it outside the phone (photo library synced elsewhere, password manager, printed sheet).
 
 > ⚠️ If the key is lost, the backups become unreadable — including the ones already on the phone.
 > This is the whole point of end-to-end encryption, and it cannot be undone by anyone.
@@ -28,8 +28,8 @@ before that stay closed; the new full backup is the one we will use.
 
 ## 2. Make a full backup
 
-Same screen → **Esegui backup ora** (or "Backup"). Wait for it to finish. Do not start step 3 until
-WhatsApp says the backup is complete.
+Same screen → **Back up now**. Wait for it to finish. Do not start step 3 until WhatsApp says the
+backup is complete.
 
 If the last backup was days ago and only incrementals exist, this step is what puts a complete
 `msgstore.db.crypt15` in the folder.
@@ -86,8 +86,9 @@ The key can be given three ways: the screenshot (`--key key.png`), the 64 digits
 
 ## 6. Afterwards
 
-`site/` is self-contained: keep it, move it, back it up. It needs `wexport serve` to open (a browser
-opening the HTML file directly cannot read the data file), and it never phones home.
+`site/` has no external dependency: no network, no other files, no `node_modules`. It does need
+`wexport serve` to open (a browser opening the HTML file directly cannot read the data file or seek in
+a video), and it never phones home.
 
 Keep the screenshot of the key and `site/` together but separately stored: the key alone is useless
 without the backup, and the site is the readable copy that does not need the key at all.
