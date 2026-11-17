@@ -42,6 +42,7 @@ class Summary:
     first_ts: int = 0
     last_ts: int = 0
     people: set[str] = field(default_factory=set)
+    empty: bool = False
 
 
 def _record_failure(summary: Summary, text: str) -> None:
@@ -106,15 +107,23 @@ def build_chat(
         db.set_chat_range(first_ts, last_ts, summary.messages)
         db.commit()
 
-        manifest = _manifest(chat, time, app_version, summary, built)
-        chunks.emit(chat_db, archive / "data", manifest)
-        _copy_assets(archive)
-        _write_readme(archive, chat, time, app_version, summary, built)
-        summary.bytes = _tree_bytes(archive)
+        if summary.messages == 0:
+            # A chat row with no messages is not worth a folder; say so instead of shipping an
+            # archive that opens on "Empty archive".
+            summary.empty = True
+        else:
+            manifest = _manifest(chat, time, app_version, summary, built)
+            chunks.emit(chat_db, archive / "data", manifest)
+            _copy_assets(archive)
+            _write_readme(archive, chat, time, app_version, summary, built)
+            summary.bytes = _tree_bytes(archive)
 
     chat_db.unlink(missing_ok=True)
     with contextlib.suppress(OSError):  # leave no empty working directory in the user's output folder
         intermediate.rmdir()
+    if summary.empty:
+        with contextlib.suppress(OSError):
+            archive.rmdir()  # it only ever held the folder we just created
     return summary
 
 
@@ -124,6 +133,7 @@ def write_index(out_root: Path, summaries: Iterable[Summary], app_version: str) 
         f'<li><a href="{html.escape(summary.archive.name)}/index.html">'
         f"{html.escape(summary.name)}</a> <span>{summary.messages} messages</span></li>"
         for summary in summaries
+        if not summary.empty
     )
     page = f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>wexport archives</title>

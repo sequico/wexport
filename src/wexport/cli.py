@@ -152,6 +152,9 @@ def _build(args: argparse.Namespace) -> int:
                     jobs=max(1, args.jobs),
                 )
                 summaries.append(summary)
+                if summary.empty:
+                    print(f"  {summary.name}: skipped, no messages")
+                    continue
                 print(
                     f"  {summary.archive.name}: {summary.messages} messages, "
                     f"{summary.media} media ({summary.missing} missing), "
@@ -167,8 +170,10 @@ def _build(args: argparse.Namespace) -> int:
         print(f"index        {page}")
 
     failures = sum(summary.failure_count for summary in summaries)
+    built = [summary for summary in summaries if not summary.empty]
+    skipped = len(summaries) - len(built)
     print()
-    print(f"done: {len(summaries)} archive(s) in {out_root}")
+    print(f"done: {len(built)} archive(s) in {out_root}" + (f", {skipped} empty chat(s) skipped" if skipped else ""))
     if failures:
         print(
             f"{failures} file(s) could not be processed; the archives are usable (exit {IncompleteBuild.exit_code})",

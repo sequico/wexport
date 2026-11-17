@@ -24,7 +24,7 @@ def store(tmp_path):
 
 def test_chats_are_named_from_the_messages_when_no_contacts(store):
     names = sorted(chat.name for chat in store.chats())
-    assert names == ["393331234567", "Family"]
+    assert names == ["393331234567", "Empty chat", "Family"]
 
 
 def test_contacts_rename_a_one_to_one_chat(store, tmp_path):

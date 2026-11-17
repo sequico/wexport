@@ -60,6 +60,20 @@ def test_a_chat_archive_never_links_another_chat(built):
         assert not re.search(r'index\.html', page)
 
 
+def test_an_empty_chat_is_skipped_not_shipped(built):
+    assert not any("empty" in archive.name for archive in _archives(built))
+    assert len(_archives(built)) == 2
+
+
+def test_the_run_reports_the_skipped_chat(phone, tmp_path, capsys):
+    code = main(
+        ["build", str(phone), "--key", "0123456789abcdef" * 4, "--out", str(tmp_path / "out"),
+         "--tz", "Europe/Rome"]
+    )
+    assert code == 0
+    assert "empty chat(s) skipped" in capsys.readouterr().out
+
+
 def test_manifest_counts_and_zone(built):
     family = next(a for a in _archives(built) if "family" in a.name)
     manifest = _manifest(family)

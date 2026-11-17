@@ -3,11 +3,13 @@
 INSERT INTO jid (_id, raw_string) VALUES
     (1, '393331234567@s.whatsapp.net'),
     (2, '393339999999@s.whatsapp.net'),
-    (3, '120363000000000001@g.us');
+    (3, '120363000000000001@g.us'),
+    (4, '393330000000@s.whatsapp.net');
 
 INSERT INTO chat (_id, jid_row_id, subject) VALUES
     (1, 1, NULL),
-    (2, 3, 'Family');
+    (2, 3, 'Family'),
+    (3, 4, 'Empty chat');
 
 INSERT INTO message (_id, chat_row_id, from_me, key_id, timestamp, text_data, status, remote_resource, quoted_row_id, edit_version)
 VALUES
