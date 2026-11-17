@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wexport"
+version = "0.1.0"
+description = "Turn an Android WhatsApp crypt15 backup into a self-contained offline chat archive"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+authors = [{ name = "Sequi Company" }]
+dependencies = [
+  # Pinned on purpose: the screenshot-key OCR and the header fields we read are post-0.2.0.
+  # Bump only with a new fixture and a green header test (plan §9).
+  "wa-crypt-tools @ git+https://github.com/ElDavoo/wa-crypt-tools@b6f67453d19e443f53f57da0361f3ef5e8b6821d",
+  "pillow>=10.0.0",
+]
+
+[project.scripts]
+wexport = "wexport.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0.0", "ruff>=0.6.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wexport"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "SIM", "C4", "UP", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

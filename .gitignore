@@ -21,6 +21,10 @@ build/
 *.db.crypt15
 *.db.crypt14
 
+# …except the synthetic fixture the tests run on (built by tests/fixtures/synthetic/build.py)
+!tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15
+!tests/fixtures/synthetic/phone/Backups/wa.db.crypt15
+
 # Editors and OS
 .idea/
 .vscode/
