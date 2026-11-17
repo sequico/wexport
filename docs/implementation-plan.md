@@ -75,6 +75,7 @@ Stage contracts:
 ```
 wexport check <input-dir> [--key <hex|png|keyfile>] [--tz <IANA name>]
               [--chats] [--sort last|messages|size|name] [--reverse]
+              [--match <text>] [--limit <N>]
 wexport build <input-dir> --key <hex|png|keyfile> --out <out-dir>
               [--all | --chat <jid|name> ...] [--index] [--jobs N] [--tz <IANA name>]
               [--transcode {none,audio,video,all}] [--link]
@@ -83,7 +84,9 @@ wexport build <input-dir> --key <hex|png|keyfile> --out <out-dir>
 `check --chats` needs the key — names live inside the encrypted database — and prints one row per
 chat: last event as a frozen timestamp, message count, media count, media weight, name and JID. It is
 how a person decides what to build, without building it. `--sort` orders by newest last event
-(default), message count, media weight or name; `--reverse` flips any of them.
+(default), message count, media weight or name; `--reverse` flips any of them. `--match` filters on
+name or JID, accent- and case-insensitive, and `--limit` caps the rows (default 50, `0` for all):
+a phone with 1200 chats is listed in two queries, not in two queries per chat.
 
 `build` defaults to `--all` (one folder per chat). `--chat` takes one or more JIDs and produces only
 those folders, which is the sharing path: hand someone the one folder you chose. `--index` additionally

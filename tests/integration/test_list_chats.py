@@ -11,9 +11,9 @@ NAMES = ["Alice", "Empty chat", "Family"]
 
 
 def _order(output: str) -> list[str]:
-    """The three fixture chats, in the order the listing printed them."""
-    positions = {name: output.index(name) for name in NAMES}
-    return sorted(NAMES, key=positions.__getitem__)
+    """The fixture chats the listing printed, in the order printed."""
+    positions = {name: output.index(name) for name in NAMES if name in output}
+    return sorted(positions, key=positions.__getitem__)
 
 
 @pytest.fixture()
@@ -42,6 +42,29 @@ def test_order_by_media_size(listing):
 def test_order_by_name_and_reverse(listing):
     assert _order(listing("--sort", "name")) == NAMES
     assert _order(listing("--sort", "name", "--reverse")) == list(reversed(NAMES))
+
+
+def test_match_filters_by_name_or_jid(listing):
+    assert _order(listing("--match", "fam")) == ["Family"]
+    assert _order(listing("--match", "120363")) == ["Family"]
+    assert _order(listing("--match", "nothing-like-this")) == []
+
+
+def test_match_ignores_accents_and_case(listing):
+    assert _order(listing("--match", "FAMILY")) == ["Family"]
+
+
+def test_limit_truncates_and_says_how_to_see_more(listing):
+    output = listing("--limit", "1")
+    assert "1 of 3 chat(s) shown" in output
+    assert "--limit 0" in output
+    assert len(_order(output)) == 1
+
+
+def test_limit_zero_shows_everything(listing):
+    output = listing("--limit", "0")
+    assert "3 of 3 chat(s) shown" in output
+    assert len(_order(output)) == 3
 
 
 def test_every_row_carries_the_last_message_and_a_jid(listing):

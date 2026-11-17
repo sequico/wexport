@@ -10,6 +10,7 @@ import argparse
 import os
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 
 from . import __version__, preflight
@@ -42,6 +43,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="listing order: newest last message, most messages, heaviest media, or name",
     )
     check.add_argument("--reverse", action="store_true", help="flip the listing order")
+    check.add_argument("--match", help="only chats whose name or JID contains this text")
+    check.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        metavar="N",
+        help="show at most N chats, 0 for all (default 50)",
+    )
     check.add_argument("--tz", default=None, help="IANA timezone for the printed timestamps")
 
     build = sub.add_parser("build", help="write one archive folder per chat")
@@ -147,9 +156,19 @@ def _list_chats(inputs, database: Path, workspace: str, key, args: argparse.Name
         descending = not descending
     stats.sort(key=lambda stat: (keyfunc(stat), stat.chat.name.lower()), reverse=descending)
 
-    width = max((len(stat.chat.name) for stat in stats), default=8)
+    if args.match:
+        needle = _fold(args.match)
+        stats = [
+            stat
+            for stat in stats
+            if needle in _fold(stat.chat.name) or needle in _fold(stat.chat.jid)
+        ]
+    matched = len(stats)
+    shown = stats if args.limit <= 0 else stats[: args.limit]
+
+    width = max((len(stat.chat.name) for stat in shown), default=8)
     print(f"\n{'last message':<27} {'msgs':>7} {'media':>6} {'size':>9}  {'chat':<{width}}  jid")
-    for stat in stats:
+    for stat in shown:
         stamp = time.local(stat.last_ts) if stat.last_ts else "—"
         print(
             f"{stamp:<27} {stat.messages:>7} {stat.media_count:>6} "
@@ -158,10 +177,16 @@ def _list_chats(inputs, database: Path, workspace: str, key, args: argparse.Name
     total_messages = sum(stat.messages for stat in stats)
     total_bytes = sum(stat.media_bytes for stat in stats)
     print(
-        f"\n{len(stats)} chat(s), {total_messages} message(s), "
-        f"{_human_bytes(total_bytes)} of media\n"
-        "Build one or more: wexport build <input> --key <key> --out <folder> --chat <name|jid>"
+        f"\n{len(shown)} of {matched} chat(s) shown, {total_messages} message(s), "
+        f"{_human_bytes(total_bytes)} of media"
+        + ("" if len(shown) == matched else " — use --limit 0 for all, --match to filter")
     )
+    print("Build one or more: wexport build <input> --key <key> --out <folder> --chat <name|jid>")
+
+
+def _fold(text: str) -> str:
+    """Case- and accent-insensitive, so 'caffe' matches 'Caffè'."""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
 
 
 def _human_bytes(count: int) -> str:

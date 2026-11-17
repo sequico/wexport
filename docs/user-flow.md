@@ -77,8 +77,10 @@ last message                   msgs  media      size  chat        jid
 2026-12-02 10:04:00 +01:00        8      1    4.0 kB  Alice       393331234567@s.whatsapp.net
 ```
 
-Add `--sort messages`, `--sort size` or `--sort name` to reorder, `--reverse` to flip. Then build the
-ones you want with `--chat <name or jid>`; without it, every chat is built.
+Add `--sort messages`, `--sort size` or `--sort name` to reorder, `--reverse` to flip. With many
+conversations, `--match <text>` filters on the name or JID and `--limit 0` prints all of them
+(the default shows the first 50). Then build the ones you want with `--chat <name or jid>`; without
+it, every chat is built.
 
 `build` writes one folder per chat plus an optional index at `~/whatsapp/sites/index.html`. After that,
 wexport is not needed any more: the folder opens by double-click.

@@ -30,6 +30,8 @@ xdg-open ~/whatsapp/archives/2026-11-17-family-4f2a/index.html
 
 `check --chats` lists every chat with its last event, message count and media weight, ordered by
 `--sort last|messages|size|name` (and `--reverse`), so you pick from real names instead of guessing.
+`--match <text>` narrows by name or JID and `--limit N` caps the output — the default shows 50 of
+them, `--limit 0` shows all, which matters on a phone with a thousand conversations.
 Without `--chat`, `build` writes one archive per chat.
 
 The key can be 64 hex digits (spaces and a 4×4 grid are fine), a screenshot of them, or the phone's
@@ -53,7 +55,7 @@ v0.1.0, working end to end:
   tables in `docs/android-backup-formats.md`; content-addressed media with thumbnails, posters and
   waveform peaks; month chunks; the `file://` viewer with virtualised rendering, search and
   jump-to-date; the plaintext warning and the `README.txt` in each archive.
-- checks — 77 tests collected, all green except the one that skips by design without a real backup;
+- checks — 81 tests collected, all green except the one that skips by design without a real backup;
   `ruff check` clean.
   The viewer was verified in Chromium over `http` with Playwright; **double-clicking from `file://`
   in Chrome, Firefox and Edge still needs a manual pass** (the plan's M3 criterion), because the
