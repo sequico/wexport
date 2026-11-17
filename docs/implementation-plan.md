@@ -193,7 +193,7 @@ chat(id INTEGER PRIMARY KEY, jid TEXT UNIQUE, name TEXT, is_group INTEGER,
 message(id INTEGER PRIMARY KEY, chat_id INTEGER, ts INTEGER, ts_local TEXT, from_me INTEGER,
         sender TEXT, kind TEXT, text TEXT,
         quoted_id INTEGER, edited INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0,
-        status INTEGER, payload TEXT)            -- JSON for polls, locations, vcards, calls
+        status INTEGER, payload TEXT)            -- JSON for locations, vcards, calls
 media(id INTEGER PRIMARY KEY, message_id INTEGER, kind TEXT, path TEXT,
       mime TEXT, bytes INTEGER, width INTEGER, height INTEGER, duration_ms INTEGER,
       thumb TEXT, peaks TEXT, sha256 TEXT, alt TEXT, name TEXT, missing INTEGER DEFAULT 0)
@@ -240,7 +240,7 @@ Decisions worth stating:
 | Kind | What the build produces | Notes |
 |---|---|---|
 | image | 320 px WebP thumbnail + original | EXIF rotated; original kept as-is |
-| video, gif, ptv | poster JPEG + duration + dimensions, original MP4 | `-movflags +faststart` copy when needed; 720p transcode only with `--transcode video` |
+| video, gif | poster JPEG + duration + dimensions, original MP4 | `-movflags +faststart` copy when needed; 720p transcode only with `--transcode video` |
 | audio (voice note) | peak array (~500 ints) as JSON, original OGG/Opus | waveform drawn without decoding audio in the browser; M4A/AAC track only with `--transcode audio` |
 | sticker | original WebP/PNG + size class | no thumbnail |
 | document | mime icon + filename + size | no preview in v1 |
@@ -305,9 +305,10 @@ The archive is opened with `file://`, which is a hostile environment and decides
   browser's clock or locale, so the same folder shows the same strings on any machine, in any year.
 - **Renderers per `kind`**, each a small function; unknown `payload` shapes fall back to a raw JSON
   disclosure rather than an exception.
-- **One page per chat**: header (name, participants, date range, message count), timeline, media
-  gallery. Navigation between chats exists only in `<out>/index.html`, which is never inside a chat
-  folder: a shareable archive must not reveal what else exists.
+- One page per chat: header (name, participants when it is a group, first and last message with their
+  offsets, message count), timeline, media gallery. Navigation between chats exists only in
+  `<out>/index.html`, which is never inside a chat folder: a shareable archive must not reveal what
+  else exists.
 - No framework, no CDN, no bundler, no WASM, no telemetry, no network calls at all.
 
 ---

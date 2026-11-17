@@ -39,6 +39,9 @@ class Summary:
     failures: list[str] = field(default_factory=list)  # a sample, not everything
     failure_count: int = 0
     bytes: int = 0
+    first_ts: int = 0
+    last_ts: int = 0
+    people: set[str] = field(default_factory=set)
 
 
 def _record_failure(summary: Summary, text: str) -> None:
@@ -94,7 +97,11 @@ def build_chat(
                             summary.missing += 1
                     if summary.messages == 0:
                         first_ts = message.ts
+                        summary.first_ts = message.ts
                     last_ts = message.ts
+                    summary.last_ts = message.ts
+                    if message.sender:
+                        summary.people.add(message.sender)
                     summary.messages += 1
         db.set_chat_range(first_ts, last_ts, summary.messages)
         db.commit()
@@ -265,6 +272,9 @@ def _manifest(
         "built": built or datetime.now(UTC).isoformat(timespec="seconds"),
         "media": summary.media,
         "missing": summary.missing,
+        "people": len(summary.people),
+        "first": time.local(summary.first_ts) if summary.first_ts else "",
+        "last": time.local(summary.last_ts) if summary.last_ts else "",
     }
 
 

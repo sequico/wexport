@@ -35,8 +35,10 @@
   var searching = false;
 
   titleEl.textContent = manifest.title;
-  var parts = [total.toLocaleString("en") + " messages", manifest.tz];
-  if (manifest.source_app_version) parts.push("WhatsApp " + manifest.source_app_version);
+  var parts = [total.toLocaleString("en") + " messages"];
+  if (manifest.is_group && manifest.people) parts.push(manifest.people + " participants");
+  if (manifest.first && manifest.last) parts.push(manifest.first + " → " + manifest.last);
+  parts.push(manifest.tz);
   if (manifest.missing) parts.push(manifest.missing + " media not copied");
   subtitleEl.textContent = parts.join(" · ");
 
@@ -225,9 +227,6 @@
     }
     if (message.k === "contact") {
       return el("div", "body", "👤 " + ((message.pl && message.pl.name) || "contact"));
-    }
-    if (message.k === "poll") {
-      return el("div", "body", "📊 " + (message.x || "poll"));
     }
     var node = mediaNode(message);
     if (message.x) {
