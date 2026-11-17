@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import threading
+from array import array
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -130,7 +132,10 @@ def _audio(source: Path, archive_root: Path, sha256: str, *, run: Runner) -> Der
 
 def _peaks(pcm: bytes) -> list[int]:
     """`PEAKS` amplitudes in 0..100, so the browser draws a waveform without decoding audio."""
-    samples = memoryview(pcm).cast("h") if pcm else memoryview(b"")
+    samples = array("h")
+    samples.frombytes(pcm[: len(pcm) - (len(pcm) % 2)])  # s16le from ffmpeg; drop a stray byte
+    if sys.byteorder == "big":
+        samples.byteswap()
     if len(samples) < PEAKS:
         return [0] * PEAKS
     step = len(samples) // PEAKS

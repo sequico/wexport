@@ -15,7 +15,6 @@ from .errors import MissingDependency, UnusableKey
 
 _HEX = re.compile(r"^[0-9a-fA-F]{64}$")
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
-_KEY_SUFFIXES = {".key", ".bin"}
 
 
 def normalize_hex(spec: str) -> str | None:
