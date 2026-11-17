@@ -49,10 +49,6 @@ class Inputs:
     contacts: Path | None
     media: Path | None
 
-    @property
-    def total_bytes(self) -> int:
-        return self.database.stat().st_size + sum(p.stat().st_size for p in self.incrementals)
-
 
 def discover(root: str | Path) -> Inputs:
     """Find the backup inside a folder the user copied from the phone."""

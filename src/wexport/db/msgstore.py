@@ -141,7 +141,7 @@ class Msgstore:
         self.chat_by_row = self._resolve_chats()
         # Row sets and joins that do not change while the database is open; one read per build run,
         # not one per chat.
-        self._cache: dict[str, dict[int, object]] = {}
+        self._cache: dict[str, object] = {}
         self._system_ids = self._id_set("message_system", "message_row_id")
 
     def _resolve_chats(self) -> dict[int, Chat]:
@@ -292,21 +292,21 @@ class Msgstore:
         return f'm."{self.c_chat_jid}" IN ({",".join("?" * len(variants))})', list(variants)
 
     def _id_set(self, table: str, column: str) -> set[int]:
-        cached = self._cache.get(f"{table}.{column}")
-        if cached is not None:
-            return set(cached)  # type: ignore[arg-type]
-        if table not in self.has or column not in self._cols(table):
-            self._cache[f"{table}.{column}"] = {}
-            return set()
-        values = {row[0] for row in self.con.execute(f'SELECT "{column}" FROM "{table}"')}
-        self._cache[f"{table}.{column}"] = dict.fromkeys(values, True)  # type: ignore[assignment]
+        key = f"{table}.{column}"
+        cached = self._cache.get(key)
+        if isinstance(cached, set):
+            return cached
+        values: set[int] = set()
+        if table in self.has and column in self._cols(table):
+            values = {row[0] for row in self.con.execute(f'SELECT "{column}" FROM "{table}"')}
+        self._cache[key] = values
         return values
 
     def _reactions(self) -> dict[int, list[str]]:
         """Emoji per message, from the add-on table, whichever of the two shapes the schema has."""
         cached = self._cache.get("reactions")
-        if cached is not None:
-            return cached  # type: ignore[return-value]
+        if isinstance(cached, dict):
+            return cached
         out: dict[int, list[str]] = {}
         if "message_add_on" in self.has:
             columns = self._cols("message_add_on")
@@ -339,20 +339,20 @@ class Msgstore:
                         for message_id, emoji in rows:
                             if emoji:
                                 out.setdefault(message_id, []).append(emoji)
-        self._cache["reactions"] = out  # type: ignore[assignment]
+        self._cache["reactions"] = out
         return out
 
     def _media_rows(self) -> dict[int, sqlite3.Row]:
         cached = self._cache.get("media")
-        if cached is not None:
-            return cached  # type: ignore[return-value]
+        if isinstance(cached, dict):
+            return cached
         key = self.media_cols["message"]
         rows = (
             {}
             if "message_media" not in self.has or not key
             else {row[key]: row for row in self.con.execute("SELECT * FROM message_media")}
         )
-        self._cache["media"] = rows  # type: ignore[assignment]
+        self._cache["media"] = rows
         return rows
 
     def _caption(self, row: sqlite3.Row | None) -> str | None:
@@ -378,8 +378,8 @@ class Msgstore:
 
     def _vcard_rows(self) -> dict[int, dict]:
         cached = self._cache.get("vcards")
-        if cached is not None:
-            return cached  # type: ignore[return-value]
+        if isinstance(cached, dict):
+            return cached
         rows: dict[int, dict] = {}
         if "message_vcard" in self.has:
             cols = self._cols("message_vcard")
@@ -390,7 +390,7 @@ class Msgstore:
                     row[0]: {"name": row[1] or ""}
                     for row in self.con.execute(f'SELECT "{key}", "{name}" FROM message_vcard')
                 }
-        self._cache["vcards"] = rows  # type: ignore[assignment]
+        self._cache["vcards"] = rows
         return rows
 
     def _kind(self, row: sqlite3.Row, media: Media | None, vcard: dict | None) -> tuple[str, dict]:
