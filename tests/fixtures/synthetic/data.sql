@@ -36,7 +36,7 @@ VALUES
     (12, 1, 1, 'k12', CAST((julianday('2026-12-02T10:00:00Z') - 2440587.5) * 86400000 AS INTEGER),
         NULL, 13, NULL, NULL, 0),
     (13, 1, 0, 'k13', CAST((julianday('2026-12-02T10:01:00Z') - 2440587.5) * 86400000 AS INTEGER),
-        'Where are we meeting?', 13, NULL, NULL, 0),
+        'Where are we meeting? Coffee at the usual place — un caffè?', 13, NULL, NULL, 0),
     (14, 1, 1, 'k14', CAST((julianday('2026-12-02T10:02:00Z') - 2440587.5) * 86400000 AS INTEGER),
         'this message was deleted', 0, NULL, NULL, 0),
     (15, 2, 1, 'k15', CAST((julianday('2026-12-02T10:03:00Z') - 2440587.5) * 86400000 AS INTEGER),

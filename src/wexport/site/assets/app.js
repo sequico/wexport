@@ -32,7 +32,7 @@
   var STEP = 80;
   var start = Math.max(0, total - 120);
   var end = total;
-  var cursor = total - 1;
+  var searching = false;
 
   titleEl.textContent = manifest.title;
   var parts = [total.toLocaleString("en") + " messages", manifest.tz];
@@ -266,6 +266,8 @@
   }
 
   function statusWord(code) {
+    // shortcut: WhatsApp's status codes are not documented; these bands match what real backups
+    // show (1/5/13). Revisit when a real dump proves a different mapping.
     if (code >= 13) return "read";
     if (code >= 5) return "delivered";
     if (code >= 1) return "sent";
@@ -276,20 +278,34 @@
 
   var renderToken = 0;
 
+  function fold(text) {
+    // Search ignores case and accents: "caffe" finds "caffè".
+    return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  }
+
   function render(anchor) {
     var token = ++renderToken;
-    var first = chunkIndexFor(start);
-    var last = chunkIndexFor(Math.max(start, end - 1));
     status("loading…");
-    loadRange(start, end - 1)
+    return loadRange(start, end - 1)
       .then(function () {
         if (token !== renderToken) return;
         paint(anchor);
+        releaseChunks();
         status("");
       })
       .catch(function (error) {
         status("could not load " + error.message + " — the archive is incomplete");
       });
+  }
+
+  function releaseChunks() {
+    // Plan §6: chunks far from the viewport are released, or a 300k-message chat fills the tab.
+    if (searching) return;
+    var first = chunkIndexFor(start);
+    var last = chunkIndexFor(Math.max(start, end - 1));
+    for (var i = 0; i < chunks.length; i++) {
+      if (i < first - 1 || i > last + 1) delete WEX.chunks[chunks[i].n];
+    }
   }
 
   function paint(anchor) {
@@ -341,12 +357,10 @@
       var nearBottom = timeline.scrollTop + timeline.clientHeight > timeline.scrollHeight - 300;
       if (nearTop && start > 0) {
         start = Math.max(0, start - STEP);
-        render("top");
-        clampWindow("up");
+        render("top").then(function () { clampWindow("up"); });
       } else if (nearBottom && end < total) {
         end = Math.min(total, end + STEP);
-        render("bottom");
-        clampWindow("down");
+        render("bottom").then(function () { clampWindow("down"); });
       }
     });
   }
@@ -354,15 +368,18 @@
   /* ---------------------------------------------------------------- search and jump */
 
   function search(term) {
-    term = term.trim().toLowerCase();
+    term = term.trim();
     hits.hidden = true;
     hits.replaceChildren();
     if (!term) return;
+    var needle = fold(term);
     var found = [];
     var index = 0;
+    searching = true;
 
     function step() {
       if (index >= chunks.length) {
+        searching = false;
         showResults(term, found);
         return;
       }
@@ -373,7 +390,7 @@
           var list = WEX.chunks[chunk.n] || [];
           for (var i = 0; i < list.length; i++) {
             var text = list[i].x;
-            if (text && text.toLowerCase().indexOf(term) !== -1) {
+            if (text && fold(text).indexOf(needle) !== -1) {
               found.push({ index: starts[index] + i, message: list[i] });
               if (found.length >= 200) {
                 index = chunks.length;
@@ -415,26 +432,26 @@
   function jumpTo(index) {
     start = Math.max(0, index - 15);
     end = Math.min(total, start + LIMIT);
-    render("none");
-    setTimeout(function () {
+    render("none").then(function () {
       var row = rows.querySelector('[data-i="' + index + '"]');
       if (row) row.scrollIntoView({ block: "center" });
-    }, 120);
+    });
   }
 
   function jumpToDate(value) {
     var target = new Date(value + "T00:00:00Z").getTime();
     for (var index = 0; index < chunks.length; index++) {
       if (chunks[index].l >= target) {
-        loadChunk(chunks[index].n).then(function () {
-          var list = WEX.chunks[chunks[index].n] || [];
+        var chosen = index;  // captured explicitly: the callback runs after this function returns
+        loadChunk(chunks[chosen].n).then(function () {
+          var list = WEX.chunks[chunks[chosen].n] || [];
           for (var i = 0; i < list.length; i++) {
             if (list[i].t >= target) {
-              jumpTo(starts[index] + i);
+              jumpTo(starts[chosen] + i);
               return;
             }
           }
-          jumpTo(starts[index]);
+          jumpTo(starts[chosen]);
         });
         return;
       }
@@ -470,25 +487,7 @@
 
   timeline.addEventListener("scroll", onScroll, { passive: true });
 
-  rows.addEventListener("click", function (event) {
-    var image = event.target.closest("img.thumb");
-    if (image) {
-      var link = image.closest("a");
-      if (link) {
-        event.preventDefault();
-        window.open(link.href, "_blank");
-      }
-    }
-  });
-
-  render("none");
-  requestAnimationFrame(function () {
+  render("none").then(function () {
     timeline.scrollTop = timeline.scrollHeight;
   });
-
-  // A tiny cursor helper keeps keyboard navigation honest without a selection UI.
-  window.WEX.goto = function (index) {
-    cursor = index;
-    jumpTo(index);
-  };
 })();
