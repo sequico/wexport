@@ -117,16 +117,15 @@ def _video(source: Path, archive_root: Path, sha256: str, *, probe: Prober, run:
 
 
 def _audio(source: Path, archive_root: Path, sha256: str, *, run: Runner) -> Derived:
-    rel = Path("deriv") / f"{sha256}.json"
-    target = archive_root / rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    raw = target.with_name(f"{sha256}.{os.getpid()}.{threading.get_ident()}.pcm")
+    # The peaks travel inline in the media record; a side file would be dead weight the prune step
+    # would have to know about.
+    raw = archive_root / "deriv" / f"{sha256}.{os.getpid()}.{threading.get_ident()}.pcm"
+    raw.parent.mkdir(parents=True, exist_ok=True)
     run(["-i", str(source), "-ac", "1", "-ar", "4000", "-f", "s16le", "-y", str(raw)])
     try:
         peaks = _peaks(raw.read_bytes())
     finally:
         raw.unlink(missing_ok=True)
-    target.write_text(json.dumps(peaks, separators=(",", ":")), encoding="utf-8")
     return Derived(peaks=peaks)
 
 
