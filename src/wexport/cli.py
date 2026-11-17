@@ -278,6 +278,12 @@ def _check(args: argparse.Namespace) -> int:
     print(f"incrementals  {len(inputs.incrementals)}")
     for increment in inputs.incrementals:
         print(f"              {increment.name}")
+    if inputs.ignored:
+        print(f"ignored       {len(inputs.ignored)} file(s) from the older backup chain (crypt14)")
+        for path in inputs.ignored[:10]:
+            print(f"              {path.name}")
+        if len(inputs.ignored) > 10:
+            print(f"              … and {len(inputs.ignored) - 10} more")
     print(f"contacts      {inputs.contacts.name if inputs.contacts else 'none (numbers will be shown)'}")
     print(f"media folder  {inputs.media if inputs.media else 'MISSING (every attachment will be a placeholder)'}")
 

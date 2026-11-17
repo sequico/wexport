@@ -48,6 +48,7 @@ class Inputs:
     incrementals: tuple[Path, ...]
     contacts: Path | None
     media: Path | None
+    ignored: tuple[Path, ...] = ()  # same family, other backup chain: crypt14 next to a crypt15
 
 
 def discover(root: str | Path) -> Inputs:
@@ -86,6 +87,9 @@ def discover(root: str | Path) -> Inputs:
             "Open WhatsApp → Settings → Chats → Chat Backup → Back up now, then copy the folder again."
         )
     incrementals = tuple(p for p in crypt15 if p != full and p.name.startswith("msgstore-increment"))
+    # A folder usually still holds the previous chain (crypt14 files from before E2EE was turned on).
+    # They are not ours to read, and silence about them is what makes a person pick the wrong file.
+    ignored = tuple(p for p in crypt14 if p.name.startswith("msgstore"))
 
     backups = _first_dir(root, "Backups", "WhatsApp/Backups", "WhatsApp Business/Backups")
     contacts = None
@@ -97,7 +101,14 @@ def discover(root: str | Path) -> Inputs:
                 break
 
     media = _first_dir(root, "Media", "WhatsApp/Media", "WhatsApp Business/Media")
-    return Inputs(root=root, database=full, incrementals=incrementals, contacts=contacts, media=media)
+    return Inputs(
+        root=root,
+        database=full,
+        incrementals=incrementals,
+        contacts=contacts,
+        media=media,
+        ignored=ignored,
+    )
 
 
 def _first_dir(root: Path, *candidates: str) -> Path | None:

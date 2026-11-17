@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+
 import pytest
 
 from wexport import preflight
@@ -39,6 +41,25 @@ def test_only_incrementals_is_refused_with_the_way_out(tmp_path):
     with pytest.raises(Exception) as error:
         preflight.discover(tmp_path)
     assert "Back up now" in str(error.value)
+
+
+def test_a_crypt14_chain_next_to_crypt15_is_reported_not_used(phone, tmp_path):
+    """A real phone keeps the old crypt14 files; they must be named as ignored, never mixed in."""
+    copy = tmp_path / "phone"
+    shutil.copytree(phone, copy)
+    databases = copy / "Databases"
+    for name in (
+        "msgstore-2026-11-11.1.db.crypt14",
+        "msgstore-increment-1-2026-11-17.db.crypt14",
+    ):
+        (databases / name).write_bytes(b"")
+    inputs = preflight.discover(copy)
+    assert inputs.database.name == "msgstore.db.crypt15"
+    assert inputs.incrementals == ()
+    assert {path.name for path in inputs.ignored} == {
+        "msgstore-2026-11-11.1.db.crypt14",
+        "msgstore-increment-1-2026-11-17.db.crypt14",
+    }
 
 
 def test_header_of_another_format_is_refused():

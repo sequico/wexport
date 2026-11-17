@@ -31,6 +31,12 @@ Older devices use `/sdcard/WhatsApp/` instead of the `Android/media/` path. Busi
 `com.whatsapp.w4b` and `WhatsApp Business/`. Copying any of this over MTP or `adb pull` needs no
 root.
 
+A phone that has had end-to-end encryption turned on recently keeps **both chains** in `Databases/`:
+`msgstore.db.crypt15` is the current one and the only usable one; the older
+`msgstore-YYYY-MM-DD.1.db.crypt14` and `msgstore-increment-*-….crypt14` files belong to the previous
+chain and can never be mixed with it — they need the key file from app-private storage, which needs
+root. `wexport check` names them as ignored instead of silently skipping them.
+
 ---
 
 ## 2. `crypt15` — the container
