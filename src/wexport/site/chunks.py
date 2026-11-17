@@ -11,6 +11,8 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..db import ro_connect
+
 
 @dataclass(frozen=True)
 class Chunk:
@@ -29,7 +31,7 @@ def emit(chat_db: str | Path, destination: str | Path, manifest: dict) -> list[C
     """Write `data/manifest.js` and `data/<YYYY-MM>.js`; returns the chunk list in order."""
     chat_db, destination = Path(chat_db), Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(f"file:{chat_db}?mode=ro", uri=True)
+    con = ro_connect(chat_db)
     con.row_factory = sqlite3.Row
     chunks: list[Chunk] = []
     try:

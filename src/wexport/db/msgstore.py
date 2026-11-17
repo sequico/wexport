@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..errors import UnreadableInput
+from . import ro_connect
 
 # Numeric media types used by older schemas; the mime type wins when both are present.
 _MEDIA_WA_TYPES = {
@@ -67,7 +68,7 @@ class Msgstore:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         try:
-            self.con = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
+            self.con = ro_connect(self.path)
         except sqlite3.Error as exc:
             raise UnreadableInput(f"cannot open {self.path.name}: {exc}") from exc
         self.con.row_factory = sqlite3.Row
@@ -201,7 +202,7 @@ class Msgstore:
         """Name the chats from `wa.db`, when the user copied it. Numbers otherwise."""
         path = Path(path)
         try:
-            con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            con = ro_connect(path)
             tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         except sqlite3.Error:
             return

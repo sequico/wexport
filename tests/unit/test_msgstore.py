@@ -90,3 +90,18 @@ def test_unknown_schema_fails_loudly(tmp_path):
     with pytest.raises(Exception) as error:
         Msgstore(database)
     assert "timestamp" in str(error.value)
+
+
+def test_a_path_with_a_hash_still_opens(tmp_path):
+    """A `#` in the path turns an unquoted URI into a fragment; the connection must still work."""
+    folder = tmp_path / "chat #1 (backup)"
+    folder.mkdir()
+    database = folder / "msgstore.db"
+    with sqlite3.connect(database) as con:
+        con.execute(
+            "CREATE TABLE message (_id INTEGER PRIMARY KEY, timestamp INTEGER,"
+            " key_remote_jid TEXT, from_me INTEGER DEFAULT 0)"
+        )
+        con.execute("INSERT INTO message VALUES (1, 1, '123@s.whatsapp.net', 0)")
+    with Msgstore(database) as store:
+        assert [chat.jid for chat in store.chats()] == ["123@s.whatsapp.net"]
