@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,17 +24,29 @@ class Placed:
 
 
 def source_for(rel_path: str, media_root: Path | None, copy_root: Path) -> Path | None:
-    """The file on disk for a database path, or None when the user did not copy it."""
+    """The file on disk for a database path, or None when the user did not copy it.
+
+    The path comes from the backup, so it is a trust boundary: a row pointing at `../../etc/passwd`
+    must not be able to pull a file from outside the folder the user copied.
+    """
     rel = rel_path.replace("\\", "/").lstrip("/")
-    candidates: list[Path] = [copy_root / rel]
+    candidates: list[Path] = []
+    roots = [copy_root]
     if media_root is not None:
+        roots.append(media_root)
         _, _, tail = rel.partition("Media/")
         if tail:
             candidates.append(media_root / tail)
-        candidates.append(media_root / rel)
+    candidates.extend(root / rel for root in roots)
     for candidate in candidates:
-        if candidate.is_file():
-            return candidate
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if not any(resolved.is_relative_to(root.resolve()) for root in roots):
+            continue
+        if resolved.is_file():
+            return resolved
     return None
 
 
@@ -51,13 +64,18 @@ def place(source: Path, archive_root: Path, link: bool = False) -> Placed:
     extension = source.suffix.lower() or ""
     rel = Path("media") / digest[:2] / f"{digest}{extension}"
     destination = archive_root / rel
-    if not destination.exists():
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if link:
-            try:
-                os.link(source, destination)
-            except OSError:
-                shutil.copy2(source, destination)
-        else:
-            shutil.copy2(source, destination)
+    if destination.exists():
+        return Placed(sha256=digest, rel_path=rel.as_posix())
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if link:
+        try:
+            os.link(source, destination)
+            return Placed(sha256=digest, rel_path=rel.as_posix())
+        except OSError:
+            pass  # another filesystem, or a filesystem without hardlinks: copy instead
+    # Two workers can place the same content at once; write beside the target and rename, so the
+    # visible file is always complete.
+    partial = destination.with_name(f"{destination.name}.{os.getpid()}.{threading.get_ident()}.part")
+    shutil.copy2(source, partial)
+    os.replace(partial, destination)
     return Placed(sha256=digest, rel_path=rel.as_posix())

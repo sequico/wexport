@@ -7,7 +7,9 @@ The external tools are injected so unit tests can prove the pipeline without ffm
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -116,7 +118,7 @@ def _audio(source: Path, archive_root: Path, sha256: str, *, run: Runner) -> Der
     rel = Path("deriv") / f"{sha256}.json"
     target = archive_root / rel
     target.parent.mkdir(parents=True, exist_ok=True)
-    raw = target.with_suffix(".pcm")
+    raw = target.with_name(f"{sha256}.{os.getpid()}.{threading.get_ident()}.pcm")
     run(["-i", str(source), "-ac", "1", "-ar", "4000", "-f", "s16le", "-y", str(raw)])
     try:
         peaks = _peaks(raw.read_bytes())
