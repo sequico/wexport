@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+dist/
+build/
+*.egg-info/
+
+# Tests and local data
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Real backups and exported archives: never committed
+/data/
+/fixtures/real/
+/site/
+*.db
+*.db.crypt15
+*.db.crypt14
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
