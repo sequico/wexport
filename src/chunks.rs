@@ -78,9 +78,7 @@ impl<'a> Writer<'a> {
                 json!({ "n": chunk.name, "c": chunk.messages, "f": chunk.first_ts, "l": chunk.last_ts })
             })
             .collect();
-        let total: usize = self.chunks.iter().map(|chunk| chunk.messages).sum();
         manifest["chunks"] = Value::Array(chunk_list);
-        manifest["messages"] = json!(total);
         std::fs::write(
             self.destination.join("manifest.js"),
             format!(

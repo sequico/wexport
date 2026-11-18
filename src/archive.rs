@@ -174,6 +174,7 @@ pub fn build_chat(
             .to_string(),
         "media": summary.media,
         "missing": summary.missing,
+        "messages": summary.messages,
         "people": summary.people + if chat.is_group { 1 } else { 0 },
         "first": stamp(clock, summary.first_ts),
         "last": stamp(clock, summary.last_ts),
