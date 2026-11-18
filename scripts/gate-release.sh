@@ -25,7 +25,10 @@ echo "== release build"
 cargo build --release --locked
 
 echo "== mutations"
-cargo mutants --timeout 180
+# One job per core (capped): 625 mutants at four seconds each is forty minutes in series.
+jobs=$(nproc 2>/dev/null || echo 2)
+[ "$jobs" -gt 8 ] && jobs=8
+cargo mutants --timeout 180 --jobs "$jobs"
 
 echo "== fuzzing"
 for target in parse_header decrypt normalize_hex; do
