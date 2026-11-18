@@ -60,6 +60,7 @@ pub struct ChatStat {
 #[derive(Debug, Default)]
 struct MediaRow {
     rel_path: String,
+    name: String,
     mime: Option<String>,
     bytes: Option<i64>,
     width: Option<i64>,
@@ -88,6 +89,7 @@ pub struct Msgstore {
     // media columns
     m_message: Option<String>,
     m_path: Option<String>,
+    m_name: Option<String>,
     m_mime: Option<String>,
     m_bytes: Option<String>,
     m_width: Option<String>,
@@ -134,6 +136,7 @@ impl Msgstore {
             c_chat_jid: None,
             m_message: None,
             m_path: None,
+            m_name: None,
             m_mime: None,
             m_bytes: None,
             m_width: None,
@@ -168,6 +171,7 @@ impl Msgstore {
 
         store.m_message = store.pick("message_media", &["message_row_id", "message_id"]);
         store.m_path = store.pick("message_media", &["file_path"]);
+        store.m_name = store.pick("message_media", &["media_name", "file_name"]);
         store.m_mime = store.pick("message_media", &["mime_type", "media_mime_type"]);
         store.m_bytes = store.pick("message_media", &["file_size", "media_size"]);
         store.m_width = store.pick("message_media", &["width"]);
@@ -292,13 +296,14 @@ impl Msgstore {
         };
         let column = |name: &Option<String>| name.clone().unwrap_or_else(|| "NULL".to_string());
         let sql = format!(
-            "SELECT \"{key}\", \"{path}\", {}, {}, {}, {}, {}, {} FROM message_media",
+            "SELECT \"{key}\", \"{path}\", {name}, {}, {}, {}, {}, {}, {} FROM message_media",
             column(&self.m_mime),
             column(&self.m_bytes),
             column(&self.m_width),
             column(&self.m_height),
             column(&self.m_duration),
             column(&self.m_caption),
+            name = column(&self.m_name),
         );
         let mut statement = self.con.prepare(&sql)?;
         let rows = statement.query_map([], |row| {
@@ -306,28 +311,36 @@ impl Msgstore {
                 row.get::<_, i64>(0)?,
                 row.get::<_, Option<String>>(1)?,
                 row.get::<_, Option<String>>(2)?,
-                row.get::<_, Option<i64>>(3)?,
+                row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<i64>>(4)?,
                 row.get::<_, Option<i64>>(5)?,
                 row.get::<_, Option<i64>>(6)?,
-                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<i64>>(7)?,
+                row.get::<_, Option<String>>(8)?,
             ))
         })?;
-        for (message, path, mime, bytes, width, height, duration, caption) in rows.flatten() {
-            if let Some(rel_path) = path {
-                self.media_rows.insert(
-                    message,
-                    MediaRow {
-                        rel_path: rel_path.replace('\\', "/"),
-                        mime,
-                        bytes,
-                        width,
-                        height,
-                        duration,
-                        caption,
-                    },
-                );
-            }
+        for (message, path, name, mime, bytes, width, height, duration, caption) in rows.flatten() {
+            // A row whose path is empty has no file to place: treating it as media would put an
+            // empty `md` in the archive and a missing file in every count.
+            let Some(rel_path) = path
+                .map(|value| value.replace('\\', "/"))
+                .filter(|value| !value.trim().is_empty())
+            else {
+                continue;
+            };
+            self.media_rows.insert(
+                message,
+                MediaRow {
+                    rel_path,
+                    name: name.unwrap_or_default(),
+                    mime,
+                    bytes,
+                    width,
+                    height,
+                    duration,
+                    caption,
+                },
+            );
         }
         Ok(())
     }
@@ -646,7 +659,9 @@ impl Msgstore {
             let status: Option<i64> = row.get(4)?;
             let remote: Option<String> = row.get(5)?;
             let quoted: Option<i64> = row.get(6)?;
-            let edited = row.get::<_, Option<i64>>(7)?.unwrap_or(0) > 0;
+            // 0 means "not a reply" in every schema WhatsApp has shipped; carrying it would put a
+            // quote pointing at message 0 in the archive.
+            let quoted = quoted.filter(|value| *value > 0);            let edited = row.get::<_, Option<i64>>(7)?.unwrap_or(0) > 0;
             let lat: Option<f64> = row.get(8)?;
             let lon: Option<f64> = row.get(9)?;
             let wa_type: Option<i64> = row.get(10)?;
@@ -863,8 +878,9 @@ fn media_kind(row: &MediaRow, wa_type: Option<i64>) -> String {
     }
     let mime = row.mime.clone().unwrap_or_default();
     let path = row.rel_path.to_lowercase();
+    let name = row.name.to_lowercase();
     if mime.starts_with("image/") {
-        return if mime == "image/webp" && path.contains("sticker") {
+        return if mime == "image/webp" && (path.contains("sticker") || name.contains("sticker")) {
             "sticker"
         } else {
             "image"
@@ -872,7 +888,7 @@ fn media_kind(row: &MediaRow, wa_type: Option<i64>) -> String {
         .to_string();
     }
     if mime.starts_with("video/") {
-        return if path.contains("animated") {
+        return if name.starts_with("gif") || path.contains("animated") {
             "gif"
         } else {
             "video"
