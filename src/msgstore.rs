@@ -438,7 +438,7 @@ impl Msgstore {
                 columns = rows.filter_map(|row| row.ok()).collect();
             }
         }
-        if !columns.iter().any(|name| name == "jid") {
+        if !columns.contains(&"jid".to_string()) {
             return;
         }
         // The name column travels between versions; ask the schema which one is there.
@@ -1094,6 +1094,11 @@ mod tests {
         assert_eq!(
             media_kind(&row("Media/Stickers/x.webp", "", "image/webp"), None),
             "sticker"
+        );
+        assert_eq!(
+            media_kind(&row("Media/x.webp", "", "image/webp"), None),
+            "image",
+            "webp outside the sticker folder is a picture"
         );
         assert_eq!(
             media_kind(&row("Media/x.webp", "sticker-1.webp", "image/webp"), None),

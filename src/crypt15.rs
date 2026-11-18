@@ -123,6 +123,11 @@ fn fields(mut input: &[u8]) -> Vec<(u64, Field<'_>)> {
         let Ok((key, used)) = read_varint(input, 0) else {
             break;
         };
+        // A field that consumed nothing would read the same bytes for ever: this parser is fed
+        // whatever file the user pointed at, so it stops instead.
+        if used == 0 {
+            break;
+        }
         input = &input[used..];
         let number = key >> 3;
         let wire = key & 0x7;
@@ -433,6 +438,18 @@ mod tests {
         let header = parse_header(&bytes).unwrap();
         assert_eq!(header.iv, vec![7u8; 16]);
         assert!(header.is_crypt15());
+    }
+
+    #[test]
+    fn a_length_that_does_not_end_says_where_it_stopped() {
+        // The file ends in the middle of the length.
+        let error = parse_header(&[0x80, 0x80]).unwrap_err();
+        assert!(error.message.contains("file ended"), "{}", error.message);
+
+        // Ten bytes that all carry the continuation bit: longer than a u64.
+        let long: Vec<u8> = std::iter::repeat_n(0x80u8, 10).collect();
+        let error = parse_header(&long).unwrap_err();
+        assert!(error.message.contains("too long"), "{}", error.message);
     }
 
     #[test]

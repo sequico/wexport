@@ -266,5 +266,16 @@ mod text_tests {
         let short: String = key.chars().take(key.len() - 1).collect();
         assert_eq!(key_among_text(&short), None);
         assert_eq!(key_among_text(&format!("{key}0")), None);
+
+        // Pasted with colons between the pairs: the colon belongs to the run, and a key cut into
+        // two-digit pieces by it is not a key.
+        let colons: String = (0..32)
+            .map(|index| format!("{index:02x}"))
+            .collect::<Vec<_>>()
+            .join(":");
+        assert_eq!(
+            key_among_text(&format!("key: {colons}")),
+            normalize_hex(&colons)
+        );
     }
 }
