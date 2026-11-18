@@ -22,6 +22,52 @@ struct Options {
     list: bool,
     yes: bool,
     out: Option<PathBuf>,
+    sort: Sort,
+}
+
+/// The order of the listing, and of the build that follows it.
+#[derive(Debug, Clone, Copy)]
+enum Sort {
+    Recent,
+    Size,
+    Name,
+}
+
+impl Sort {
+    fn parse(value: &str) -> Result<Self> {
+        match value {
+            "recent" => Ok(Sort::Recent),
+            "size" => Ok(Sort::Size),
+            "name" => Ok(Sort::Name),
+            other => Err(Error::input(format!(
+                "unknown sort {other}: use recent, size or name"
+            ))),
+        }
+    }
+}
+
+fn sort_stats(stats: &mut [ChatStat], sort: Sort) {
+    match sort {
+        Sort::Recent => {
+            stats.sort_by_key(|stat| std::cmp::Reverse(stat.last_ts));
+        }
+        Sort::Size => {
+            stats.sort_by(|left, right| {
+                right
+                    .media_bytes
+                    .cmp(&left.media_bytes)
+                    .then_with(|| left.chat.name.cmp(&right.chat.name))
+            });
+        }
+        Sort::Name => {
+            stats.sort_by(|left, right| {
+                left.chat
+                    .name
+                    .to_lowercase()
+                    .cmp(&right.chat.name.to_lowercase())
+            });
+        }
+    }
 }
 
 pub fn run(args: &[String]) -> Result<i32> {
@@ -91,10 +137,11 @@ pub fn run(args: &[String]) -> Result<i32> {
         }
     }
 
-    let stats = store.chat_stats()?;
+    let mut stats = store.chat_stats()?;
     if stats.is_empty() {
         return Err(Error::input("this backup holds no chat"));
     }
+    sort_stats(&mut stats, options.sort);
 
     if options.list || (options.chats.is_empty() && !options.yes) {
         show_chats(&stats, &clock);
@@ -485,6 +532,7 @@ fn parse(args: &[String]) -> Result<Options> {
         list: false,
         yes: false,
         out: None,
+        sort: Sort::Recent,
     };
     let mut index = 0;
     while index < args.len() {
@@ -500,13 +548,14 @@ fn parse(args: &[String]) -> Result<Options> {
             }
             "--list" => options.list = true,
             "--yes" => options.yes = true,
-            "--key" | "--chat" | "--out" => {
+            "--key" | "--chat" | "--out" | "--sort" => {
                 let value = args
                     .get(index + 1)
                     .ok_or_else(|| Error::input(format!("{argument} needs a value")))?;
                 match argument.as_str() {
                     "--key" => options.key = Some(value.clone()),
                     "--chat" => push_chats(&mut options.chats, value),
+                    "--sort" => options.sort = Sort::parse(value)?,
                     _ => options.out = Some(PathBuf::from(value)),
                 }
                 index += 1;
@@ -519,6 +568,9 @@ fn parse(args: &[String]) -> Result<Options> {
             }
             other if other.starts_with("--out=") => {
                 options.out = Some(PathBuf::from(&other["--out=".len()..]))
+            }
+            other if other.starts_with("--sort=") => {
+                options.sort = Sort::parse(&other["--sort=".len()..])?
             }
             other if other.starts_with('-') => {
                 return Err(Error::input(format!(
@@ -546,6 +598,55 @@ fn parse(args: &[String]) -> Result<Options> {
 
 fn help() -> String {
     format!(
-        "usage: wexport [FOLDER] [options]\n\nTurn an Android WhatsApp crypt15 backup into self-contained archives that open by\ndouble-clicking index.html: no server, no wexport and no network on the reading\nmachine. Point it at the folder you copied; it does the rest.\n\noptions:\n  -h, --help            show this help and exit\n  --version             show the version and exit\n  --key HEX|IMAGE|FILE  the 64 hex digits, a screenshot, or encrypted_backup.key;\n                        without it the key is looked up beside the backup (key.png,\n                        key.txt, encrypted_backup.key) and otherwise asked once\n  --chat N|NAME          build these chats without asking: row numbers or part of a\n                        name, comma-separated and repeatable; 'all' for every chat\n  --list                only print the numbered chat list and exit\n  --yes                 build every chat without asking\n  --out DIR             where the archives go (default: <input>/{OUTPUT_DIR})\n\nexit codes:\n  0  success\n  1  unreadable input, or a question that could not be asked without a terminal\n  2  unusable key: not a key, or the key does not open this backup\n  3  wrong backup type: crypt14, password-based or passkey-based backup\n  4  build incomplete: some media could not be processed, the archive is usable\n  5  missing external dependency: ffmpeg, ffprobe, or tesseract for a screenshot key\n\nrequirements: ffmpeg and ffprobe on PATH; tesseract only for a screenshot key.\n\nexamples:\n  wexport ~/Downloads/a\n  wexport ~/Downloads/a --list\n  wexport ~/Downloads/a --chat 2\n  wexport ~/Downloads/a --chat family --chat 3 --yes\n"
+        "usage: wexport [FOLDER] [options]\n\nTurn an Android WhatsApp crypt15 backup into self-contained archives that open by\ndouble-clicking index.html: no server, no wexport and no network on the reading\nmachine. Point it at the folder you copied; it does the rest.\n\noptions:\n  -h, --help            show this help and exit\n  --version             show the version and exit\n  --key HEX|IMAGE|FILE  the 64 hex digits, a screenshot, or encrypted_backup.key;\n                        without it the key is looked up beside the backup (key.png,\n                        key.txt, encrypted_backup.key) and otherwise asked once\n  --chat N|NAME          build these chats without asking: row numbers or part of a\n                        name, comma-separated and repeatable; 'all' for every chat\n  --list                only print the numbered chat list and exit\n  --sort recent|size|name\n                        order the list (and the build that follows it): most recent event\n                        (default), total media size from largest, or name\n  --yes                 build every chat without asking\n  --out DIR             where the archives go (default: <input>/{OUTPUT_DIR})\n\nexit codes:\n  0  success\n  1  unreadable input, or a question that could not be asked without a terminal\n  2  unusable key: not a key, or the key does not open this backup\n  3  wrong backup type: crypt14, password-based or passkey-based backup\n  4  build incomplete: some media could not be processed, the archive is usable\n  5  missing external dependency: ffmpeg, ffprobe, or tesseract for a screenshot key\n\nrequirements: ffmpeg and ffprobe on PATH; tesseract only for a screenshot key.\n\nexamples:\n  wexport ~/Downloads/a\n  wexport ~/Downloads/a --list\n  wexport ~/Downloads/a --list --sort size\n  wexport ~/Downloads/a --chat 2\n  wexport ~/Downloads/a --chat family --chat 3 --yes\n"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::msgstore::Chat;
+
+    fn stat(name: &str, ts: i64, bytes: i64) -> ChatStat {
+        ChatStat {
+            chat: Chat {
+                jid: format!("{name}@s.whatsapp.net"),
+                name: name.to_string(),
+                is_group: false,
+            },
+            messages: 1,
+            first_ts: ts,
+            last_ts: ts,
+            media_count: 1,
+            media_bytes: bytes,
+        }
+    }
+
+    fn names(stats: &[ChatStat]) -> Vec<&str> {
+        stats.iter().map(|stat| stat.chat.name.as_str()).collect()
+    }
+
+    #[test]
+    fn the_list_can_be_ordered_by_size_name_or_recency() {
+        let mut stats = vec![
+            stat("beta", 300, 10),
+            stat("alpha", 100, 900),
+            stat("gamma", 200, 50),
+        ];
+
+        sort_stats(&mut stats, Sort::Size);
+        assert_eq!(names(&stats), ["alpha", "gamma", "beta"]);
+
+        sort_stats(&mut stats, Sort::Name);
+        assert_eq!(names(&stats), ["alpha", "beta", "gamma"]);
+
+        sort_stats(&mut stats, Sort::Recent);
+        assert_eq!(names(&stats), ["beta", "gamma", "alpha"]);
+    }
+
+    #[test]
+    fn an_unknown_sort_is_refused_by_name() {
+        let error = Sort::parse("biggest").unwrap_err();
+        assert!(error.message.contains("recent, size or name"));
+    }
 }
