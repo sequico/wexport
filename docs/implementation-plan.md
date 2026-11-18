@@ -347,8 +347,9 @@ implementation computes.
 
 ### M1 — decrypt, merge, read
 `src/crypt15.rs`, `src/merge.rs`, `src/msgstore.rs`.
-**Acceptance:** message and media counts match the source tables; contacts resolved from
-`Backups/wa.db` when present, numbers otherwise; an incremental set merges to the same message
+**Acceptance:** message and media counts match the source tables (a media row with no path is not
+media); contacts resolved from `Backups/wa.db` when present, numbers otherwise; an incremental set
+merges to the same message
 count the phone shows; re-running is deterministic (same hashes, same order).
 
 ### M2 — media
@@ -356,7 +357,7 @@ count the phone shows; re-running is deterministic (same hashes, same order).
 bar, idempotency.
 **Acceptance:** every `media` row is either present with a derivative or `missing=1` with a reason;
 second run copies nothing; a 20 GB `Media/` folder finishes without loading files into memory; on a
-machine without `ffmpeg`, `build` exits `5` with the install command for that platform and without
+machine without `ffmpeg`, `-b` exits `5` with the install command for that platform and without
 touching the output directory.
 
 ### M3 — viewer MVP
@@ -442,7 +443,7 @@ bytes, and leaves the optional re-encoded track for the day a browser forces the
 | Huge `Media/` (tens of GB) | slow builds, disk pressure | no transcoding, hardlink when possible, per-file streaming, progress bar |
 | Opus in OGG on Safari | voice notes do not play | not expected: OGG/Opus plays in Chrome, Firefox and Edge; if Safari needs it, fill `media.alt` with an M4A |
 | Screenshot-key OCR depends on `tesseract` being installed | `-k key.png` fails on a clean machine | exit `5` naming the binary and the install command; typed digits always work |
-| Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `-c` builds only what is wanted |
+| Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `-b` builds only what is wanted |
 | Poll options and votes are not decoded (a poll renders as its question text) | a poll loses its choices | decode the add-on payload when a real backup with polls is available; the add-on row is already read for reactions |
 | A single static binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first run fails on a clean machine | exit `5` at startup, naming the missing binary and the install command for that platform (§2); bundling deferred (§12) |
 | The archive is a folder, not one file | sending it means zipping; a chat with video is large | the folder is the unit, and the user flow says zip it; media are duplicated per chat on purpose so a folder stands alone |
@@ -481,7 +482,7 @@ Taken by the owner:
     rendered ISO-8601 string with an explicit offset; the viewer never derives a local time from the
     epoch, so reopening the archive in ten years, on a machine in another timezone, shows the time it
     actually happened (§4, §6). The zone is the machine's, recorded in the manifest; there is no flag
-    to change it in v1, because a wrong zone is better fixed by building on the right machine.
+    to change it, because a wrong zone is better fixed by building on the right machine.
 
 No decision is open.
 
