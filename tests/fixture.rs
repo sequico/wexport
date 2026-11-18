@@ -1,7 +1,10 @@
-//! End to end on the fixture both implementations share.
+//! End to end on the committed fixture.
 //!
-//! These are the parity checks: the archive a Rust build produces must be the archive the Python
-//! build produces, byte for byte in the data chunks, with the same folder names.
+//! These are the acceptance checks: the archive a build produces must have the folder names, the
+//! record shape and the frozen timestamps the plan describes, and a rebuild must be byte-identical.
+//!
+//! The names and the chunk bytes were originally compared against a second implementation of the same
+//! product; that implementation is gone, and the expectation now lives here as the golden values.
 
 use std::path::{Path, PathBuf};
 
@@ -10,7 +13,7 @@ use wexport::ui;
 const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn fixture() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../py/tests/fixtures/synthetic/phone")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/synthetic/phone")
 }
 
 fn build(out: &Path) {
@@ -44,7 +47,7 @@ fn archives(root: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn two_archives_with_the_names_the_python_build_uses() {
+fn two_archives_with_the_expected_names() {
     let out = scratch("names");
     build(&out);
     let names: Vec<String> = archives(&out)

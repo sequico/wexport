@@ -1,15 +1,5 @@
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.uv/
-*.egg-info/
-
-# Tests and local data
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
+# Build output
+/target/
 
 # Real backups and exported archives: never committed
 /data/
@@ -17,18 +7,12 @@ venv/
 *.db
 *.db.crypt15
 *.db.crypt14
-/py/tests/fixtures/real/
+/tests/fixtures/real/
 
-# …except the synthetic fixture both implementations test on
-# (built by py/tests/fixtures/synthetic/build.py)
-!py/tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15
-!py/tests/fixtures/synthetic/phone/Backups/wa.db.crypt15
-
-# Build output
-/dist/
-/py/dist/
-/py/build/
-/rust/target/
+# …except the synthetic fixture the tests run on
+# (built by tests/fixtures/synthetic/build.py)
+!tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15
+!tests/fixtures/synthetic/phone/Backups/wa.db.crypt15
 
 # Editors and OS
 .idea/

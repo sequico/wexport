@@ -661,7 +661,8 @@ impl Msgstore {
             let quoted: Option<i64> = row.get(6)?;
             // 0 means "not a reply" in every schema WhatsApp has shipped; carrying it would put a
             // quote pointing at message 0 in the archive.
-            let quoted = quoted.filter(|value| *value > 0);            let edited = row.get::<_, Option<i64>>(7)?.unwrap_or(0) > 0;
+            let quoted = quoted.filter(|value| *value > 0);
+            let edited = row.get::<_, Option<i64>>(7)?.unwrap_or(0) > 0;
             let lat: Option<f64> = row.get(8)?;
             let lon: Option<f64> = row.get(9)?;
             let wa_type: Option<i64> = row.get(10)?;

@@ -1,6 +1,6 @@
 ---
 name: wexport implementation
-description: Implement, fix or review the Python tree of the wexport repository (Android WhatsApp crypt15 backup → offline chat archive). Use for any edit under py/src/ or py/tests/, for milestone work, and for judging whether a change respects the project's invariants.
+description: Implement, fix or review the wexport repository (Android WhatsApp crypt15 backup → offline chat archive). Use for any edit under src/ or tests/, for milestone work, and for judging whether a change respects the project's invariants.
 ---
 
 # Implementing wexport
@@ -22,13 +22,14 @@ Read before editing:
 
 | Invariant | Why it matters | Spec |
 |---|---|---|
-| Only `py/src/wexport/db/msgstore.py` knows WhatsApp table or column names | one file to fix when WhatsApp renames something; everything else survives | §3 |
+| Only `src/msgstore.rs` knows WhatsApp table or column names | one file to fix when WhatsApp renames something; everything else survives | §3 |
 | The archive opens from `file://`; the product has no server | the recipient must need nothing installed, not even wexport | §6 |
 | Timestamps are frozen at build; the viewer never derives a local time | timezone rules change; the archive must keep saying when it happened | §4 |
 | Media are content-addressed inside the chat folder, never grouped by chat on disk | a chat folder stands alone when copied or zipped | §5 |
 | A chat archive never reveals that other chats exist | sharing one conversation must not disclose the rest | §6 |
 | Exit codes `0..5` are the interface; each has a test | the CLI is what the person actually drives | §2 |
 | A missing external binary aborts; nothing degrades silently | an archive without thumbnails looks finished and is not | §2 |
+| The key derivation stays pinned to the reference value | a silent change makes every archive wrong in a way no fixture catches | §9 |
 
 ## How to work
 
@@ -43,8 +44,8 @@ bullet, not a whole milestone.
 4. Re-read the diff. Does it duplicate something already present? Does it work around a constraint
    instead of satisfying it? Could it be smaller? Answer honestly and cut.
 5. Commit, one unit per commit, message in English imperative:
-   `feat(db): read message_add_on reactions into chat.db`, `fix(media): keep peaks for zero-length
-   voice notes`.
+   `feat(store): read message_add_on reactions`, `fix(media): keep peaks for zero-length voice
+   notes`.
 
 Tests are written but **not run on your own initiative** (owner rule): the project's checks run
 once, whole tree, before a push, and the owner decides when a push happens. Reading the code and
@@ -52,8 +53,8 @@ the diff is what judges a unit.
 
 ## Never do this
 
-- Add a dependency to avoid writing thirty lines. `wa-crypt-tools`, `Pillow`, `Nuitka` and stdlib
-  are the budget; anything else needs the owner.
+- Add a dependency to avoid writing thirty lines. The crates already in `Cargo.toml` are the budget;
+  anything else needs the owner.
 - Reintroduce `fetch`, ES modules, Web Workers or `localStorage` in the viewer because they feel
   convenient. They are exactly what `file://` blocks (§6).
 - Recompute in the viewer anything the build already froze (timestamps, dimensions, mime, paths).
@@ -61,20 +62,21 @@ the diff is what judges a unit.
 - Probe WhatsApp's version string to decide a schema shape when the schema itself answers.
 - Make a fixture match the code instead of the reality the fixture is meant to represent.
 - Silence a failure into a warning. Either the archive is correct or the exit code says why not.
-- Read a WhatsApp column anywhere outside `py/src/wexport/db/msgstore.py`.
+- Read a WhatsApp column anywhere outside `src/msgstore.rs`.
+- Print from a module other than `ui.rs`/`main.rs`, or read the command line outside `ui.rs`.
 
 ## Adding a message kind
 
-Three places, in this order: the mapping in `py/src/wexport/db/msgstore.py` → the `kind` vocabulary in §4 (with the
+Three places, in this order: the mapping in `src/msgstore.rs` → the `kind` vocabulary in §4 (with the
 plan updated in the same commit) → a renderer in `app.js` with a fallback for unknown payloads. If
-the kind needs a new data field, it goes in `payload` JSON; a new column requires a schema change and
-a reason in the commit.
+the kind needs a new data field, it goes in the `pl` payload JSON; a new record field requires the
+plan and the viewer to change together.
 
 ## Definition of done for a unit
 
 - Code in the planned location, no dead branches, no TODO without a `shortcut:` note.
 - A test that fails if the behaviour regresses (synthetic fixture, or `WEXPORT_REAL_BACKUP` when
-  only real data can prove it — and the test says why in its docstring).
+  only real data can prove it — and the test says why in its comment).
 - Docs updated only where observable behaviour changed: §4/§5/§6 of the plan, or `docs/user-flow.md`
   when the user sees it.
 - `git status` clean, one commit, message that names the unit.

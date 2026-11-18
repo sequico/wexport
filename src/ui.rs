@@ -8,6 +8,7 @@ use crate::crypt15;
 use crate::discover;
 use crate::error::{Error, Result, EXIT_INCOMPLETE};
 use crate::keys;
+use crate::merge;
 use crate::msgstore::{ChatStat, Msgstore};
 
 const OUTPUT_DIR: &str = "archives";
@@ -69,7 +70,7 @@ pub fn run(args: &[String]) -> Result<i32> {
             "merging      {} incremental file(s)",
             inputs.incrementals.len()
         );
-        merge_incrementals(&database_path, &inputs.incrementals, &key, &workspace)?;
+        merge::apply(&database_path, &inputs.incrementals, &key, &workspace.path)?;
     }
 
     let mut store = Msgstore::open(&database_path)?;
@@ -382,83 +383,6 @@ fn decrypt_contacts(contacts: &Path, key: &[u8; 32], workspace: &Workspace) -> R
     let target = workspace.path.join("wa.db");
     std::fs::write(&target, plaintext)?;
     Ok(target)
-}
-
-fn merge_incrementals(
-    base: &Path,
-    increments: &[PathBuf],
-    key: &[u8; 32],
-    workspace: &Workspace,
-) -> Result<()> {
-    let mut plain: Vec<PathBuf> = Vec::new();
-    for (index, increment) in increments.iter().enumerate() {
-        let bytes = std::fs::read(increment)?;
-        let header = crypt15::parse_header(&bytes)?;
-        let target = workspace.path.join(format!("increment-{index}.db"));
-        std::fs::write(&target, crypt15::decrypt(&bytes, &header, key)?)?;
-        plain.push(target);
-    }
-    plain.sort();
-    let connection = rusqlite::Connection::open(base)?;
-    for delta in plain {
-        connection.execute("ATTACH DATABASE ?1 AS inc", [delta.display().to_string()])?;
-        for table in [
-            "jid",
-            "chat",
-            "message",
-            "message_text",
-            "message_media",
-            "message_quoted",
-            "message_revoked",
-            "message_add_on",
-            "message_add_on_reaction",
-            "message_system",
-            "message_location",
-            "message_vcard",
-            "receipt_user",
-            "group_participant_user",
-            "call_log",
-        ] {
-            if !has_table(&connection, "inc", table)? {
-                continue;
-            }
-            if !has_table(&connection, "main", table)? {
-                return Err(Error::incomplete(format!(
-                    "{} carries table {table}, which the full backup does not have: make a fresh full backup",
-                    delta.display()
-                )));
-            }
-            let base_columns = columns_of(&connection, "main", table)?;
-            let delta_columns = columns_of(&connection, "inc", table)?;
-            if base_columns != delta_columns {
-                return Err(Error::incomplete(format!(
-                    "table {table} has different columns between the full backup and {}: make a fresh full backup",
-                    delta.display()
-                )));
-            }
-            connection.execute(
-                &format!("INSERT OR REPLACE INTO main.\"{table}\" SELECT * FROM inc.\"{table}\""),
-                [],
-            )?;
-        }
-        connection.execute("DETACH DATABASE inc", [])?;
-    }
-    Ok(())
-}
-
-fn has_table(connection: &rusqlite::Connection, schema: &str, table: &str) -> Result<bool> {
-    let count: i64 = connection.query_row(
-        &format!("SELECT COUNT(*) FROM {schema}.sqlite_master WHERE type='table' AND name = ?1"),
-        [table],
-        |row| row.get(0),
-    )?;
-    Ok(count > 0)
-}
-
-fn columns_of(connection: &rusqlite::Connection, schema: &str, table: &str) -> Result<Vec<String>> {
-    let mut statement = connection.prepare(&format!("PRAGMA {schema}.table_info(\"{table}\")"))?;
-    let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
-    Ok(rows.filter_map(|row| row.ok()).collect())
 }
 
 fn open_if_desktop(page: &Path) {

@@ -5,6 +5,10 @@ edition = "2021"
 rust-version = "1.80"
 license = "GPL-3.0-or-later"
 description = "Android WhatsApp crypt15 backup to self-contained offline chat archives"
+repository = "https://github.com/sequico/wexport"
+readme = "README.md"
+keywords = ["whatsapp", "backup", "archive", "offline", "crypt15"]
+categories = ["command-line-utilities"]
 
 [lib]
 name = "wexport"

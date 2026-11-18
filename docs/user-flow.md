@@ -85,8 +85,8 @@ wexport is not needed any more: the folder opens by double-click.
 The key can be given three ways: the screenshot (`--key key.png`), the 64 digits copied from it
 (`--key 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`--key encrypted_backup.key`).
 
-You run the release binary (on Linux and Windows there is one file per platform, no Python needed) or,
-if you have Python, `uv tool install wexport`. Both give the same `wexport` command.
+You run the release binary (on Linux and Windows there is one file per platform, nothing else to
+install) and that is the whole setup.
 
 `ffmpeg` must be on the PATH: without it wexport stops immediately and tells you the exact command for
 your system (`sudo apt install ffmpeg`, `sudo dnf install ffmpeg`, `sudo pacman -S ffmpeg`, or

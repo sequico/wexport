@@ -6,7 +6,7 @@ itself, from a `msgstore.db` we also build ourselves.
 ## Shape
 
 ```
-py/tests/fixtures/
+tests/fixtures/
 ├── synthetic/
 │   ├── schema.sql          # the WhatsApp tables we read, minimal columns
 │   ├── data.sql            # one row per message kind, plus reactions, quotes, edits, revokes, calls
@@ -26,9 +26,9 @@ the version the product uses:
 1. `sqlite3` from the stdlib applies `schema.sql` and `data.sql` to `msgstore.db`.
 2. The library's key factory turns the fixed hex key into a key object; the database factory parses a
    header and encrypts the payload.
-3. Confirm the exact encrypt call by reading the installed package (`src/wa_crypt_tools/` in the
-   pinned ref). Do not guess an API and do not copy a command line from a blog post: the entry points
-   are `KeyFactory` and `DatabaseFactory`, and everything else is internal.
+3. Confirm the exact encrypt call by reading the installed package (site-packages of
+   `wa-crypt-tools`). Do not guess an API and do not copy a command line from a blog post: the entry
+   points are `KeyFactory` and `DatabaseFactory`, and everything else is internal.
 
 ## What the fixture must cover
 
@@ -45,9 +45,12 @@ the version the product uses:
 Commit the tiny real files (a 1x1 PNG, a 120-byte WebP sticker, a fraction-of-a-second Opus voice
 note, a minimal MP4). A few KB in git buys tests that need no external binary.
 
-`media/derive.py` must take its prober and its transcode command as injected collaborators, so unit
-tests pass a stub returning canned metadata. The real `ffmpeg`/`ffprobe` path is exercised by one
-integration test that skips — with a docstring saying why — when the binaries are absent.
+`build.py` is a test tool, not part of the product: it is the only Python left in the repository, it
+runs only when the fixture is regenerated, and the crate never calls it. Image derivatives are
+produced with `ffmpeg`, which the product requires anyway, so the only external tools a test run needs
+are the same two the product needs. Unit tests that must not depend on a binary work on bytes (the
+waveform peaks from raw PCM, chunk splitting, escaping), and one integration test runs the real
+`ffmpeg`/`ffprobe` path on the fixture.
 
 ## Assertions worth writing
 

@@ -392,8 +392,8 @@ fn slug(chat: &Chat) -> String {
         .collect::<Vec<_>>()
         .join("-");
     let base: String = base.chars().take(40).collect();
-    // sha1, four hex digits: the Python implementation named every archive this way, and the name
-    // is what a person recognises on disk. Same input, same folder.
+    // sha1, four hex digits: the folder name is what a person recognises on disk, and it is part of
+    // the archive contract, so it stays what the first implementation produced.
     let mut digest = sha1::Sha1::new();
     use sha1::Digest;
     digest.update(chat.jid.as_bytes());
