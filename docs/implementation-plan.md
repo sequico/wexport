@@ -502,3 +502,7 @@ No decision is open.
   add-on row when a real backup with polls is available.
 - **Cross-compiled release builds** for Linux (musl) and Windows from one runner, with the interface
   test run under Wine; until then, a release is a build per platform.
+
+---
+
+wexport is written and maintained by [Sequi Company](https://sequi.company) — `info@sequi.company`.

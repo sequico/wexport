@@ -6,7 +6,8 @@ interesting failures are about data exposure and about parsing hostile files.
 ## Reporting
 
 Write to the maintainers privately first — `info@sequi.company` — and give a reproduction if you can.
-Please do not open a public issue for a vulnerability before it is fixed.
+Please do not open a public issue for a vulnerability before it is fixed. The same address reaches
+[Sequi Company](https://sequi.company), who maintain wexport.
 
 ## In scope
 

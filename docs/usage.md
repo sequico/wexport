@@ -220,3 +220,7 @@ WhatsApp pages this flow is taken from, all of them current at the time of writi
 
 The figures on this page are drawn from those steps, not taken from WhatsApp: the wording of the
 buttons is WhatsApp's, the layout is ours.
+
+---
+
+wexport is written and maintained by [Sequi Company](https://sequi.company) — `info@sequi.company`.

@@ -156,3 +156,7 @@ Cautions:
 - chathoarding.app, *Crypt15 explained* (18 May 2026): header fields, payload compression, table
   list.
 - WhatsApp FAQ: end-to-end encrypted backup, turning it off.
+
+---
+
+wexport is written and maintained by [Sequi Company](https://sequi.company) — `info@sequi.company`.

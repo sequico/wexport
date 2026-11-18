@@ -145,8 +145,17 @@ The fixture is `tests/fixtures/synthetic/phone`, built by `tests/fixtures/synthe
 [docs/implementation-plan.md](docs/implementation-plan.md) for the specification, and `AGENTS.md` for
 the project rules an agent follows here.
 
+## Contributing
+
+Issues and pull requests are welcome. Run `./scripts/gate.sh` before opening a pull request: it is the
+check `main` must pass. A change to the archive format, the command line or the viewer also belongs in
+`docs/implementation-plan.md`, which is the specification those three follow.
+
 ## License
 
 **GPL-3.0-or-later**, see [LICENSE](LICENSE). The `crypt15` key derivation and container layout follow
 [`wa-crypt-tools`](https://github.com/ElDavoo/wa-crypt-tools) (GPL-3.0), reimplemented here and pinned
 by a test to the value that reference computes.
+
+wexport is written and maintained by **[Sequi Company](https://sequi.company)** (Ancona, Italy) —
+`info@sequi.company`. Copyright (C) 2026 Sequi Company; see [AUTHORS](AUTHORS).
