@@ -84,11 +84,14 @@ pub fn discover(path: &Path) -> Result<Inputs> {
         )));
     }
 
-    let incrementals = crypt15
+    let mut incrementals: Vec<PathBuf> = crypt15
         .iter()
         .filter(|path| **path != full && name_starts_with(path, "msgstore-increment"))
         .cloned()
         .collect();
+    // Oldest first, by the numbers in the name: "increment-2" comes before "increment-10", and a
+    // dated name ("2026-12-03") sorts by its date.
+    incrementals.sort_by_key(|path| natural_order(path));
     let ignored = crypt14
         .iter()
         .filter(|path| name_starts_with(path, "msgstore"))
@@ -253,6 +256,20 @@ fn name_starts_with(path: &Path, prefix: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// The numbers in a file name, in order: the natural sort of `increment-2` before `increment-10`
+/// and of `2026-12-03` before `2026-12-10`.
+fn natural_order(path: &Path) -> Vec<u64> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            name.split(|character: char| !character.is_ascii_digit())
+                .filter(|part| !part.is_empty())
+                .filter_map(|part| part.parse::<u64>().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn modified(path: &Path) -> std::time::SystemTime {
     std::fs::metadata(path)
         .and_then(|meta| meta.modified())
@@ -288,6 +305,34 @@ mod tests {
             Path::new(&home).join("archives")
         );
         assert_eq!(expand(Path::new("/tmp/plain")), Path::new("/tmp/plain"));
+    }
+
+    #[test]
+    fn increments_are_ordered_by_their_numbers_not_by_their_spelling() {
+        let mut names = vec![
+            Path::new("msgstore-increment-10.db.crypt15"),
+            Path::new("msgstore-increment-2.db.crypt15"),
+            Path::new("msgstore-increment-1.db.crypt15"),
+        ];
+        names.sort_by_key(|path| natural_order(path));
+        assert_eq!(
+            names,
+            [
+                Path::new("msgstore-increment-1.db.crypt15"),
+                Path::new("msgstore-increment-2.db.crypt15"),
+                Path::new("msgstore-increment-10.db.crypt15"),
+            ]
+        );
+
+        let mut dates = vec![
+            Path::new("msgstore-increment-2026-12-10.db.crypt15"),
+            Path::new("msgstore-increment-2026-12-03.db.crypt15"),
+        ];
+        dates.sort_by_key(|path| natural_order(path));
+        assert_eq!(
+            dates[0],
+            Path::new("msgstore-increment-2026-12-03.db.crypt15")
+        );
     }
 
     #[test]
