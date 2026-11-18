@@ -138,6 +138,9 @@ wexport/
 │   ├── android-backup-formats.md
 │   ├── usage.md
 │   └── figures/                 # the phone screens usage.md shows
+├── .github/
+│   ├── workflows/gate.yml       # the push gate on every pull request and push to main
+│   └── ISSUE_TEMPLATE/, pull_request_template.md
 ├── .opencode/skills/            # agent skills for working in this repo
 │   ├── wexport-implement/       # procedure + invariants + fixtures recipe
 │   └── offline-html-archive/    # file:// archive technique

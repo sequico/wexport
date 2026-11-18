@@ -147,8 +147,8 @@ the project rules an agent follows here.
 
 ## Contributing
 
-Issues and pull requests are welcome. Run `./scripts/gate.sh` before opening a pull request: it is the
-check `main` must pass. A change to the archive format, the command line or the viewer also belongs in
+Issues and pull requests are welcome, under the [Code of Conduct](CODE_OF_CONDUCT.md). Run
+`./scripts/gate.sh` before opening a pull request: it is the check `main` must pass. A change to the archive format, the command line or the viewer also belongs in
 `docs/implementation-plan.md`, which is the specification those three follow.
 
 ## License
