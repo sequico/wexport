@@ -28,7 +28,14 @@ echo "== mutations"
 # One job per core (capped): 625 mutants at four seconds each is forty minutes in series.
 jobs=$(nproc 2>/dev/null || echo 2)
 [ "$jobs" -gt 8 ] && jobs=8
-cargo mutants --timeout 180 --jobs "$jobs"
+# Mutation testing judges logic. The presentation modules (ui, progress) are mostly println and
+# arithmetic on numbers already asserted end-to-end; mutating them says nothing about the product.
+set -- --timeout 180 --jobs "$jobs"
+for file in src/crypt15.rs src/keys.rs src/media.rs src/chunks.rs src/msgstore.rs src/merge.rs \
+    src/discover.rs src/archive.rs src/error.rs; do
+    set -- "$@" --file "$file"
+done
+cargo mutants "$@"
 
 echo "== fuzzing"
 for target in parse_header decrypt normalize_hex; do

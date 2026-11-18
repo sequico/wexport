@@ -776,4 +776,32 @@ mod tests {
         assert!(error.message.contains("-x"));
         assert!(error.message.contains("-h"));
     }
+
+    #[test]
+    fn sizes_read_in_the_unit_that_fits() {
+        assert_eq!(human_bytes(0), "0 B");
+        assert_eq!(human_bytes(1023), "1023 B");
+        assert_eq!(human_bytes(1024), "1.0 kB");
+        assert_eq!(human_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(human_bytes(3 * 1024 * 1024 * 1024), "3.0 GB");
+    }
+
+    #[test]
+    fn a_chat_without_a_name_shows_its_jid() {
+        let mut named = stat("Alice", 1, 0);
+        named.chat.jid = "393331234567@s.whatsapp.net".into();
+        assert_eq!(label_of(&named), "Alice");
+
+        // The adapter falls back to the number as a name, which is not a name at all.
+        let anonymous = stat("393331234567", 1, 0);
+        assert_eq!(label_of(&anonymous), "393331234567@s.whatsapp.net");
+    }
+
+    #[test]
+    fn the_codes_start_at_one_in_list_order() {
+        let stats = vec![stat("a", 3, 0), stat("b", 2, 0)];
+        let numbers = numbered(&stats);
+        assert_eq!(numbers["a@s.whatsapp.net"], 1);
+        assert_eq!(numbers["b@s.whatsapp.net"], 2);
+    }
 }
