@@ -442,7 +442,20 @@ fn open_if_desktop(page: &Path) {
     } else {
         "xdg-open"
     };
-    let _ = std::process::Command::new(opener).arg(page).spawn();
+    // The browser is a convenience, not part of the run: its own output must not land in this
+    // terminal, and it must not stay in the foreground group where a Ctrl-C would hit it.
+    let mut command = std::process::Command::new(opener);
+    command
+        .arg(page)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let _ = command.spawn();
 }
 
 struct Workspace {
