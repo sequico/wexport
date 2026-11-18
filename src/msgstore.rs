@@ -500,52 +500,18 @@ impl Msgstore {
 
     pub fn chat_stats(&self) -> Result<Vec<ChatStat>> {
         if let (Some(column), false) = (&self.c_chat_row, self.chats.is_empty()) {
-            let sql = format!(
-                "SELECT m.\"{column}\", COUNT(*), MIN(m.\"{ts}\"), MAX(m.\"{ts}\") FROM message m GROUP BY 1",
-                ts = self.c_ts
-            );
-            let mut statement = self.con.prepare(&sql)?;
-            let rows = statement.query_map([], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, Option<i64>>(2)?,
-                    row.get::<_, Option<i64>>(3)?,
-                ))
-            })?;
-            let mut totals: HashMap<i64, (i64, i64, i64)> = HashMap::new();
-            for (chat_id, count, first, last) in rows.flatten() {
-                totals.insert(chat_id, (count, first.unwrap_or(0), last.unwrap_or(0)));
-            }
-
-            let mut media: HashMap<i64, (i64, i64)> = HashMap::new();
-            if let (Some(message_col), Some(size_col)) = (&self.m_message, &self.m_bytes) {
-                let sql = format!(
-                    "SELECT m.\"{column}\", COUNT(*), COALESCE(SUM(d.\"{size_col}\"), 0) FROM message_media d JOIN message m ON m.\"{}\" = d.\"{message_col}\" GROUP BY 1",
-                    self.c_id
-                );
-                if let Ok(mut statement) = self.con.prepare(&sql) {
-                    if let Ok(rows) = statement.query_map([], |row| {
-                        Ok((
-                            row.get::<_, i64>(0)?,
-                            row.get::<_, i64>(1)?,
-                            row.get::<_, i64>(2)?,
-                        ))
-                    }) {
-                        for (chat_id, count, size) in rows.flatten() {
-                            media.insert(chat_id, (count, size));
-                        }
-                    }
-                }
-            }
-
+            let grouping = format!("m.\"{column}\"");
+            let totals: HashMap<i64, (i64, i64, i64)> = self.totals(&grouping)?;
+            let media: HashMap<i64, (i64, i64)> = self.media_totals(&grouping);
+            let calls: HashMap<i64, i64> = self.call_times("jid_row_id");
             let mut out = Vec::new();
             for (chat_id, chat) in &self.chats {
                 let (count, first, last) = totals.get(chat_id).copied().unwrap_or((0, 0, 0));
                 let last = self
                     .jid_row
                     .get(chat_id)
-                    .map(|jid| last.max(self.call_time(*jid)))
+                    .and_then(|jid| calls.get(jid).copied())
+                    .map(|call| last.max(call))
                     .unwrap_or(last);
                 let first = if first == 0 { last } else { first };
                 let (media_count, media_bytes) = media.get(chat_id).copied().unwrap_or((0, 0));
@@ -564,63 +530,117 @@ impl Msgstore {
         let Some(column) = &self.c_chat_jid else {
             return Err(Error::input("cannot tell which chat a message belongs to"));
         };
-        let sql = format!(
-            "SELECT m.\"{column}\", COUNT(*), MIN(m.\"{ts}\"), MAX(m.\"{ts}\") FROM message m GROUP BY 1",
-            ts = self.c_ts
-        );
-        let mut statement = self.con.prepare(&sql)?;
-        let rows = statement.query_map([], |row| {
-            Ok((
-                row.get::<_, Option<String>>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, Option<i64>>(2)?,
-                row.get::<_, Option<i64>>(3)?,
-            ))
-        })?;
+        let grouping = format!("m.\"{column}\"");
+        let totals: HashMap<String, (i64, i64, i64)> = self.totals(&grouping)?;
+        let media: HashMap<String, (i64, i64)> = self.media_totals(&grouping);
+        let calls: HashMap<String, i64> = self.call_times(column);
         let mut out = Vec::new();
-        for (jid, count, first, last) in rows.flatten() {
-            let Some(jid) = jid
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-            else {
+        for (jid, (count, first, last)) in totals {
+            let jid = jid.trim().to_string();
+            if jid.is_empty() {
                 continue;
-            };
-            let name = jid.split('@').next().unwrap_or("").to_string();
+            }
+            let last = last.max(calls.get(&jid).copied().unwrap_or(0));
+            let first = if first == 0 { last } else { first };
+            let (media_count, media_bytes) = media.get(&jid).copied().unwrap_or((0, 0));
             out.push(ChatStat {
                 chat: Chat {
                     is_group: jid.ends_with("@g.us"),
-                    name,
+                    name: jid.split('@').next().unwrap_or("").to_string(),
                     jid,
                 },
                 messages: count,
-                first_ts: first.unwrap_or(0),
-                last_ts: last.unwrap_or(0),
-                media_count: 0,
-                media_bytes: 0,
+                first_ts: first,
+                last_ts: last,
+                media_count,
+                media_bytes,
             });
         }
         Ok(out)
     }
 
-    fn call_time(&self, jid_row: i64) -> i64 {
+    /// Message count and time range per chat, grouped by whichever column identifies a chat.
+    fn totals<K>(&self, grouping: &str) -> Result<HashMap<K, (i64, i64, i64)>>
+    where
+        K: rusqlite::types::FromSql + std::hash::Hash + Eq,
+    {
+        let sql = format!(
+            "SELECT {grouping}, COUNT(*), MIN(m.\"{ts}\"), MAX(m.\"{ts}\") FROM message m GROUP BY 1",
+            ts = self.c_ts
+        );
+        let mut statement = self.con.prepare(&sql)?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, K>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, Option<i64>>(3)?,
+            ))
+        })?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (key, count, first, last) = row?;
+            out.insert(key, (count, first.unwrap_or(0), last.unwrap_or(0)));
+        }
+        Ok(out)
+    }
+
+    /// Media count and weight per chat, keyed the same way as `totals`.
+    fn media_totals<K>(&self, grouping: &str) -> HashMap<K, (i64, i64)>
+    where
+        K: rusqlite::types::FromSql + std::hash::Hash + Eq,
+    {
+        let (Some(message_col), Some(size_col)) = (&self.m_message, &self.m_bytes) else {
+            return HashMap::new();
+        };
+        let sql = format!(
+            "SELECT {grouping}, COUNT(*), COALESCE(SUM(d.\"{size_col}\"), 0) FROM message_media d JOIN message m ON m.\"{}\" = d.\"{message_col}\" GROUP BY 1",
+            self.c_id
+        );
+        let Ok(mut statement) = self.con.prepare(&sql) else {
+            return HashMap::new();
+        };
+        let Ok(rows) = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, K>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        }) else {
+            return HashMap::new();
+        };
+        rows.filter_map(|row| row.ok())
+            .map(|(key, count, size)| (key, (count, size)))
+            .collect()
+    }
+
+    /// Newest call per chat, in one read: a chat whose last event was a call still sorts correctly.
+    fn call_times<K>(&self, column: &str) -> HashMap<K, i64>
+    where
+        K: rusqlite::types::FromSql + std::hash::Hash + Eq,
+    {
         if !self.tables.contains("call_log") {
-            return 0;
+            return HashMap::new();
         }
         let columns = self.columns_of("call_log");
-        if !columns.iter().any(|name| name == "jid_row_id")
+        if !columns.iter().any(|name| name == column)
             || !columns.iter().any(|name| name == "timestamp")
         {
-            return 0;
+            return HashMap::new();
         }
-        self.con
-            .query_row(
-                "SELECT MAX(timestamp) FROM call_log WHERE jid_row_id = ?1",
-                [jid_row],
-                |row| row.get::<_, Option<i64>>(0),
-            )
-            .ok()
-            .flatten()
-            .unwrap_or(0)
+        let Ok(mut statement) = self.con.prepare(&format!(
+            "SELECT \"{column}\", MAX(timestamp) FROM call_log GROUP BY 1"
+        )) else {
+            return HashMap::new();
+        };
+        let Ok(rows) = statement.query_map([], |row| {
+            Ok((row.get::<_, K>(0)?, row.get::<_, Option<i64>>(1)?))
+        }) else {
+            return HashMap::new();
+        };
+        rows.filter_map(|row| row.ok())
+            .map(|(jid, stamp)| (jid, stamp.unwrap_or(0)))
+            .collect()
     }
 
     pub fn messages(&self, chat: &Chat) -> Result<Vec<Message>> {
@@ -700,33 +720,35 @@ impl Msgstore {
         Ok(out)
     }
 
+    /// The `chat` table row for a chat, when this schema has that table.
+    fn chat_row_of(&self, chat: &Chat) -> Option<i64> {
+        self.chats
+            .iter()
+            .find(|(_, candidate)| candidate.jid == chat.jid)
+            .map(|(id, _)| *id)
+    }
+
     fn chat_filter(&self, chat: &Chat) -> (String, Vec<SqlValue>) {
         if let (Some(column), false) = (&self.c_chat_row, self.chats.is_empty()) {
-            if let Some((id, _)) = self
-                .chats
-                .iter()
-                .find(|(_, candidate)| candidate.jid == chat.jid)
-            {
-                return (format!("m.\"{column}\" = ?"), vec![SqlValue::Integer(*id)]);
-            }
-            return ("0".to_string(), Vec::new());
+            return match self.chat_row_of(chat) {
+                Some(id) => (format!("m.\"{column}\" = ?"), vec![SqlValue::Integer(id)]),
+                None => ("0".to_string(), Vec::new()),
+            };
         }
-        match &self.c_chat_jid {
-            Some(column) => {
-                let c_us = chat.jid.replace("@s.whatsapp.net", "@c.us");
-                if c_us != chat.jid {
-                    (
-                        format!("m.\"{column}\" IN (?, ?)"),
-                        vec![SqlValue::Text(chat.jid.clone()), SqlValue::Text(c_us)],
-                    )
-                } else {
-                    (
-                        format!("m.\"{column}\" = ?"),
-                        vec![SqlValue::Text(chat.jid.clone())],
-                    )
-                }
-            }
-            None => ("0".to_string(), Vec::new()),
+        let Some(column) = &self.c_chat_jid else {
+            return ("0".to_string(), Vec::new());
+        };
+        let c_us = chat.jid.replace("@s.whatsapp.net", "@c.us");
+        if c_us != chat.jid {
+            (
+                format!("m.\"{column}\" IN (?, ?)"),
+                vec![SqlValue::Text(chat.jid.clone()), SqlValue::Text(c_us)],
+            )
+        } else {
+            (
+                format!("m.\"{column}\" = ?"),
+                vec![SqlValue::Text(chat.jid.clone())],
+            )
         }
     }
 
@@ -790,16 +812,31 @@ impl Msgstore {
         else {
             return Ok(out);
         };
-        let chat_row = self
-            .chats
-            .iter()
-            .find(|(_, candidate)| candidate.jid == chat.jid)
-            .map(|(id, _)| *id);
-        let Some(chat_row) = chat_row else {
-            return Ok(out);
-        };
-        let Some(jid_row) = self.jid_row.get(&chat_row).copied() else {
-            return Ok(out);
+        // Two shapes: a reference to the jid table, or the jid text itself on older schemas.
+        let (filter, params) = if jid_col == "jid_row_id" {
+            let Some(chat_row) = self.chat_row_of(chat) else {
+                return Ok(out);
+            };
+            let Some(jid_row) = self.jid_row.get(&chat_row).copied() else {
+                return Ok(out);
+            };
+            (
+                "\"jid_row_id\" = ?1".to_string(),
+                vec![SqlValue::Integer(jid_row)],
+            )
+        } else {
+            let c_us = chat.jid.replace("@s.whatsapp.net", "@c.us");
+            if c_us == chat.jid {
+                (
+                    "\"key_remote_jid\" = ?1".to_string(),
+                    vec![SqlValue::Text(chat.jid.clone())],
+                )
+            } else {
+                (
+                    "\"key_remote_jid\" IN (?1, ?2)".to_string(),
+                    vec![SqlValue::Text(chat.jid.clone()), SqlValue::Text(c_us)],
+                )
+            }
         };
 
         let find = |names: &[&str]| {
@@ -814,9 +851,9 @@ impl Msgstore {
         let has_from_me = columns.iter().any(|name| name == "from_me");
 
         let mut statement = self.con.prepare(&format!(
-            "SELECT * FROM call_log WHERE \"{jid_col}\" = ?1 ORDER BY timestamp"
+            "SELECT * FROM call_log WHERE {filter} ORDER BY timestamp"
         ))?;
-        let mut rows = statement.query([jid_row])?;
+        let mut rows = statement.query(rusqlite::params_from_iter(params))?;
         while let Some(row) = rows.next()? {
             let id: i64 = row.get("_id")?;
             let ts: i64 = row.get::<_, Option<i64>>("timestamp")?.unwrap_or(0);
@@ -900,4 +937,54 @@ fn media_kind(row: &MediaRow, wa_type: Option<i64>) -> String {
         return "audio".to_string();
     }
     "document".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The schema of the backups this app refuses to open is the only one the fixture does not
+    /// carry: no `chat`/`jid` tables, the jid written on every row, calls pointing at it by text.
+    fn legacy_store() -> (Msgstore, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("wexport-legacy-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let con = Connection::open(&path).unwrap();
+        con.execute_batch(
+            "CREATE TABLE message (_id INTEGER PRIMARY KEY, key_remote_jid TEXT,
+                 timestamp INTEGER, from_me INTEGER, data TEXT, media_wa_type INTEGER);
+             CREATE TABLE message_media (message_id INTEGER, file_path TEXT,
+                 mime_type TEXT, file_size INTEGER);
+             CREATE TABLE call_log (_id INTEGER PRIMARY KEY, key_remote_jid TEXT, timestamp INTEGER,
+                 duration INTEGER, video_call INTEGER, missed_call INTEGER, from_me INTEGER);
+             INSERT INTO message VALUES
+                 (1, '393331234567@s.whatsapp.net', 1000, 0, 'hello', 0),
+                 (2, '393331234567@s.whatsapp.net', 2000, 0, NULL, 1);
+             INSERT INTO message_media VALUES
+                 (2, 'Media/WhatsApp Images/x.jpg', 'image/jpeg', 1234);
+             INSERT INTO call_log VALUES
+                 (1, '393331234567@s.whatsapp.net', 9000, 5, 0, 1, 1);",
+        )
+        .unwrap();
+        drop(con);
+        (Msgstore::open(&path).unwrap(), path)
+    }
+
+    #[test]
+    fn an_older_schema_groups_by_jid_and_counts_its_media() {
+        let (store, path) = legacy_store();
+        let stats = store.chat_stats().unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].chat.jid, "393331234567@s.whatsapp.net");
+        assert_eq!(stats[0].messages, 2);
+        assert_eq!(stats[0].media_count, 1);
+        assert_eq!(stats[0].media_bytes, 1234);
+        assert_eq!(stats[0].first_ts, 1000);
+        assert_eq!(stats[0].last_ts, 9000, "the call is the newest event");
+
+        let messages = store.messages(&stats[0].chat).unwrap();
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2].kind, "call");
+        assert!(messages[2].payload.is_some());
+        let _ = std::fs::remove_file(path);
+    }
 }
