@@ -125,7 +125,9 @@ pub fn build_chat(
         empty: messages.is_empty(),
     };
     if summary.empty {
-        let _ = std::fs::remove_dir(&archive);
+        // A rebuild after the messages were deleted on the phone must not leave the old folder
+        // behind: it would still show a conversation the user no longer has.
+        let _ = std::fs::remove_dir_all(&archive);
         return Ok(summary);
     }
 
@@ -178,9 +180,12 @@ pub fn build_chat(
         "media": summary.media,
         "missing": summary.missing,
         "people": summary.people + if chat.is_group { 1 } else { 0 },
-        "first": clock.local(summary.first_ts),
-        "last": clock.local(summary.last_ts),
+        "first": stamp(&clock, summary.first_ts),
+        "last": stamp(&clock, summary.last_ts),
     });
+    // No stale chunk from a previous run: a month that no longer exists in the chat must not stay
+    // loadable behind the viewer's back.
+    let _ = std::fs::remove_dir_all(archive.join("data"));
     chunks::emit(
         records,
         &archive.join("data"),
@@ -363,6 +368,15 @@ fn record(message: &Message, stamp: &str, media_row: Option<Value>) -> Value {
     Value::Object(record)
 }
 
+/// A rendered stamp, or an empty string when the timestamp is unknown.
+fn stamp(clock: &Clock, ts: i64) -> String {
+    if ts > 0 {
+        clock.local(ts)
+    } else {
+        String::new()
+    }
+}
+
 fn archive_name(chat: &Chat, stat: &ChatStat, clock: &Clock) -> String {
     let stamp = if stat.last_ts > 0 {
         clock.local(stat.last_ts)[..10].to_string()
@@ -438,28 +452,28 @@ fn prune(archive: &Path, prepared: &HashMap<i64, Prepared>) -> Result<()> {
     }
     for folder in ["media", "deriv"] {
         let root = archive.join(folder);
-        let Ok(entries) = std::fs::read_dir(&root) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let Ok(inner) = std::fs::read_dir(&path) else {
-                    continue;
-                };
-                for file in inner.flatten() {
-                    let candidate = file.path();
-                    if let Ok(relative) = candidate.strip_prefix(archive) {
-                        if !keep.contains(relative.to_string_lossy().as_ref()) {
-                            let _ = std::fs::remove_file(&candidate);
-                        }
-                    }
-                }
-                let _ = std::fs::remove_dir(&path);
+        prune_tree(archive, &root, &keep);
+        let _ = std::fs::remove_dir(&root);
+    }
+    Ok(())
+}
+
+/// Delete every file this build does not reference, then every folder that became empty.
+fn prune_tree(archive: &Path, folder: &Path, keep: &std::collections::HashSet<String>) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            prune_tree(archive, &path, keep);
+            let _ = std::fs::remove_dir(&path);
+        } else if let Ok(relative) = path.strip_prefix(archive) {
+            if !keep.contains(relative.to_string_lossy().as_ref()) {
+                let _ = std::fs::remove_file(&path);
             }
         }
     }
-    Ok(())
 }
 
 fn tree_bytes(root: &Path) -> u64 {

@@ -143,6 +143,29 @@ fn a_rebuild_removes_media_it_no_longer_references() {
 }
 
 #[test]
+fn a_rebuild_removes_derivatives_it_no_longer_references() {
+    let out = scratch("deriv");
+    build(&out);
+    // Thumbnails and posters sit directly in deriv/, not one folder deeper.
+    let orphan = out.join("2026-12-02-family-9fd6/deriv/orphan.webp");
+    std::fs::write(&orphan, b"gone on the phone").unwrap();
+    build(&out);
+    assert!(!orphan.exists());
+    let _ = std::fs::remove_dir_all(&out);
+}
+
+#[test]
+fn a_rebuild_removes_chunks_of_months_that_are_gone() {
+    let out = scratch("chunks");
+    build(&out);
+    let stale = out.join("2026-12-02-family-9fd6/data/2025-01.js");
+    std::fs::write(&stale, "WEX.chunk(\"2025-01\",[]);\n").unwrap();
+    build(&out);
+    assert!(!stale.exists());
+    let _ = std::fs::remove_dir_all(&out);
+}
+
+#[test]
 fn the_empty_chat_is_skipped() {
     let out = scratch("empty");
     build(&out);
