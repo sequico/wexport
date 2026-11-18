@@ -38,6 +38,7 @@ pub struct Header {
 }
 
 impl Header {
+    /// Only an e2ee key header carries the field this IV comes from; a crypt14 header does not.
     pub fn is_crypt15(&self) -> bool {
         !self.iv.is_empty()
     }
@@ -74,13 +75,11 @@ pub fn parse_header(bytes: &[u8]) -> Result<Header> {
     offset = end;
 
     let mut iv = Vec::new();
-    let mut crypt14_iv = Vec::new();
     let mut app_version = String::new();
     let mut key_type = 0u64;
     for (number, value) in fields(proto) {
         match (number, value) {
             (3, Field::Bytes(inner)) => iv = message_bytes(inner, 1).unwrap_or_default(),
-            (2, Field::Bytes(inner)) => crypt14_iv = message_bytes(inner, 5).unwrap_or_default(),
             (4, Field::Bytes(inner)) => {
                 for (field, value2) in fields(inner) {
                     if field == 1 {
@@ -93,9 +92,6 @@ pub fn parse_header(bytes: &[u8]) -> Result<Header> {
             (6, Field::Varint(kind)) => key_type = kind,
             _ => {}
         }
-    }
-    if iv.is_empty() {
-        iv = crypt14_iv;
     }
     Ok(Header {
         iv,
@@ -207,21 +203,11 @@ pub fn decrypt(bytes: &[u8], header: &Header, root: &[u8; 32]) -> Result<Vec<u8>
             "the backup is truncated before its authentication tag",
         ));
     }
-    let (data, tag, checksum) = (
-        &body[..body.len() - 32],
-        &body[body.len() - 32..body.len() - 16],
-        &body[body.len() - 16..],
-    );
+    let checksum = &body[body.len() - 16..];
 
-    let mut digest = Md5::new();
-    digest.update(data);
-    digest.update(tag);
-    // The checksum covers the whole file except its own 16 bytes: header included. That is how the
-    // reference implementation accumulates it, so a header-only difference must not flip the layout.
     let mut whole = Md5::new();
     whole.update(&bytes[..bytes.len() - 16]);
     let single_file = whole.finalize().as_slice() == checksum;
-    let _ = digest.finalize();
 
     let cipher = Cipher::new_from_slice(&derive_key(root)).map_err(|_| Error::input("bad key"))?;
     let nonce = aes_gcm::Nonce::<U16>::from_slice(&header.iv);
@@ -284,28 +270,23 @@ fn largest_database(zip_bytes: &[u8]) -> Result<Vec<u8>> {
 mod tests {
     use super::*;
 
+    const FIXTURE: &[u8] =
+        include_bytes!("../tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15");
+    const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn root() -> [u8; 32] {
+        crate::keys::normalize_hex(KEY).expect("the fixture key is 64 hex digits")
+    }
+
     #[test]
     fn key_derivation_matches_the_reference() {
-        let mut root = [0u8; 32];
-        let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        for index in 0..32 {
-            root[index] = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).unwrap();
-        }
-        let derived = derive_key(&root);
+        let derived = derive_key(&root());
         let hex: String = derived.iter().map(|byte| format!("{byte:02x}")).collect();
         assert_eq!(
             hex,
             "d44f47a5e7d390c365ea62ece489a5418f2ef9907e0383cd49766d1b819769dc"
         );
     }
-}
-
-#[cfg(test)]
-mod fixture_tests {
-    use super::*;
-
-    const FIXTURE: &[u8] =
-        include_bytes!("../tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15");
 
     #[test]
     fn header_of_the_fixture_is_read() {
@@ -315,22 +296,16 @@ mod fixture_tests {
         assert_eq!(header.key_type, "E2EE_ENCRYPTION_KEY");
         assert_eq!(header.app_version, "2.26.34.7");
     }
-}
 
-#[cfg(test)]
-mod decrypt_tests {
-    use super::*;
-
-    const FIXTURE: &[u8] =
-        include_bytes!("../tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15");
-    const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
-    fn root() -> [u8; 32] {
-        let mut out = [0u8; 32];
-        for index in 0..32 {
-            out[index] = u8::from_str_radix(&KEY[index * 2..index * 2 + 2], 16).unwrap();
-        }
-        out
+    #[test]
+    fn a_wa_provided_header_is_not_mistaken_for_crypt15() {
+        // Field 2 (the key WhatsApp provides) carries an IV of its own on crypt14 backups; only
+        // field 3 means end-to-end encryption, so the presence of field 2 must not answer for it.
+        let mut header = vec![0x14, 0x12, 0x12, 0x2a, 0x10];
+        header.extend_from_slice(&[7u8; 16]);
+        let header = parse_header(&header).unwrap();
+        assert_eq!(header.key_type, "WA_PROVIDED");
+        assert!(!header.is_crypt15());
     }
 
     #[test]
