@@ -65,11 +65,17 @@
       if (WEX.chunks[name]) return resolve();
       var script = document.createElement("script");
       script.src = "data/" + name + ".js";
+      // The element goes as soon as it has done its job: a scroll up and down the same chunk would
+      // otherwise leave one script tag per visit in the head.
       script.onload = function () {
+        script.remove();
         if (WEX.chunks[name]) resolve();
         else reject(new Error(name));
       };
-      script.onerror = function () { reject(new Error(name)); };
+      script.onerror = function () {
+        script.remove();
+        reject(new Error(name));
+      };
       document.head.appendChild(script);
     });
   }
@@ -190,7 +196,8 @@
   function humanSize(bytes) {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " kB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
   }
 
   function drawWave(canvas, peaks) {
@@ -277,6 +284,7 @@
   /* ---------------------------------------------------------------- rendering */
 
   var renderToken = 0;
+  var searchToken = 0;
 
   function fold(text) {
     // Search ignores case and accents: "caffe" finds "caffè".
@@ -369,6 +377,9 @@
 
   function search(term) {
     term = term.trim();
+    var token = ++searchToken;
+    // A new search (or an empty one) stops whatever was running, and lets chunks be released again.
+    searching = false;
     hits.hidden = true;
     hits.replaceChildren();
     if (!term) return;
@@ -378,6 +389,7 @@
     searching = true;
 
     function step() {
+      if (token !== searchToken) return; // a newer search owns the list now
       if (index >= chunks.length) {
         searching = false;
         showResults(term, found);
@@ -387,6 +399,7 @@
       status("searching " + (index + 1) + "/" + chunks.length + " …");
       loadChunk(chunk.n)
         .then(function () {
+          if (token !== searchToken) return;
           var list = WEX.chunks[chunk.n] || [];
           for (var i = 0; i < list.length; i++) {
             var text = list[i].x;
@@ -402,6 +415,7 @@
           step();
         })
         .catch(function () {
+          if (token !== searchToken) return;
           status("chunk " + chunk.n + " missing");
           index += 1;
           step();
