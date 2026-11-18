@@ -159,9 +159,8 @@ pub fn run(args: &[String]) -> Result<i32> {
     if let Some(limit) = options.limit {
         display.truncate(limit);
     }
-    show_chats(&display, &clock, &numbers);
-
     if selected.is_empty() {
+        show_chats(&display, &clock, &numbers);
         return Ok(0);
     }
     let chosen = selected;
@@ -471,7 +470,11 @@ fn set_selection(options: &mut Options, value: &str) -> Result<()> {
             continue;
         }
         match token.parse::<usize>() {
-            Ok(number) if number > 0 => options.chats.push(number),
+            Ok(number) if number > 0 => {
+                if !options.chats.contains(&number) {
+                    options.chats.push(number);
+                }
+            }
             _ => {
                 return Err(Error::input(format!(
                     "-b takes chat codes or all, not {token}: -l shows the codes"
@@ -579,6 +582,11 @@ fn parse(args: &[String]) -> Result<Options> {
     if options.out.is_some() && !options.all && options.chats.is_empty() {
         return Err(Error::input(
             "-o says where the archives go: give -b as well",
+        ));
+    }
+    if options.reverse && (options.all || !options.chats.is_empty()) {
+        return Err(Error::input(
+            "-r orders the listing: -b builds and prints none, so there is nothing to reverse",
         ));
     }
     Ok(options)
@@ -697,6 +705,9 @@ mod tests {
 
         assert!(parse(&args("-b all")).unwrap().all);
 
+        let parsed = parse(&args("-b 3,3,42,3")).unwrap();
+        assert_eq!(parsed.chats, [3, 42], "a repeated code builds once");
+
         let error = parse(&args("-b family")).unwrap_err();
         assert!(error.message.contains("codes"));
 
@@ -705,6 +716,12 @@ mod tests {
 
         let error = parse(&args("-b")).unwrap_err();
         assert!(error.message.contains("takes a value"));
+    }
+
+    #[test]
+    fn reverse_orders_a_listing_and_a_build_has_none() {
+        let error = parse(&args("-b 3 -r")).unwrap_err();
+        assert!(error.message.contains("-r orders the listing"));
     }
 
     #[test]
