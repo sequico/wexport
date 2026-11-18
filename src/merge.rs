@@ -35,10 +35,15 @@ const MERGED_TABLES: [&str; 15] = [
 pub fn apply(base: &Path, increments: &[PathBuf], key: &[u8; 32], workspace: &Path) -> Result<()> {
     let connection = rusqlite::Connection::open(base)?;
     for (index, increment) in increments.iter().enumerate() {
-        let bytes = std::fs::read(increment)?;
+        let mut bytes = std::fs::read(increment)?;
         let header = crypt15::parse_header(&bytes)?;
         let delta = workspace.join(format!("increment-{index}.db"));
-        std::fs::write(&delta, crypt15::decrypt(&bytes, &header, key)?)?;
+        crypt15::decrypt_to(
+            &mut bytes,
+            &header,
+            key,
+            &mut std::fs::File::create(&delta)?,
+        )?;
         replay(&connection, &delta)?;
     }
     Ok(())

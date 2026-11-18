@@ -8,10 +8,10 @@
 //! `wa-crypt-tools` (GPL-3.0), because a backup that decrypts with one and not the other would be
 //! a bug nobody can find.
 
-use std::io::Read;
+use std::io::{Read, Write};
 
 use aes_gcm::aead::generic_array::typenum::U16;
-use aes_gcm::aead::{Aead, KeyInit as AeadKeyInit};
+use aes_gcm::aead::{AeadInPlace, KeyInit as AeadKeyInit};
 use aes_gcm::aes::Aes256;
 use aes_gcm::AesGcm;
 use flate2::read::ZlibDecoder;
@@ -189,55 +189,79 @@ fn read_varint(input: &[u8], mut offset: usize) -> Result<(u64, usize)> {
     Err(Error::input("header length varint is too long"))
 }
 
-/// Decrypt a crypt15 file and return the payload bytes, decompressed.
+/// Decrypt a crypt15 file in place and write its payload into `dest`.
 ///
-/// shortcut: the ciphertext and its plaintext are both in memory, so a backup that does not fit
-/// twice in RAM fails; stream the GCM tail and decompress as it goes when a real backup demands it.
-pub fn decrypt(bytes: &[u8], header: &Header, root: &[u8; 32]) -> Result<Vec<u8>> {
+/// The buffer is the file itself: decryption happens in place, so the peak is the compressed backup
+/// and never a second copy of it; the payload leaves through `dest` a block at a time.
+pub fn decrypt_to<W: Write>(
+    bytes: &mut [u8],
+    header: &Header,
+    root: &[u8; 32],
+    dest: &mut W,
+) -> Result<()> {
     if header.iv.len() != 16 {
         return Err(Error::input(format!(
             "the header carries a {}-byte IV, not 16: this is not a crypt15 backup",
             header.iv.len()
         )));
     }
-    let body = &bytes[header.header_len..];
-    if body.len() < 32 {
+    let body_start = header.header_len;
+    if bytes.len() < body_start + 32 {
         return Err(Error::input(
             "the backup is truncated before its authentication tag",
         ));
     }
-    let checksum = &body[body.len() - 16..];
-
+    // The checksum covers the whole file except its own 16 bytes. A single-file backup keeps it
+    // after the tag; a multi-file one has no checksum and its tag is the last 16 bytes.
     let mut whole = Md5::new();
     whole.update(&bytes[..bytes.len() - 16]);
-    let single_file = whole.finalize().as_slice() == checksum;
+    let single_file = whole.finalize().as_slice() == &bytes[bytes.len() - 16..];
+    let end = if single_file {
+        bytes.len() - 16
+    } else {
+        bytes.len()
+    };
+
+    let mut tag = [0u8; 16];
+    tag.copy_from_slice(&bytes[end - 16..end]);
 
     let cipher = Cipher::new_from_slice(&derive_key(root)).map_err(|_| Error::input("bad key"))?;
     let nonce = aes_gcm::Nonce::<U16>::from_slice(&header.iv);
-    // A GCM message is ciphertext followed by its 16-byte tag. Single-file backups keep the tag
-    // before the MD5 checksum; multi-file ones carry no checksum and the tag is the last 16 bytes.
-    let sealed = if single_file {
-        &body[..body.len() - 16]
-    } else {
-        body
-    };
-    let plain = cipher
-        .decrypt(nonce, sealed)
+    cipher
+        .decrypt_in_place_detached(
+            nonce,
+            &[],
+            &mut bytes[body_start..end - 16],
+            aes_gcm::Tag::<U16>::from_slice(&tag),
+        )
         .map_err(|_| Error::key("the key does not open this backup, or the backup is corrupt"))?;
 
-    let mut data = Vec::new();
-    ZlibDecoder::new(plain.as_slice())
-        .read_to_end(&mut data)
+    // In place means the plaintext replaced the ciphertext: nothing was copied to get here. It is
+    // still zlib: the sniff happens on the decompressed stream, which leaves through `dest`.
+    let mut decoder = ZlibDecoder::new(&bytes[body_start..end - 16]);
+    let mut magic = [0u8; 16];
+    decoder
+        .read_exact(&mut magic)
         .map_err(|error| Error::input(format!("the payload is not zlib data: {error}")))?;
-    if data.starts_with(b"PK\x03\x04") {
-        return largest_database(&data);
+    if magic.starts_with(b"SQLite format 3\0") {
+        dest.write_all(&magic)?;
+        std::io::copy(&mut decoder, dest)
+            .map_err(|error| Error::input(format!("the payload is not zlib data: {error}")))?;
+        return Ok(());
     }
-    if !data.starts_with(b"SQLite format 3\0") {
-        return Err(Error::input(
-            "the decrypted payload is not a SQLite database",
-        ));
+    if magic.starts_with(b"PK\x03\x04") {
+        // A ZIP needs random access, so this shape is the one case held whole: it is the compressed
+        // payload, and it carries several databases that have to be compared.
+        let mut zipped = magic.to_vec();
+        decoder
+            .read_to_end(&mut zipped)
+            .map_err(|error| Error::input(format!("the payload is not zlib data: {error}")))?;
+        dest.write_all(&largest_database(&zipped)?)?;
+        return Ok(());
     }
-    Ok(data)
+    Err(Error::input(
+        "the decrypted payload is not a SQLite database",
+    ))
 }
 
 fn largest_database(zip_bytes: &[u8]) -> Result<Vec<u8>> {
@@ -314,7 +338,9 @@ mod tests {
     #[test]
     fn the_fixture_decrypts_to_sqlite() {
         let header = parse_header(FIXTURE).unwrap();
-        let plain = decrypt(FIXTURE, &header, &root()).unwrap();
+        let mut bytes = FIXTURE.to_vec();
+        let mut plain = Vec::new();
+        decrypt_to(&mut bytes, &header, &root(), &mut plain).unwrap();
         assert!(plain.starts_with(b"SQLite format 3\0"));
         assert!(plain.len() > 4096);
     }
@@ -324,6 +350,7 @@ mod tests {
         let header = parse_header(FIXTURE).unwrap();
         let mut wrong = root();
         wrong[0] ^= 0xff;
-        assert!(decrypt(FIXTURE, &header, &wrong).is_err());
+        let mut bytes = FIXTURE.to_vec();
+        assert!(decrypt_to(&mut bytes, &header, &wrong, &mut Vec::new()).is_err());
     }
 }

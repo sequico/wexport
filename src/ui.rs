@@ -30,7 +30,7 @@ pub fn run(args: &[String]) -> Result<i32> {
 
     discover::require_binaries(&["ffmpeg", "ffprobe"])?;
     let inputs = discover::discover(&folder)?;
-    let database = std::fs::read(&inputs.database)?;
+    let mut database = std::fs::read(&inputs.database)?;
     let header = crypt15::parse_header(&database)?;
     require_openable(&header, &inputs.database)?;
     if !inputs.ignored.is_empty() {
@@ -61,9 +61,13 @@ pub fn run(args: &[String]) -> Result<i32> {
             .and_then(|name| name.to_str())
             .unwrap_or("backup")
     );
-    let plaintext = crypt15::decrypt(&database, &header, &key)?;
     let database_path = workspace.path.join("msgstore.db");
-    std::fs::write(&database_path, plaintext)?;
+    crypt15::decrypt_to(
+        &mut database,
+        &header,
+        &key,
+        &mut std::fs::File::create(&database_path)?,
+    )?;
 
     if !inputs.incrementals.is_empty() {
         println!(
@@ -411,11 +415,15 @@ fn fold(text: &str) -> String {
 }
 
 fn decrypt_contacts(contacts: &Path, key: &[u8; 32], workspace: &Workspace) -> Result<PathBuf> {
-    let bytes = std::fs::read(contacts)?;
+    let mut bytes = std::fs::read(contacts)?;
     let header = crypt15::parse_header(&bytes)?;
-    let plaintext = crypt15::decrypt(&bytes, &header, key)?;
     let target = workspace.path.join("wa.db");
-    std::fs::write(&target, plaintext)?;
+    crypt15::decrypt_to(
+        &mut bytes,
+        &header,
+        key,
+        &mut std::fs::File::create(&target)?,
+    )?;
     Ok(target)
 }
 

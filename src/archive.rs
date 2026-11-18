@@ -94,6 +94,9 @@ pub struct BuildContext<'a> {
     pub jobs: usize,
 }
 
+const BATCH: usize = 256;
+const FAILURE_SAMPLES: usize = 20;
+
 pub fn build_chat(
     store: &Msgstore,
     stat: &ChatStat,
@@ -102,72 +105,69 @@ pub fn build_chat(
 ) -> Result<Summary> {
     let clock = context.clock;
     let chat = &stat.chat;
-    let messages = store.messages(chat)?;
     let archive = context.out_root.join(archive_name(chat, stat, clock));
     std::fs::create_dir_all(&archive)?;
+    // No stale chunk from a previous run: a month that no longer exists in the chat must not stay
+    // loadable behind the viewer's back.
+    let _ = std::fs::remove_dir_all(archive.join("data"));
 
     let mut summary = Summary {
         archive: archive.clone(),
         name: chat.name.clone(),
-        messages: messages.len(),
+        messages: 0,
         media: 0,
         missing: 0,
         failures: Vec::new(),
         failure_count: 0,
         bytes: 0,
-        first_ts: messages.first().map(|message| message.ts).unwrap_or(0),
-        last_ts: messages.last().map(|message| message.ts).unwrap_or(0),
-        people: messages
-            .iter()
-            .filter_map(|message| message.sender.clone())
-            .collect::<std::collections::HashSet<_>>()
-            .len(),
-        empty: messages.is_empty(),
+        first_ts: 0,
+        last_ts: 0,
+        people: 0,
+        empty: false,
     };
-    if summary.empty {
-        // A rebuild after the messages were deleted on the phone must not leave the old folder
-        // behind: it would still show a conversation the user no longer has.
-        let _ = std::fs::remove_dir_all(&archive);
-        return Ok(summary);
-    }
-
     let bar = Arc::new(Mutex::new(Bar::new(bar_label, stat.media_count as usize)));
-    let prepared = prepare_media(
-        &messages,
-        &archive,
-        context.copy_root,
-        context.media_root,
-        context.jobs,
+    let data = archive.join("data");
+    let mut writer = chunks::Writer::new(&data, chunks::MAX_RECORDS)?;
+    let mut people: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut keep: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut batch: Vec<Message> = Vec::with_capacity(BATCH);
+
+    store.each_message(chat, &mut |message| {
+        batch.push(message);
+        if batch.len() >= BATCH {
+            flush(
+                &mut batch,
+                &mut writer,
+                &mut summary,
+                &mut people,
+                &mut keep,
+                context,
+                &bar,
+            )?;
+        }
+        Ok(())
+    })?;
+    flush(
+        &mut batch,
+        &mut writer,
+        &mut summary,
+        &mut people,
+        &mut keep,
+        context,
         &bar,
     )?;
     if let Ok(mut bar) = bar.lock() {
         bar.close();
     }
 
-    let mut records: Vec<Record> = Vec::with_capacity(messages.len());
-    for message in &messages {
-        let result = prepared.get(&message.id);
-        if let Some(Prepared { row, failure }) = result {
-            if let Some(row) = row {
-                summary.media += 1;
-                if row.get("mi").and_then(Value::as_bool).unwrap_or(false) {
-                    summary.missing += 1;
-                }
-            }
-            if let Some(failure) = failure {
-                summary.failure_count += 1;
-                if summary.failures.len() < 20 {
-                    summary.failures.push(failure.clone());
-                }
-            }
-        }
-        let stamp = clock.local(message.ts);
-        records.push(Record {
-            month: stamp.chars().take(7).collect(),
-            ts: message.ts,
-            value: record(message, &stamp, result.and_then(|p| p.row.clone())),
-        });
+    if summary.messages == 0 {
+        // A rebuild after the messages were deleted on the phone must not leave the old folder
+        // behind: it would still show a conversation the user no longer has.
+        let _ = std::fs::remove_dir_all(&archive);
+        summary.empty = true;
+        return Ok(summary);
     }
+    summary.people = people.len();
 
     let manifest = json!({
         "title": chat.name,
@@ -183,22 +183,79 @@ pub fn build_chat(
         "first": stamp(clock, summary.first_ts),
         "last": stamp(clock, summary.last_ts),
     });
-    // No stale chunk from a previous run: a month that no longer exists in the chat must not stay
-    // loadable behind the viewer's back.
-    let _ = std::fs::remove_dir_all(archive.join("data"));
-    chunks::emit(
-        records,
-        &archive.join("data"),
-        manifest,
-        chunks::MAX_RECORDS,
-    )?;
+    writer.finish(manifest)?;
     std::fs::write(archive.join("index.html"), INDEX_HTML)?;
     std::fs::write(archive.join("app.js"), APP_JS)?;
     std::fs::write(archive.join("app.css"), APP_CSS)?;
     write_readme(&archive, &summary, clock, context.app_version)?;
-    prune(&archive, &prepared)?;
+    prune(&archive, &keep)?;
     summary.bytes = tree_bytes(&archive);
     Ok(summary)
+}
+
+/// Media for one batch, then the records for that batch. Memory is the batch, not the chat.
+#[allow(clippy::too_many_arguments)]
+fn flush(
+    batch: &mut Vec<Message>,
+    writer: &mut chunks::Writer<'_>,
+    summary: &mut Summary,
+    people: &mut std::collections::HashSet<String>,
+    keep: &mut std::collections::HashSet<String>,
+    context: &BuildContext<'_>,
+    bar: &Arc<Mutex<Bar>>,
+) -> Result<()> {
+    if batch.is_empty() {
+        return Ok(());
+    }
+    let prepared = prepare_media(
+        batch,
+        &summary.archive,
+        context.copy_root,
+        context.media_root,
+        context.jobs,
+        bar,
+    )?;
+    for message in batch.drain(..) {
+        let result = prepared.get(&message.id);
+        if let Some(Prepared { row, failure }) = result {
+            if let Some(row) = row {
+                summary.media += 1;
+                if row.get("mi").and_then(Value::as_bool).unwrap_or(false) {
+                    summary.missing += 1;
+                }
+                for key in ["p", "th"] {
+                    if let Some(value) = row.get(key).and_then(Value::as_str) {
+                        keep.insert(value.to_string());
+                    }
+                }
+            }
+            if let Some(failure) = failure {
+                summary.failure_count += 1;
+                if summary.failures.len() < FAILURE_SAMPLES {
+                    summary.failures.push(failure.clone());
+                }
+            }
+        }
+        if summary.messages == 0 {
+            summary.first_ts = message.ts;
+        }
+        summary.last_ts = message.ts;
+        if let Some(sender) = &message.sender {
+            people.insert(sender.clone());
+        }
+        summary.messages += 1;
+        let stamp = context.clock.local(message.ts);
+        writer.push(Record {
+            month: stamp.chars().take(7).collect(),
+            ts: message.ts,
+            value: record(
+                &message,
+                &stamp,
+                result.and_then(|prepared| prepared.row.clone()),
+            ),
+        })?;
+    }
+    Ok(())
 }
 
 fn prepare_media(
@@ -447,20 +504,10 @@ fn write_readme(archive: &Path, summary: &Summary, clock: &Clock, app_version: &
     Ok(())
 }
 
-fn prune(archive: &Path, prepared: &HashMap<i64, Prepared>) -> Result<()> {
-    let mut keep: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for entry in prepared.values() {
-        if let Some(row) = &entry.row {
-            for key in ["p", "th"] {
-                if let Some(value) = row.get(key).and_then(Value::as_str) {
-                    keep.insert(value.to_string());
-                }
-            }
-        }
-    }
+fn prune(archive: &Path, keep: &std::collections::HashSet<String>) -> Result<()> {
     for folder in ["media", "deriv"] {
         let root = archive.join(folder);
-        prune_tree(archive, &root, &keep);
+        prune_tree(archive, &root, keep);
         let _ = std::fs::remove_dir(&root);
     }
     Ok(())

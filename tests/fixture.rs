@@ -18,25 +18,30 @@ fn fixture() -> PathBuf {
 
 /// The fixture's database, decrypted and named from `wa.db`, for the tests below the command line.
 fn decrypted() -> (Msgstore, PathBuf) {
-    let bytes = std::fs::read(fixture().join("Databases/msgstore.db.crypt15")).unwrap();
-    let header = crypt15::parse_header(&bytes).unwrap();
-    let key = keys::load(KEY).unwrap();
     let path = std::env::temp_dir().join(format!("wexport-it-{}-store.db", std::process::id()));
-    std::fs::write(&path, crypt15::decrypt(&bytes, &header, &key).unwrap()).unwrap();
+    decrypt_file(&fixture().join("Databases/msgstore.db.crypt15"), &path);
     let mut store = Msgstore::open(&path).unwrap();
     let contacts = fixture().join("Backups/wa.db.crypt15");
-    if let Ok(bytes) = std::fs::read(&contacts) {
-        let header = crypt15::parse_header(&bytes).unwrap();
+    if contacts.is_file() {
         let contacts_path = path.with_file_name("wexport-it-contacts.db");
-        std::fs::write(
-            &contacts_path,
-            crypt15::decrypt(&bytes, &header, &key).unwrap(),
-        )
-        .unwrap();
+        decrypt_file(&contacts, &contacts_path);
         store.apply_contacts(&contacts_path);
         let _ = std::fs::remove_file(contacts_path);
     }
     (store, path)
+}
+
+fn decrypt_file(source: &Path, dest: &Path) {
+    let mut bytes = std::fs::read(source).unwrap();
+    let header = crypt15::parse_header(&bytes).unwrap();
+    let key = keys::load(KEY).unwrap();
+    crypt15::decrypt_to(
+        &mut bytes,
+        &header,
+        &key,
+        &mut std::fs::File::create(dest).unwrap(),
+    )
+    .unwrap();
 }
 
 /// A fixed zone, so the golden chunk does not depend on the machine running the test.

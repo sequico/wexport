@@ -147,6 +147,7 @@ wexport/
 │   ├── discover.rs              # discovery, key-type gate, binary gate
 │   ├── error.rs                 # the message a person reads + the exit code a script reads
 │   ├── msgstore.rs              # the source-schema adapter (WhatsApp 2.26 names)
+│   ├── merge.rs                 # incremental replay into the full backup
 │   ├── media.rs                 # path resolution, content addressing, derivatives
 │   ├── chunks.rs                # records → classic-script chunks, escaping
 │   ├── archive.rs               # one folder per chat, manifest, README, index, prune

@@ -643,9 +643,16 @@ impl Msgstore {
             .collect()
     }
 
-    pub fn messages(&self, chat: &Chat) -> Result<Vec<Message>> {
-        // shortcut: one chat is held whole in memory (a few tens of MB at 100k messages); stream it
-        // in batches when a chat no longer fits, the way the record emitter already could.
+    /// Every message of one chat, in time order, handed to `sink` one at a time.
+    ///
+    /// Streaming is what keeps a chat out of memory: the archive writes each record as it arrives,
+    /// and the only bound is one chunk's worth. Calls are read from their own table and merged here,
+    /// by the timestamp the database ordered both sides by.
+    pub fn each_message(
+        &self,
+        chat: &Chat,
+        sink: &mut dyn FnMut(Message) -> Result<()>,
+    ) -> Result<()> {
         let alias = |name: &str, column: &Option<String>, default: &str| match column {
             Some(column) => format!("m.\"{column}\" AS {name}"),
             None => format!("{default} AS {name}"),
@@ -672,57 +679,104 @@ impl Msgstore {
         );
         let mut statement = self.con.prepare(&sql)?;
         let mut rows = statement.query(rusqlite::params_from_iter(params))?;
-        let mut out = Vec::new();
-        while let Some(row) = rows.next()? {
-            let id: i64 = row.get(0)?;
-            let ts: i64 = row.get::<_, Option<i64>>(1)?.unwrap_or(0);
-            let from_me = row.get::<_, Option<i64>>(2)?.unwrap_or(0) != 0;
-            let text: Option<String> = row.get(3)?;
-            let status: Option<i64> = row.get(4)?;
-            let remote: Option<String> = row.get(5)?;
-            let quoted: Option<i64> = row.get(6)?;
-            // 0 means "not a reply" in every schema WhatsApp has shipped; carrying it would put a
-            // quote pointing at message 0 in the archive.
-            let quoted = quoted.filter(|value| *value > 0);
-            let edited = row.get::<_, Option<i64>>(7)?.unwrap_or(0) > 0;
-            let lat: Option<f64> = row.get(8)?;
-            let lon: Option<f64> = row.get(9)?;
-            let wa_type: Option<i64> = row.get(10)?;
 
-            let media = self.media_of(id, wa_type);
-            let caption = self
-                .media_rows
-                .get(&id)
-                .and_then(|row| row.caption.clone())
-                .unwrap_or_default();
-            let (kind, payload) = self.classify(id, &media, lat, lon);
-            let revoked = self.revoked.contains(&id);
-            out.push(Message {
-                id,
-                ts,
-                from_me,
-                kind: if revoked { "deleted".to_string() } else { kind },
-                text: text.filter(|value| !value.is_empty()).unwrap_or(caption),
-                sender: if from_me {
-                    None
-                } else {
-                    remote.as_deref().map(|value| self.person_name(value))
-                },
-                quoted_id: quoted,
-                edited,
-                revoked,
-                status,
-                payload,
-                media,
-                reactions: self.reactions.get(&id).cloned().unwrap_or_default(),
-            });
+        let layout = self.call_layout();
+        // A call log is small next to a message table, so its rows can be collected; the messages,
+        // which are not small, stay streamed.
+        let calls: Vec<Message> = match &layout {
+            Some(layout) => {
+                let (filter, params) = self.call_filter(chat, layout);
+                let mut statement = self.con.prepare(&format!(
+                    "SELECT * FROM call_log WHERE {filter} ORDER BY timestamp"
+                ))?;
+                let mut rows = statement.query(rusqlite::params_from_iter(params))?;
+                let mut collected = Vec::new();
+                while let Some(row) = rows.next()? {
+                    collected.push(self.call_from_row(row, layout)?);
+                }
+                collected
+            }
+            None => Vec::new(),
+        };
+        let mut calls = calls.into_iter().peekable();
+
+        let mut pending_message = match rows.next()? {
+            Some(row) => Some(self.message_from_row(row)?),
+            None => None,
+        };
+        loop {
+            let take_call = match (&pending_message, calls.peek()) {
+                (Some(message), Some(call)) => (call.ts, call.id) < (message.ts, message.id),
+                (None, Some(_)) => true,
+                (Some(_), None) => false,
+                (None, None) => break,
+            };
+            if take_call {
+                sink(calls.next().expect("peeked above"))?;
+            } else {
+                sink(pending_message.take().expect("checked above"))?;
+                pending_message = match rows.next()? {
+                    Some(row) => Some(self.message_from_row(row)?),
+                    None => None,
+                };
+            }
         }
-        drop(rows);
-        out.extend(self.calls(chat)?);
-        // Calls are fetched separately, so they have to land where their timestamp says: the build
-        // reads the first and last record as the chat's range, and the folder is named from it.
-        out.sort_by_key(|message| (message.ts, message.id));
+        Ok(())
+    }
+
+    /// The same chat as a list, for tests and for callers that want it whole.
+    pub fn messages(&self, chat: &Chat) -> Result<Vec<Message>> {
+        let mut out = Vec::new();
+        self.each_message(chat, &mut |message| {
+            out.push(message);
+            Ok(())
+        })?;
         Ok(out)
+    }
+
+    fn message_from_row(&self, row: &rusqlite::Row<'_>) -> Result<Message> {
+        let id: i64 = row.get(0)?;
+        let ts: i64 = row.get::<_, Option<i64>>(1)?.unwrap_or(0);
+        let from_me = row.get::<_, Option<i64>>(2)?.unwrap_or(0) != 0;
+        let text: Option<String> = row.get(3)?;
+        let status: Option<i64> = row.get(4)?;
+        let remote: Option<String> = row.get(5)?;
+        let quoted: Option<i64> = row.get(6)?;
+        // 0 means "not a reply" in every schema WhatsApp has shipped; carrying it would put a quote
+        // pointing at message 0 in the archive.
+        let quoted = quoted.filter(|value| *value > 0);
+        let edited = row.get::<_, Option<i64>>(7)?.unwrap_or(0) > 0;
+        let lat: Option<f64> = row.get(8)?;
+        let lon: Option<f64> = row.get(9)?;
+        let wa_type: Option<i64> = row.get(10)?;
+
+        let media = self.media_of(id, wa_type);
+        let caption = self
+            .media_rows
+            .get(&id)
+            .and_then(|row| row.caption.clone())
+            .unwrap_or_default();
+        let (kind, payload) = self.classify(id, &media, lat, lon);
+        let revoked = self.revoked.contains(&id);
+        Ok(Message {
+            id,
+            ts,
+            from_me,
+            kind: if revoked { "deleted".to_string() } else { kind },
+            text: text.filter(|value| !value.is_empty()).unwrap_or(caption),
+            sender: if from_me {
+                None
+            } else {
+                remote.as_deref().map(|value| self.person_name(value))
+            },
+            quoted_id: quoted,
+            edited,
+            revoked,
+            status,
+            payload,
+            media,
+            reactions: self.reactions.get(&id).cloned().unwrap_or_default(),
+        })
     }
 
     /// The `chat` table row for a chat, when this schema has that table.
@@ -802,94 +856,100 @@ impl Msgstore {
             .unwrap_or_else(|| jid.split('@').next().unwrap_or("").to_string())
     }
 
-    fn calls(&self, chat: &Chat) -> Result<Vec<Message>> {
-        let mut out = Vec::new();
+    /// Which columns this schema's call log has, when it has a usable one at all.
+    fn call_layout(&self) -> Option<CallLayout> {
         if !self.tables.contains("call_log") {
-            return Ok(out);
+            return None;
         }
         let columns = self.columns_of("call_log");
         if !columns.iter().any(|name| name == "timestamp") {
-            return Ok(out);
+            return None;
         }
-        let Some(jid_col) = ["jid_row_id", "key_remote_jid"]
+        let jid_column = ["jid_row_id", "key_remote_jid"]
             .into_iter()
-            .find(|name| columns.iter().any(|column| column == name))
-        else {
-            return Ok(out);
-        };
-        // Two shapes: a reference to the jid table, or the jid text itself on older schemas.
-        let (filter, params) = if jid_col == "jid_row_id" {
-            let Some(chat_row) = self.chat_row_of(chat) else {
-                return Ok(out);
-            };
-            let Some(jid_row) = self.jid_row.get(&chat_row).copied() else {
-                return Ok(out);
-            };
-            (
-                "\"jid_row_id\" = ?1".to_string(),
-                vec![SqlValue::Integer(jid_row)],
-            )
-        } else {
-            let c_us = chat.jid.replace("@s.whatsapp.net", "@c.us");
-            if c_us == chat.jid {
-                (
-                    "\"key_remote_jid\" = ?1".to_string(),
-                    vec![SqlValue::Text(chat.jid.clone())],
-                )
-            } else {
-                (
-                    "\"key_remote_jid\" IN (?1, ?2)".to_string(),
-                    vec![SqlValue::Text(chat.jid.clone()), SqlValue::Text(c_us)],
-                )
-            }
-        };
-
+            .find(|name| columns.iter().any(|column| column == name))?
+            .to_string();
         let find = |names: &[&str]| {
             names
                 .iter()
                 .find(|name| columns.iter().any(|column| column == *name))
                 .map(|name| name.to_string())
         };
-        let duration = find(&["duration", "call_duration"]);
-        let video = find(&["video_call", "is_video"]);
-        let missed = find(&["missed_call", "is_missed"]);
-        let has_from_me = columns.iter().any(|name| name == "from_me");
-
-        let mut statement = self.con.prepare(&format!(
-            "SELECT * FROM call_log WHERE {filter} ORDER BY timestamp"
-        ))?;
-        let mut rows = statement.query(rusqlite::params_from_iter(params))?;
-        while let Some(row) = rows.next()? {
-            let id: i64 = row.get("_id")?;
-            let ts: i64 = row.get::<_, Option<i64>>("timestamp")?.unwrap_or(0);
-            let read = |column: &Option<String>| -> i64 {
-                column
-                    .as_ref()
-                    .and_then(|name| row.get::<_, Option<i64>>(name.as_str()).ok().flatten())
-                    .unwrap_or(0)
-            };
-            out.push(Message {
-                id: -id,
-                ts,
-                from_me: has_from_me && row.get::<_, Option<i64>>("from_me")?.unwrap_or(0) != 0,
-                kind: "call".to_string(),
-                text: String::new(),
-                sender: None,
-                quoted_id: None,
-                edited: false,
-                revoked: false,
-                status: None,
-                payload: Some(json!({
-                    "duration_s": read(&duration),
-                    "video": read(&video) != 0,
-                    "missed": read(&missed) != 0,
-                })),
-                media: None,
-                reactions: Vec::new(),
-            });
-        }
-        Ok(out)
+        Some(CallLayout {
+            jid_column,
+            duration: find(&["duration", "call_duration"]),
+            video: find(&["video_call", "is_video"]),
+            missed: find(&["missed_call", "is_missed"]),
+            from_me: columns.iter().any(|name| name == "from_me"),
+        })
     }
+
+    /// The WHERE clause that selects this chat's calls, in whichever shape the table uses.
+    fn call_filter(&self, chat: &Chat, layout: &CallLayout) -> (String, Vec<SqlValue>) {
+        if layout.jid_column == "jid_row_id" {
+            let jid_row = self
+                .chat_row_of(chat)
+                .and_then(|chat_row| self.jid_row.get(&chat_row).copied());
+            return match jid_row {
+                Some(jid_row) => (
+                    "\"jid_row_id\" = ?1".to_string(),
+                    vec![SqlValue::Integer(jid_row)],
+                ),
+                None => ("0".to_string(), Vec::new()),
+            };
+        }
+        let c_us = chat.jid.replace("@s.whatsapp.net", "@c.us");
+        if c_us == chat.jid {
+            (
+                "\"key_remote_jid\" = ?1".to_string(),
+                vec![SqlValue::Text(chat.jid.clone())],
+            )
+        } else {
+            (
+                "\"key_remote_jid\" IN (?1, ?2)".to_string(),
+                vec![SqlValue::Text(chat.jid.clone()), SqlValue::Text(c_us)],
+            )
+        }
+    }
+
+    fn call_from_row(&self, row: &rusqlite::Row<'_>, layout: &CallLayout) -> Result<Message> {
+        let id: i64 = row.get("_id")?;
+        let ts: i64 = row.get::<_, Option<i64>>("timestamp")?.unwrap_or(0);
+        let read = |column: &Option<String>| -> i64 {
+            column
+                .as_ref()
+                .and_then(|name| row.get::<_, Option<i64>>(name.as_str()).ok().flatten())
+                .unwrap_or(0)
+        };
+        Ok(Message {
+            id: -id,
+            ts,
+            from_me: layout.from_me && row.get::<_, Option<i64>>("from_me")?.unwrap_or(0) != 0,
+            kind: "call".to_string(),
+            text: String::new(),
+            sender: None,
+            quoted_id: None,
+            edited: false,
+            revoked: false,
+            status: None,
+            payload: Some(json!({
+                "duration_s": read(&layout.duration),
+                "video": read(&layout.video) != 0,
+                "missed": read(&layout.missed) != 0,
+            })),
+            media: None,
+            reactions: Vec::new(),
+        })
+    }
+}
+
+/// The call-log shape of one schema: which column names to read, and whether it knows the caller.
+struct CallLayout {
+    jid_column: String,
+    duration: Option<String>,
+    video: Option<String>,
+    missed: Option<String>,
+    from_me: bool,
 }
 
 fn jid_key(jid: &str) -> String {

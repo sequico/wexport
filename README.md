@@ -78,6 +78,7 @@ that built it.
 | `src/keys.rs` | 64 hex digits, key file, screenshot via tesseract |
 | `src/discover.rs` | find the backup anywhere in the copy, the key-type gate, the older-chain report |
 | `src/msgstore.rs` | the only place WhatsApp's table and column names live |
+| `src/merge.rs` | incremental replay into the full backup |
 | `src/media.rs` | content-addressed placement, thumbnails, posters, waveform peaks |
 | `src/chunks.rs` | month chunks as classic scripts, escaping, splitting |
 | `src/archive.rs` | one folder per chat, manifest, README, index page, prune |

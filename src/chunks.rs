@@ -26,81 +26,96 @@ pub struct Record {
     pub value: Value,
 }
 
-pub fn emit(
-    mut records: Vec<Record>,
-    destination: &Path,
-    mut manifest: Value,
+/// Writes chunks as records arrive, so a chat never has to be held whole in memory.
+pub struct Writer<'a> {
+    destination: &'a Path,
     max_records: usize,
-) -> Result<Vec<Chunk>> {
-    std::fs::create_dir_all(destination)?;
-    let mut chunks = Vec::new();
-    let mut current: Option<String> = None;
-    let mut buffer: Vec<Record> = Vec::new();
-    let mut parts: usize = 0;
+    current: Option<String>,
+    buffer: Vec<Record>,
+    parts: usize,
+    chunks: Vec<Chunk>,
+}
 
-    let flush = |month: &str,
-                 buffer: &mut Vec<Record>,
-                 parts: &mut usize,
-                 chunks: &mut Vec<Chunk>|
-     -> Result<()> {
-        if buffer.is_empty() {
-            return Ok(());
-        }
-        let name = if *parts == 0 {
-            month.to_string()
-        } else {
-            format!("{month}-{}", *parts + 1)
-        };
-        *parts += 1;
-        let values: Vec<&Value> = buffer.iter().map(|record| &record.value).collect();
-        let body = escape(&serde_json::to_string(&values)?);
-        std::fs::write(
-            destination.join(format!("{name}.js")),
-            format!("WEX.chunk(\"{name}\",{body});\n"),
-        )?;
-        chunks.push(Chunk {
-            name,
-            messages: buffer.len(),
-            first_ts: buffer.first().map(|record| record.ts).unwrap_or(0),
-            last_ts: buffer.last().map(|record| record.ts).unwrap_or(0),
-        });
-        buffer.clear();
-        Ok(())
-    };
+impl<'a> Writer<'a> {
+    pub fn new(destination: &'a Path, max_records: usize) -> Result<Self> {
+        std::fs::create_dir_all(destination)?;
+        Ok(Writer {
+            destination,
+            max_records,
+            current: None,
+            buffer: Vec::new(),
+            parts: 0,
+            chunks: Vec::new(),
+        })
+    }
 
-    for record in records.drain(..) {
-        match &current {
-            Some(month) if record.month == *month && buffer.len() < max_records => {}
+    pub fn push(&mut self, record: Record) -> Result<()> {
+        match &self.current {
+            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}
             Some(month) => {
-                flush(month, &mut buffer, &mut parts, &mut chunks)?;
-                if record.month != *month {
-                    parts = 0;
+                let month = month.clone();
+                self.flush(&month)?;
+                if record.month != month {
+                    self.parts = 0;
                 }
             }
             None => {}
         }
-        current = Some(record.month.clone());
-        buffer.push(record);
-    }
-    if let Some(month) = &current {
-        flush(month, &mut buffer, &mut parts, &mut chunks)?;
+        self.current = Some(record.month.clone());
+        self.buffer.push(record);
+        Ok(())
     }
 
-    let chunk_list: Vec<Value> = chunks
-        .iter()
-        .map(|chunk| json!({ "n": chunk.name, "c": chunk.messages, "f": chunk.first_ts, "l": chunk.last_ts }))
-        .collect();
-    let total: usize = chunks.iter().map(|chunk| chunk.messages).sum();
-    manifest["chunks"] = Value::Array(chunk_list);
-    manifest["messages"] = json!(total);
-    std::fs::write(
-        destination.join("manifest.js"),
-        format!(
-            "WEX.manifest({});\n",
-            escape(&serde_json::to_string(&manifest)?)
-        ),
-    )?;
-    Ok(chunks)
+    /// Write the manifest and return what was emitted; consumes the writer.
+    pub fn finish(mut self, mut manifest: Value) -> Result<Vec<Chunk>> {
+        if let Some(month) = self.current.clone() {
+            self.flush(&month)?;
+        }
+        let chunk_list: Vec<Value> = self
+            .chunks
+            .iter()
+            .map(|chunk| {
+                json!({ "n": chunk.name, "c": chunk.messages, "f": chunk.first_ts, "l": chunk.last_ts })
+            })
+            .collect();
+        let total: usize = self.chunks.iter().map(|chunk| chunk.messages).sum();
+        manifest["chunks"] = Value::Array(chunk_list);
+        manifest["messages"] = json!(total);
+        std::fs::write(
+            self.destination.join("manifest.js"),
+            format!(
+                "WEX.manifest({});\n",
+                escape(&serde_json::to_string(&manifest)?)
+            ),
+        )?;
+        Ok(self.chunks)
+    }
+
+    fn flush(&mut self, month: &str) -> Result<()> {
+        if self.buffer.is_empty() {
+            return Ok(());
+        }
+        let name = if self.parts == 0 {
+            month.to_string()
+        } else {
+            format!("{month}-{}", self.parts + 1)
+        };
+        self.parts += 1;
+        let values: Vec<&Value> = self.buffer.iter().map(|record| &record.value).collect();
+        let body = escape(&serde_json::to_string(&values)?);
+        std::fs::write(
+            self.destination.join(format!("{name}.js")),
+            format!("WEX.chunk(\"{name}\",{body});\n"),
+        )?;
+        self.chunks.push(Chunk {
+            name,
+            messages: self.buffer.len(),
+            first_ts: self.buffer.first().map(|record| record.ts).unwrap_or(0),
+            last_ts: self.buffer.last().map(|record| record.ts).unwrap_or(0),
+        });
+        self.buffer.clear();
+        Ok(())
+    }
 }
 
 fn escape(text: &str) -> String {
@@ -124,20 +139,19 @@ mod tests {
     fn a_month_over_the_limit_is_split() {
         let destination = std::env::temp_dir().join(format!("wex-chunks-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&destination);
-        let records: Vec<Record> = (0..7)
-            .map(|index| Record {
-                month: "2026-11".into(),
-                ts: index,
-                value: json!({ "i": index, "t": index, "k": "text" }),
-            })
-            .collect();
-        let chunks = emit(
-            records,
-            &destination,
-            json!({"title": "t", "built": "fixed"}),
-            3,
-        )
-        .unwrap();
+        let mut writer = Writer::new(&destination, 3).unwrap();
+        for index in 0..7 {
+            writer
+                .push(Record {
+                    month: "2026-11".into(),
+                    ts: index,
+                    value: json!({ "i": index, "t": index, "k": "text" }),
+                })
+                .unwrap();
+        }
+        let chunks = writer
+            .finish(json!({"title": "t", "built": "fixed"}))
+            .unwrap();
         assert_eq!(
             chunks
                 .iter()
@@ -146,6 +160,37 @@ mod tests {
             ["2026-11", "2026-11-2", "2026-11-3"]
         );
         assert_eq!(chunks.iter().map(|chunk| chunk.messages).sum::<usize>(), 7);
+        let _ = std::fs::remove_dir_all(&destination);
+    }
+
+    #[test]
+    fn a_new_month_starts_its_numbering_again() {
+        let destination =
+            std::env::temp_dir().join(format!("wex-chunks-month-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&destination);
+        let mut writer = Writer::new(&destination, 1).unwrap();
+        for (month, index) in [
+            ("2026-11", 0),
+            ("2026-11", 1),
+            ("2026-12", 2),
+            ("2026-12", 3),
+        ] {
+            writer
+                .push(Record {
+                    month: month.into(),
+                    ts: index,
+                    value: json!({ "i": index }),
+                })
+                .unwrap();
+        }
+        let chunks = writer.finish(json!({})).unwrap();
+        assert_eq!(
+            chunks
+                .iter()
+                .map(|chunk| chunk.name.as_str())
+                .collect::<Vec<_>>(),
+            ["2026-11", "2026-11-2", "2026-12", "2026-12-2"]
+        );
         let _ = std::fs::remove_dir_all(&destination);
     }
 }
