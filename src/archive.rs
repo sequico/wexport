@@ -27,14 +27,12 @@ impl Clock {
     /// renders local time too.
     pub fn system() -> Self {
         let tz = jiff::tz::TimeZone::system();
-        // An IANA name when the zone has one; otherwise the `TZ` value (a POSIX rule) or the offset.
-        // Whatever comes out is what the archive records, so a reader knows what the strings mean.
-        let name = tz.iana_name().map(str::to_string).unwrap_or_else(|| {
-            std::env::var("TZ")
-                .ok()
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| tz.to_offset(jiff::Timestamp::now()).to_string())
-        });
+        // An IANA name when the zone has one, the offset otherwise: either way it is what the times
+        // in the archive show, and what the manifest records for a later reader.
+        let name = tz
+            .iana_name()
+            .map(str::to_string)
+            .unwrap_or_else(|| tz.to_offset(jiff::Timestamp::now()).to_string());
         Clock { tz, name }
     }
 
