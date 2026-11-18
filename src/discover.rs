@@ -212,15 +212,11 @@ fn find_databases(root: &Path) -> Option<PathBuf> {
         }
     }
 
-    // shortcut: the walk stops six folders down — a copy nested deeper than that is not found, and
-    // the user is told to point at the folder that holds Databases/.
-    let mut queue = vec![(root.to_path_buf(), 0usize)];
-    while let Some((folder, depth)) = queue.pop() {
-        if depth > 0 && looks_like(&folder) {
+    // The walk skips the trees that cannot hold a backup and stops at the first folder that does.
+    let mut queue = vec![root.to_path_buf()];
+    while let Some(folder) = queue.pop() {
+        if folder.as_path() != root && looks_like(&folder) {
             return Some(folder);
-        }
-        if depth >= 6 {
-            continue;
         }
         let Ok(entries) = std::fs::read_dir(&folder) else {
             continue;
@@ -238,7 +234,7 @@ fn find_databases(root: &Path) -> Option<PathBuf> {
                 })
                 .unwrap_or(false);
             if path.is_dir() && !skip {
-                queue.push((path, depth + 1));
+                queue.push(path);
             }
         }
     }

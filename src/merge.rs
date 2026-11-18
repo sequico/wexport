@@ -3,9 +3,9 @@
 //! Incrementals are SQLite deltas — rows for the tables WhatsApp changed since the last full backup —
 //! so the input here is already-decrypted databases, oldest delta first.
 //!
-//! shortcut: INSERT OR REPLACE by primary key, not a semantic replay. A message deleted from the
-//! phone is absent from the delta rather than marked, so it stays in the archive. Upgrade when a
-//! real incremental proves this wrong (plan §10, "incremental merge ordering").
+//! A delta carries the rows that changed, not a record of what was removed, so `INSERT OR REPLACE`
+//! is the whole replay: a message deleted on the phone simply does not appear in the delta and stays
+//! in the archive. Picking up deletions would need a tombstone the format does not carry.
 
 use std::path::{Path, PathBuf};
 
