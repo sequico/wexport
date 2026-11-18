@@ -30,9 +30,13 @@ dev server, which proves a different environment.
 ```js
 // data/2026-11.js
 WEX.chunk("2026-11", [
-  { id: 1, ts: 1763382725000, tsl: "2026-11-17 14:32:05 +01:00", kind: "text", text: "ciao" },
+  { i: 1, t: 1763382725000, s: "2026-11-17 14:32:05 +01:00", k: "text", x: "ciao" },
 ]);
 ```
+
+The field names are short on purpose (`i` id, `t` epoch ms, `s` frozen stamp, `k` kind, `x` text,
+`md` media, `pl` payload): the record is repeated once per message, and the viewer treats the names
+as its contract, not as decoration.
 
 - One chunk per time bucket (a month is the usual size), newest first.
 - Emit the data as a **literal script**, not as JSON: no parse step, no `JSON.parse` of a large
@@ -82,6 +86,12 @@ tab on an old laptop, no matter how well the DOM is virtualised.
 - Video: `preload="metadata"` plus a poster. Loading many videos eagerly is the other freezing bug.
 - `loading="lazy"` on images, `decoding="async"`, and explicit `width`/`height` so the timeline does
   not jump while scrolling.
+
+## Shipping the viewer
+
+The build embeds `index.html`, `app.js` and `app.css` in the binary and writes them into every archive
+(in this repository: `include_str!` from `src/assets/`). One file to distribute, no asset directory to
+lose, and each archive still complete on its own. Editing the viewer is editing the crate.
 
 ## Durability
 

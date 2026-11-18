@@ -51,6 +51,28 @@ Tests are written but **not run on your own initiative** (owner rule): the proje
 once, whole tree, before a push, and the owner decides when a push happens. Reading the code and
 the diff is what judges a unit.
 
+## The Rust this crate is written in
+
+- **One module per pipeline stage** (`src/lib.rs` is the map). A new responsibility gets a module;
+  a helper that only one module uses stays inside it.
+- **Errors**: every failure returns `crate::error::Error`, built with `Error::input`, `key`,
+  `wrong_type`, `incomplete`, `dependency` (one per exit code). `?` is fine through the `From`
+  impls; never `.unwrap()` on input data, never a silent `ok()` that hides a failure the user would
+  want to know about. `unwrap`/`expect` are for invariants the code has just checked.
+- **Printing** happens in `ui.rs` and `main.rs` only. A module returns data or an `Error`; it does
+  not decide what a person reads.
+- **Schema probing**: names are discovered, never assumed (`pick`/`require` in `msgstore.rs`); a
+  query built from a probed name is quoted and its parameters bound, never interpolated.
+- **Trust boundary**: media paths and anything else from the database are untrusted — resolve, then
+  check containment (`media::source_for` is the pattern).
+- **No `unsafe`**, no `sh -c`, no shelling out except the three documented external tools
+  (`ffmpeg`, `ffprobe`, `tesseract`), each with the install hint from `error::install_hints`.
+- **Tests**: unit tests live in the module (`#[cfg(test)]`) and cover pure functions and the schema
+  shapes the fixture cannot carry; `tests/fixture.rs` runs the product end to end; `tests/real.rs`
+  is the optional run on a real backup. A non-trivial branch needs one of them.
+- **The golden chunk** (`tests/fixtures/golden/`) pins the record format byte for byte. If a change
+  is meant to alter it, regenerate it, read the diff, and say in the commit why the format moved.
+
 ## Never do this
 
 - Add a dependency to avoid writing thirty lines. The crates already in `Cargo.toml` are the budget;

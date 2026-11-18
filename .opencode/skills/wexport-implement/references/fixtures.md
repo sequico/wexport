@@ -52,6 +52,16 @@ are the same two the product needs. Unit tests that must not depend on a binary 
 waveform peaks from raw PCM, chunk splitting, escaping), and one integration test runs the real
 `ffmpeg`/`ffprobe` path on the fixture.
 
+## Golden files
+
+`tests/fixtures/golden/` holds the chunk of one fixture chat, built under a fixed zone
+(`Europe/Rome`), so the record format is pinned byte for byte. It is the replacement for the parity
+run against the second implementation that used to live in this repository.
+
+To regenerate after a change that is *meant* to alter the format: delete the golden file, run
+`cargo test --test fixture`, and the test writes the new file and fails once. Read the diff before
+committing it; the commit says why the format moved. A diff you cannot explain is a bug.
+
 ## Assertions worth writing
 
 - Decrypting the fixture reproduces the exact bytes of the `msgstore.db` it was built from.
