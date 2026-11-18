@@ -566,6 +566,9 @@ impl Msgstore {
                 media_bytes,
             });
         }
+        // Ties in the last event are broken by jid: the codes are an identity, so the list they come
+        // from has to be the same list on every run.
+        out.sort_by(|left, right| left.chat.jid.cmp(&right.chat.jid));
         Ok(newest_first(out))
     }
 
@@ -1062,6 +1065,36 @@ mod tests {
         .unwrap();
         drop(con);
         (Msgstore::open(&path).unwrap(), path)
+    }
+
+    #[test]
+    fn chats_with_the_same_last_event_come_out_in_the_same_order_every_run() {
+        let path = std::env::temp_dir().join(format!("wexport-ties-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let con = Connection::open(&path).unwrap();
+        con.execute_batch(
+            "CREATE TABLE message (_id INTEGER PRIMARY KEY, key_remote_jid TEXT,
+                 timestamp INTEGER, from_me INTEGER, data TEXT);
+             INSERT INTO message VALUES
+                 (1, '999@lid', 5000, 0, 'b'),
+                 (2, '111@s.whatsapp.net', 5000, 0, 'a'),
+                 (3, '555@g.us', 5000, 0, 'c');",
+        )
+        .unwrap();
+        drop(con);
+        let store = Msgstore::open(&path).unwrap();
+        let jids: Vec<String> = store
+            .chat_stats()
+            .unwrap()
+            .into_iter()
+            .map(|stat| stat.chat.jid)
+            .collect();
+        assert_eq!(
+            jids,
+            ["111@s.whatsapp.net", "555@g.us", "999@lid"],
+            "equal timestamps are ordered by jid, never by hash order"
+        );
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
