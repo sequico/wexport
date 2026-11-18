@@ -1,14 +1,26 @@
 //! Finding the file a row points at, and the derivatives the viewer needs.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
 
 pub const PEAKS: usize = 500;
+
+/// Distinguishes the scratch files of two workers that place the same content at the same moment.
+static SCRATCH: AtomicU64 = AtomicU64::new(0);
+
+fn scratch_name(prefix: &str, suffix: &str) -> String {
+    format!(
+        "{prefix}.{}.{}.{suffix}",
+        std::process::id(),
+        SCRATCH.fetch_add(1, Ordering::Relaxed)
+    )
+}
 
 #[derive(Debug, Clone)]
 pub struct Placed {
@@ -61,10 +73,18 @@ pub fn source_for(rel_path: &str, media_root: Option<&Path>, copy_root: &Path) -
     None
 }
 
+/// Hash a file in blocks: a 2 GB video must not have to fit in memory to be placed.
 pub fn sha256_of(path: &Path) -> Result<String> {
-    let bytes = std::fs::read(path)?;
+    let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
     let mut digest = Sha256::new();
-    digest.update(&bytes);
+    let mut buffer = vec![0u8; 1 << 20];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
     Ok(format!("{:x}", digest.finalize()))
 }
 
@@ -91,8 +111,15 @@ pub fn place(source: &Path, archive_root: &Path, link: bool) -> Result<Placed> {
             rel_path,
         });
     }
-    // Write beside the target and rename, so a concurrent worker never exposes a partial file.
-    let partial = destination.with_extension(format!("{}.part", std::process::id()));
+    // Write beside the target and rename, so a concurrent worker never exposes a partial file. The
+    // scratch name carries a counter: two workers placing the same content must not share it.
+    let partial = destination.with_file_name(scratch_name(
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("media"),
+        "part",
+    ));
     std::fs::copy(source, &partial)?;
     std::fs::rename(&partial, &destination)?;
     Ok(Placed {
@@ -103,7 +130,7 @@ pub fn place(source: &Path, archive_root: &Path, link: bool) -> Result<Placed> {
 
 pub fn derive(kind: &str, source: &Path, archive_root: &Path, sha: &str) -> Result<Derived> {
     match kind {
-        "image" => image_derivative(kind, source, archive_root, sha),
+        "image" => image_derivative(source, archive_root, sha),
         "sticker" => Ok(Derived::default()),
         "video" | "gif" => video_derivative(source, archive_root, sha),
         "audio" => audio_derivative(source, archive_root, sha),
@@ -111,8 +138,7 @@ pub fn derive(kind: &str, source: &Path, archive_root: &Path, sha: &str) -> Resu
     }
 }
 
-fn image_derivative(kind: &str, source: &Path, archive_root: &Path, sha: &str) -> Result<Derived> {
-    let _ = kind;
+fn image_derivative(source: &Path, archive_root: &Path, sha: &str) -> Result<Derived> {
     let rel = format!("deriv/{sha}.webp");
     let target = archive_root.join(&rel);
     std::fs::create_dir_all(target.parent().unwrap_or(archive_root))?;
@@ -178,7 +204,7 @@ fn video_derivative(source: &Path, archive_root: &Path, sha: &str) -> Result<Der
 }
 
 fn audio_derivative(source: &Path, archive_root: &Path, sha: &str) -> Result<Derived> {
-    let raw = archive_root.join(format!("deriv/{sha}.{}.pcm", std::process::id()));
+    let raw = archive_root.join(format!("deriv/{}", scratch_name(sha, "pcm")));
     std::fs::create_dir_all(raw.parent().unwrap_or(archive_root))?;
     let status = Command::new("ffmpeg")
         .args([
@@ -290,4 +316,60 @@ fn run_ffmpeg(args: &[String]) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("wexport-media-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn the_hash_is_the_file_content() {
+        let root = scratch("hash");
+        let file = root.join("abc.bin");
+        std::fs::write(&file, b"abc").unwrap();
+        assert_eq!(
+            sha256_of(&file).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn peaks_are_the_loudest_sample_of_each_window() {
+        let loud: Vec<u8> = vec![-32768i16; PEAKS]
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect();
+        assert!(peaks_of(&loud).iter().all(|peak| *peak == 100));
+        assert_eq!(peaks_of(&[0, 0, 0, 0]), vec![0; PEAKS]);
+    }
+
+    #[test]
+    fn the_same_content_is_placed_once() {
+        let root = scratch("place");
+        let source = root.join("photo.jpg");
+        std::fs::write(&source, b"same bytes").unwrap();
+        let archive = root.join("archive");
+        std::fs::create_dir_all(&archive).unwrap();
+        let first = place(&source, &archive, false).unwrap();
+        let second = place(&source, &archive, false).unwrap();
+        assert_eq!(first.rel_path, second.rel_path);
+        assert!(archive.join(&first.rel_path).is_file());
+        assert_eq!(
+            std::fs::read_dir(archive.join(format!("media/{}", &first.sha256[..2])))
+                .unwrap()
+                .count(),
+            1,
+            "one file per content"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
