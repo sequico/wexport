@@ -398,10 +398,8 @@ it was compiled on.
   fixture twice must produce identical files, with the build time held fixed. The viewer is judged in
   M3 by behaviour.
 - **No gate is run per change**; the project's checks run once before a push, whole tree, per the
-  owner's rules. The list is in the README ("Verification before a push") and covers, besides the
-  suite: mutation testing of the logic modules, fuzzing of the parsers that eat untrusted bytes,
-  ThreadSanitizer over the media workers, cross-target checks for the platforms we claim, and the
-  dependency gate in `deny.toml`.
+  owner's rules. The list lives in `scripts/gate.sh` (push, ~20 s) and `scripts/gate-release.sh`
+  (release, with mutation testing, fuzzing, ThreadSanitizer and the `--locked` build).
 
 ---
 

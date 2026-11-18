@@ -105,34 +105,26 @@ computes: a silent change there would make every archive wrong in a way no fixtu
 ## Verification before a push
 
 Warnings are errors here: `Cargo.toml` denies rustc, rustdoc and clippy warnings, and the library
-denies `unwrap`/`panic` outside tests. On top of that, one pass over the whole tree:
+denies `unwrap`/`panic` outside tests.
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets
-cargo nextest run                     # or cargo test
-cargo deny check                      # licences, advisories, sources, duplicates
-cargo audit
-cargo check --target x86_64-pc-windows-gnu
-cargo check --target x86_64-unknown-linux-musl
-cargo mutants --file src/chunks.rs --file src/keys.rs --file src/media.rs --file src/crypt15.rs
-cargo +nightly fuzz run parse_header -- -max_total_time=60
-cargo +nightly fuzz run decrypt      -- -max_total_time=60
-cargo +nightly fuzz run normalize_hex -- -max_total_time=30
-RUSTFLAGS="-Zsanitizer=thread" cargo +nightly test -Zbuild-std \
-  --target x86_64-unknown-linux-gnu --test fixture
+./scripts/gate.sh            # whole tree, about twenty seconds
+./scripts/gate-release.sh    # the same, plus the proofs that cost minutes
 ```
 
-- **Mutation testing** answers the question a coverage number does not: do the tests fail when the
-  code changes? Survivors are untested logic, and the list is expected to be empty.
-- **Fuzzing** covers the parsers that read a file the user was told to copy: the header
-  (length-prefixed protobuf), the whole decrypt path, and the typed key.
-- **ThreadSanitizer** covers the media workers, which is where the two race conditions of this
-  history lived.
-- **Cross-target checks** keep the "Linux and Windows" claim honest; `cargo check` is enough there,
-  because a missing linker is not a code defect.
-- The dependency gate is `deny.toml`: permissive licences only (compatible with GPL-3.0-or-later),
-  no yanked or advisory-flagged crate, no wildcard versions, no unknown source.
+The push gate runs the format check, clippy, the suite, the dependency check (`deny.toml`: licences,
+advisories, sources, duplicates) and a `cargo check` for Windows — the platform the binary is also
+shipped for, and the one where a missing `sh` or a POSIX path shows up.
+
+The release gate adds what is too slow for every push:
+
+- **mutation testing** (`cargo mutants`) — it answers what coverage does not: do the tests fail when
+  the code changes? Survivors are untested logic.
+- **fuzzing** (`cargo fuzz`, three targets) on the parsers that read a file the user was told to
+  copy: the header, the whole decrypt path, and the typed key.
+- **ThreadSanitizer** over the fixture build, where the media workers run.
+- the release build itself, from the committed `Cargo.lock` (`--locked`).
+
 
 ## Documentation
 
