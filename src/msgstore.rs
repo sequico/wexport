@@ -644,6 +644,8 @@ impl Msgstore {
     }
 
     pub fn messages(&self, chat: &Chat) -> Result<Vec<Message>> {
+        // shortcut: one chat is held whole in memory (a few tens of MB at 100k messages); stream it
+        // in batches when a chat no longer fits, the way the record emitter already could.
         let alias = |name: &str, column: &Option<String>, default: &str| match column {
             Some(column) => format!("m.\"{column}\" AS {name}"),
             None => format!("{default} AS {name}"),

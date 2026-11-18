@@ -190,6 +190,9 @@ fn read_varint(input: &[u8], mut offset: usize) -> Result<(u64, usize)> {
 }
 
 /// Decrypt a crypt15 file and return the payload bytes, decompressed.
+///
+/// shortcut: the ciphertext and its plaintext are both in memory, so a backup that does not fit
+/// twice in RAM fails; stream the GCM tail and decompress as it goes when a real backup demands it.
 pub fn decrypt(bytes: &[u8], header: &Header, root: &[u8; 32]) -> Result<Vec<u8>> {
     if header.iv.len() != 16 {
         return Err(Error::input(format!(

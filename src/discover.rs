@@ -200,6 +200,8 @@ fn find_databases(root: &Path) -> Option<PathBuf> {
         }
     }
 
+    // shortcut: the walk stops six folders down — a copy nested deeper than that is not found, and
+    // the user is told to point at the folder that holds Databases/.
     let mut queue = vec![(root.to_path_buf(), 0usize)];
     while let Some((folder, depth)) = queue.pop() {
         if depth > 0 && looks_like(&folder) {
