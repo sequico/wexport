@@ -27,10 +27,12 @@ pub fn load(spec: &str) -> Result<[u8; 32]> {
     if let Some(key) = normalize_hex(spec) {
         return Ok(key);
     }
-    let path = Path::new(spec);
+    // The same `~` expansion the folder and -o accept; the prompt takes what a person types.
+    let path = crate::discover::expand(Path::new(spec));
     if !path.is_file() {
         return Err(Error::key(format!(
-            "key not found: {spec}\nGive the 64 hex digits, a screenshot of them, or encrypted_backup.key."
+            "key not found: {}\nGive the 64 hex digits, a screenshot of them, or encrypted_backup.key.",
+            path.display()
         )));
     }
     let suffix = path
@@ -39,9 +41,9 @@ pub fn load(spec: &str) -> Result<[u8; 32]> {
         .unwrap_or("")
         .to_ascii_lowercase();
     if IMAGE_SUFFIXES.contains(&suffix.as_str()) {
-        return read_from_image(path);
+        return read_from_image(&path);
     }
-    let bytes = std::fs::read(path)?;
+    let bytes = std::fs::read(&path)?;
     if let Ok(text) = std::str::from_utf8(&bytes) {
         if let Some(key) = normalize_hex(text) {
             return Ok(key);
