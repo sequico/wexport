@@ -20,9 +20,9 @@ A reader who has never seen an earlier version must not learn from the artifact 
   version that will lift it.
 - **No dependency without a job.** A crate is added when the standard library or an existing
   dependency cannot do the work, never to save thirty lines.
-- **Security and licences are part of the choice**: `cargo deny check` and `cargo audit` run before
-  a push, and a crate with an unmaintained or vulnerable release is replaced or updated, not
-  ignored.
+- **Security and licences are part of the choice**: the dependency gate (`cargo deny check`, reading
+  `deny.toml`) runs before a push, and a crate with an unmaintained or vulnerable release is replaced
+  or updated, not ignored.
 
 ## Builds
 
