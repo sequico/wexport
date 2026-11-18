@@ -16,17 +16,24 @@ fn fixture() -> PathBuf {
 
 /// The fixture's database, decrypted and named from `wa.db`, for the tests below the command line.
 fn decrypted() -> (Msgstore, PathBuf) {
-    let path = std::env::temp_dir().join(format!("wexport-it-{}-store.db", std::process::id()));
+    let path = std::env::temp_dir().join(format!("wexport-it-{}-store.db", unique()));
     decrypt_file(&fixture().join("Databases/msgstore.db.crypt15"), &path);
     let mut store = Msgstore::open(&path).unwrap();
     let contacts = fixture().join("Backups/wa.db.crypt15");
     if contacts.is_file() {
-        let contacts_path = path.with_file_name("wexport-it-contacts.db");
+        let contacts_path = path.with_file_name(format!("wexport-it-{}-contacts.db", unique()));
         decrypt_file(&contacts, &contacts_path);
         store.apply_contacts(&contacts_path);
         let _ = std::fs::remove_file(contacts_path);
     }
     (store, path)
+}
+
+/// cargo test runs tests as threads in one process, so the pid is not unique enough here.
+fn unique() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    std::process::id() as u64 * 1_000_000 + NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 fn decrypt_file(source: &Path, dest: &Path) {
