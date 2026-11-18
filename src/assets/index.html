@@ -14,12 +14,12 @@
     <p id="subtitle"></p>
   </div>
   <div id="tools">
-    <input id="q" type="search" placeholder="Search this chat, then Enter" autocomplete="off">
-    <input id="date" type="date" title="Jump to a date">
+    <input id="q" type="search" aria-label="Search this chat" placeholder="Search this chat, then Enter" autocomplete="off">
+    <input id="date" type="date" aria-label="Jump to a date" title="Jump to a date">
   </div>
   <div id="hits" hidden></div>
 </header>
-<main id="timeline">
+<main id="timeline" tabindex="0" aria-label="Messages">
   <div id="rows"></div>
   <div id="status" role="status"></div>
 </main>
