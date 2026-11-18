@@ -4,6 +4,10 @@
 //! backup), `merge` (incrementals), `msgstore` (WhatsApp's schema), `media` (files and derivatives),
 //! `chunks` (the archive data), `archive` (one folder per chat), `progress`, `ui` (the command).
 
+// A production build may not unwrap or panic: the error type carries the message and the exit code.
+// Tests are exempt, and so are integration tests, which are separate crates.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::panic))]
+
 pub mod archive;
 pub mod chunks;
 pub mod crypt15;

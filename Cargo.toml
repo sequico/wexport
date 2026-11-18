@@ -35,3 +35,16 @@ chrono-tz = "0.10"
 strip = true
 opt-level = "s"
 lto = true
+
+# The gate, in the manifest: a warning is a failure, in rustc, in rustdoc and in clippy.
+[lints.rust]
+warnings = "deny"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[lints.clippy]
+all = "deny"
+
+[dev-dependencies]
+proptest = "1"

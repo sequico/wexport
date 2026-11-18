@@ -127,12 +127,25 @@ fn escape(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn message_text_cannot_close_a_script_tag() {
         let escaped = escape("hi </script> \u{2028} end");
         assert!(escaped.contains("\\u003c/script"));
         assert!(escaped.contains("\\u2028"));
+    }
+
+    proptest! {
+        #[test]
+        fn no_text_can_close_the_script(text in ".*") {
+            let escaped = escape(&text);
+            let line_separator = '\u{2028}';
+            let paragraph_separator = '\u{2029}';
+            prop_assert!(!escaped.contains("</script"));
+            prop_assert!(!escaped.contains(line_separator));
+            prop_assert!(!escaped.contains(paragraph_separator));
+        }
     }
 
     #[test]

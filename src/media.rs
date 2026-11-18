@@ -321,6 +321,7 @@ fn run_ffmpeg(args: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn scratch(name: &str) -> PathBuf {
         let path =
@@ -350,6 +351,15 @@ mod tests {
             .collect();
         assert!(peaks_of(&loud).iter().all(|peak| *peak == 100));
         assert_eq!(peaks_of(&[0, 0, 0, 0]), vec![0; PEAKS]);
+    }
+
+    proptest! {
+        #[test]
+        fn peaks_are_always_five_hundred_values_in_range(bytes in proptest::collection::vec(any::<u8>(), 0..8000)) {
+            let peaks = peaks_of(&bytes);
+            prop_assert_eq!(peaks.len(), PEAKS);
+            prop_assert!(peaks.iter().all(|peak| *peak <= 100));
+        }
     }
 
     #[test]

@@ -94,3 +94,54 @@ fn read_from_image(path: &Path) -> Result<[u8; 32]> {
         "could not read 64 hex digits from that image.\nCrop the screenshot to the key itself, or type the digits.",
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_fixture_key_is_accepted_in_the_shapes_a_person_types_it() {
+        assert!(
+            normalize_hex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+                .is_some()
+        );
+        assert!(normalize_hex(
+            "0123 4567 89ab cdef 0123 4567 89ab cdef 0123 4567 89ab cdef 0123 4567 89ab cdef"
+        )
+        .is_some());
+        assert!(normalize_hex(
+            "0123-4567-89ab-cdef-0123-4567-89ab-cdef-0123-4567-89ab-cdef-0123-4567-89ab-cdef"
+        )
+        .is_some());
+        assert!(normalize_hex("0123456789abcdef").is_none());
+        assert!(
+            normalize_hex("zz23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_key_file_may_hold_the_raw_key_or_the_digits() {
+        let root = std::env::temp_dir().join(format!("wexport-key-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let raw = root.join("encrypted_backup.key");
+        std::fs::write(&raw, [7u8; 32]).unwrap();
+        assert_eq!(load(raw.to_str().unwrap()).unwrap(), [7u8; 32]);
+
+        let text = root.join("key.txt");
+        std::fs::write(
+            &text,
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
+        )
+        .unwrap();
+        assert_eq!(
+            load(text.to_str().unwrap()).unwrap(),
+            normalize_hex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+                .unwrap()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+}

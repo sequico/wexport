@@ -296,6 +296,7 @@ fn largest_database(zip_bytes: &[u8]) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     const FIXTURE: &[u8] =
         include_bytes!("../tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15");
@@ -303,6 +304,43 @@ mod tests {
 
     fn root() -> [u8; 32] {
         crate::keys::normalize_hex(KEY).expect("the fixture key is 64 hex digits")
+    }
+
+    /// A crypt15 header built by hand, for the round-trip property.
+    fn header_bytes(iv: &[u8; 16], version: &str, key_type: u8) -> Vec<u8> {
+        let mut e2ee = vec![0x0a, 16];
+        e2ee.extend_from_slice(iv);
+        let mut metadata = vec![0x0a, version.len() as u8];
+        metadata.extend_from_slice(version.as_bytes());
+        let mut proto = vec![0x1a, e2ee.len() as u8];
+        proto.extend(e2ee);
+        proto.extend([0x22, metadata.len() as u8]);
+        proto.extend(metadata);
+        proto.extend([0x30, key_type]);
+        let mut out = vec![proto.len() as u8];
+        out.extend(proto);
+        out
+    }
+
+    proptest! {
+        #[test]
+        fn any_bytes_are_refused_without_panicking(bytes in proptest::collection::vec(any::<u8>(), 0..512)) {
+            let parsed = parse_header(&bytes);
+            if let Ok(header) = parsed {
+                // Whatever it read must be self-consistent, never a panic halfway.
+                prop_assert!(header.header_len <= bytes.len());
+            }
+        }
+
+        #[test]
+        fn a_well_formed_header_round_trips(iv in any::<[u8; 16]>(), key_type in 0u8..5) {
+            let bytes = header_bytes(&iv, "2.26.34.7", key_type);
+            let header = parse_header(&bytes).unwrap();
+            prop_assert_eq!(header.iv.as_slice(), iv.as_slice());
+            prop_assert_eq!(header.key_type.as_str(), key_name(key_type as u64));
+            prop_assert_eq!(header.app_version.as_str(), "2.26.34.7");
+            prop_assert!(header.is_crypt15());
+        }
     }
 
     #[test]
