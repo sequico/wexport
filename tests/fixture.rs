@@ -228,6 +228,54 @@ fn the_listing_finds_every_chat() {
 }
 
 #[test]
+fn a_media_file_that_was_not_copied_is_counted_as_missing() {
+    let (store, database) = decrypted();
+    let stats = store.chat_stats().unwrap();
+    let alice = stats.iter().find(|stat| stat.chat.name == "Alice").unwrap();
+    let out = scratch("missing");
+    let root = fixture();
+    let media = root.join("Media");
+    let clock = rome();
+    let context = archive::BuildContext {
+        out_root: &out,
+        clock: &clock,
+        app_version: "2.26.34.7",
+        copy_root: &root,
+        media_root: Some(&media),
+        jobs: 2,
+    };
+    let summary = archive::build_chat(&store, alice, &context, "Alice").unwrap();
+    assert_eq!(summary.media, 1);
+    // IMG-deleted-from-phone.png is referenced by the database and absent from the folder.
+    assert_eq!(summary.missing, 1);
+    let _ = std::fs::remove_dir_all(out);
+    let _ = std::fs::remove_file(database);
+}
+
+#[test]
+fn the_selection_beats_yes_and_a_comma_is_a_separator() {
+    let out = scratch("selection");
+    let args = vec![
+        fixture().display().to_string(),
+        "--key".into(),
+        KEY.into(),
+        "--chat".into(),
+        "2,3".into(),
+        "--yes".into(),
+        "--out".into(),
+        out.display().to_string(),
+    ];
+    assert_eq!(ui::run(&args).expect("selection runs"), 0);
+    let names: Vec<String> = archives(&out)
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
+        .collect();
+    // Row 2 is Family, row 3 is the empty chat: one archive, and not the one row 1 would give.
+    assert_eq!(names, ["2026-12-02-family-9fd6"]);
+    let _ = std::fs::remove_dir_all(&out);
+}
+
+#[test]
 fn a_chat_selection_that_matches_nothing_is_an_error() {
     let out = scratch("nosuch");
     let args = vec![

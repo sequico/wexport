@@ -314,9 +314,7 @@ fn show_chats(stats: &[ChatStat], clock: &Clock) {
 }
 
 fn choose<'a>(stats: &'a [ChatStat], options: &Options) -> Result<Vec<&'a ChatStat>> {
-    if options.yes {
-        return Ok(stats.iter().collect());
-    }
+    // An explicit selection is the selection: --yes only means "do not ask".
     if !options.chats.is_empty() {
         let matched = match_rows(stats, &options.chats);
         if matched.is_empty() {
@@ -327,6 +325,9 @@ fn choose<'a>(stats: &'a [ChatStat], options: &Options) -> Result<Vec<&'a ChatSt
             )));
         }
         return Ok(matched);
+    }
+    if options.yes {
+        return Ok(stats.iter().collect());
     }
     if !std::io::stdin().is_terminal() {
         return Err(Error::input(
@@ -466,6 +467,16 @@ impl Drop for Workspace {
     }
 }
 
+/// `--chat 1,2 family` means the three tokens, as the help text promises.
+fn push_chats(chats: &mut Vec<String>, value: &str) {
+    for token in value
+        .split(|character: char| character == ',' || character.is_whitespace())
+        .filter(|token| !token.is_empty())
+    {
+        chats.push(token.to_string());
+    }
+}
+
 fn parse(args: &[String]) -> Result<Options> {
     let mut options = Options {
         folder: None,
@@ -495,7 +506,7 @@ fn parse(args: &[String]) -> Result<Options> {
                     .ok_or_else(|| Error::input(format!("{argument} needs a value")))?;
                 match argument.as_str() {
                     "--key" => options.key = Some(value.clone()),
-                    "--chat" => options.chats.push(value.clone()),
+                    "--chat" => push_chats(&mut options.chats, value),
                     _ => options.out = Some(PathBuf::from(value)),
                 }
                 index += 1;
@@ -504,7 +515,7 @@ fn parse(args: &[String]) -> Result<Options> {
                 options.key = Some(other["--key=".len()..].to_string())
             }
             other if other.starts_with("--chat=") => {
-                options.chats.push(other["--chat=".len()..].to_string())
+                push_chats(&mut options.chats, &other["--chat=".len()..])
             }
             other if other.starts_with("--out=") => {
                 options.out = Some(PathBuf::from(&other["--out=".len()..]))

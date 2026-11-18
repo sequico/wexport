@@ -220,7 +220,7 @@ fn flush(
         if let Some(Prepared { row, failure }) = result {
             if let Some(row) = row {
                 summary.media += 1;
-                if row.get("mi").and_then(Value::as_bool).unwrap_or(false) {
+                if row.get("mi").and_then(Value::as_i64).unwrap_or(0) != 0 {
                     summary.missing += 1;
                 }
                 for key in ["p", "th"] {
