@@ -115,6 +115,14 @@ Exit codes: `0` success · `1` unreadable input, or a question with no terminal 
 chunk), a rebuild that changes nothing and removes what is gone, and the memory ceiling. The viewer is
 checked from `file://` in headless Chromium; a manual pass in Firefox and Edge is the remaining check.
 
+## Documentation
+
+- [Implementation plan](docs/implementation-plan.md) — the specification: pipeline, data model,
+  archive format, milestones, risks, decisions.
+- [Android backup formats](docs/android-backup-formats.md) — what is inside the files, and which key
+  opens which format.
+- [User flow](docs/user-flow.md) — what the person with the phone has to do, step by step.
+
 ## Development
 
 ```sh
