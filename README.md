@@ -49,17 +49,9 @@ It finds the backup wherever the copy put it, asks for the key when it cannot fi
 ```
 
 The code is what `-b` takes. Archives land in `<folder>/output/`, one folder per chat plus an
-`index.html`, and the media part runs behind a progress bar:
+`index.html`, and the media part runs behind a progress bar.
 
-```sh
-wexport ~/whatsapp/phone-copy                   # the list, most recent first
-wexport ~/whatsapp/phone-copy -l 10 size        # the ten heaviest
-wexport ~/whatsapp/phone-copy -b 2              # one chat, by its code
-wexport ~/whatsapp/phone-copy -b 2,5 -o /media/backup
-wexport ~/whatsapp/phone-copy -b all            # everything
-```
-
-`wexport -h` prints the flags, the exit codes, the requirements and worked examples.
+[Every flag, the orders and the exit codes →](docs/usage.md#6-commands-and-flags)
 
 ## The archive
 

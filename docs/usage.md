@@ -112,15 +112,15 @@ the key is not on, or the backup was never redone after turning it on: go back t
 
 ## 5. Run wexport
 
+Point it at the folder you copied:
+
 ```sh
-wexport ~/whatsapp/phone-copy          # list every chat with a code, newest first
-wexport ~/whatsapp/phone-copy -b 2     # build the chat with code 2
-wexport ~/whatsapp/phone-copy -b all   # build every chat
+wexport ~/whatsapp/phone-copy
 ```
 
-The first command prints the list and stops. Read the code beside the chat you want, then build it;
-`-l 10 size` shows the ten heaviest, `-r` reverses the order, `-o` sends the archives somewhere else
-than `<folder>/output/`. `wexport -h` prints every flag and the exit codes.
+That prints the list and stops — no build, no disk use. Each chat has a code beside it; read the code
+of the chat you want and build it with `-b CODE`, or build everything with `-b all`. The next section
+has every flag and a line of examples.
 
 The key reaches wexport as the 64 digits (`-k 0123…`), as a screenshot of them (`-k key.png`, needs
 `tesseract`), or as the `encrypted_backup.key` file from a rooted phone (`-k encrypted_backup.key`).
@@ -131,7 +131,58 @@ Archives land in `<folder>/output/`: one folder per chat, plus an `index.html` t
 the build ends, wexport opens that page in the desktop browser if there is one, and prints how many
 messages and media files each archive holds.
 
-## 6. What can go wrong
+## 6. Commands and flags
+
+```
+wexport [FOLDER] [flags]
+```
+
+`FOLDER` is the folder you copied, either the whole copy or `Databases/` itself; with no folder,
+wexport reads the current directory. Inside it, the backup is found wherever the copy put it.
+
+| Flag | Takes | Does |
+|---|---|---|
+| `-h` | — | print the help and exit |
+| `-v` | — | print the version and exit |
+| `-k KEY` | the 64 hex digits, a screenshot of them, or `encrypted_backup.key` | the key to open the backup; without it, one is looked for beside the backup and otherwise asked on the terminal |
+| `-l [N] [ORDER]` | an optional count, an optional order | list and exit: `N` rows, ordered by `recent` (default), `size` or `name`; the two values come after the flag in either order |
+| `-r` | — | reverse the listing order, so the oldest or the largest comes first |
+| `-b CODES` | chat codes, comma-separated, or `all` | build those chats; the codes are the ones the list printed |
+| `-o DIR` | a folder | where the archives go, instead of `<FOLDER>/output`; needs `-b` |
+
+Four rules decide most mistakes:
+
+- **A code belongs to the list, not to the chat.** Codes are `1..N` in the default order, most recent
+  first, and they do not move when `-l` orders or cuts the list. A different backup numbers its chats
+  anew.
+- **Listing is what happens when there is no `-b`**: `wexport FOLDER` alone is the list.
+- **One flag per word**: `-l 10 size`, never `-ls`, and there are no long flags.
+- **`-b` needs a code or `all`.** `-l` and `-b` together, `-o` without `-b`, and `-r` without a listing
+  are all errors, each with a message that says so.
+
+| Command | What it does |
+|---|---|
+| `wexport ~/whatsapp/phone-copy` | every chat, newest first |
+| `wexport ~/whatsapp/phone-copy -l 10` | the ten most recent |
+| `wexport ~/whatsapp/phone-copy -l size` | all of them, heaviest first |
+| `wexport ~/whatsapp/phone-copy -l 5 recent -r` | the five oldest |
+| `wexport ~/whatsapp/phone-copy -b 2` | build the chat with code 2 |
+| `wexport ~/whatsapp/phone-copy -b 3,42` | build two chats |
+| `wexport ~/whatsapp/phone-copy -b all -o /media/backup` | build everything, somewhere else |
+| `wexport ~/whatsapp/phone-copy -k key.png -b all` | the key from a screenshot, everything |
+
+The exit code is what a script reads:
+
+| Code | Meaning |
+|---|---|
+| `0` | success |
+| `1` | unreadable input, or a question that could not be asked without a terminal |
+| `2` | unusable key: not a key, or the key does not open this backup |
+| `3` | wrong backup type: a `crypt14`, password-based or passkey-based backup |
+| `4` | build incomplete: some media files could not be processed, the archive is usable |
+| `5` | missing external dependency: `ffmpeg`, `ffprobe`, or `tesseract` for a screenshot key |
+
+## 7. What can go wrong
 
 | Message | Meaning | What to do |
 |---|---|---|
@@ -143,7 +194,7 @@ messages and media files each archive holds.
 | `media missing` in the build summary | that file is not in the copied `Media/` — deleted on the phone, or never downloaded | nothing; the archive shows a placeholder |
 | contact names show as numbers | `Backups/wa.db` was not copied | copy `Backups/` and rebuild |
 
-## 7. Afterwards
+## 8. Afterwards
 
 Each chat folder opens by double-clicking its `index.html`: no server, no wexport, no network.
 Everything it needs is inside it — messages, images, video, voice notes with their waveform. Sharing
