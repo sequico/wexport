@@ -4,8 +4,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use chrono::{SecondsFormat, TimeZone, Utc};
-use chrono_tz::Tz;
 use serde_json::{json, Map, Value};
 
 use crate::chunks::{self, Record};
@@ -19,7 +17,7 @@ const APP_JS: &str = include_str!("assets/app.js");
 const APP_CSS: &str = include_str!("assets/app.css");
 
 pub struct Clock {
-    pub tz: Tz,
+    pub tz: jiff::tz::TimeZone,
     pub name: String,
 }
 
@@ -27,39 +25,33 @@ impl Clock {
     pub fn system() -> Self {
         if let Ok(name) = std::fs::read_to_string("/etc/timezone") {
             let name = name.trim().to_string();
-            if let Ok(tz) = name.parse::<Tz>() {
+            if let Ok(tz) = jiff::tz::TimeZone::get(&name) {
                 return Clock { tz, name };
             }
         }
         if let Ok(target) = std::fs::canonicalize("/etc/localtime") {
             let text = target.display().to_string();
             if let Some((_, zone)) = text.split_once("zoneinfo/") {
-                if let Ok(tz) = zone.parse::<Tz>() {
+                if let Ok(tz) = jiff::tz::TimeZone::get(zone) {
                     let name = zone.to_string();
                     return Clock { tz, name };
                 }
             }
         }
         Clock {
-            tz: chrono_tz::UTC,
+            tz: jiff::tz::TimeZone::UTC,
             name: "UTC".into(),
         }
     }
 
     /// The wall clock with its explicit offset, rendered once and never recomputed by a viewer.
     pub fn local(&self, epoch_ms: i64) -> String {
-        let seconds = epoch_ms / 1000;
-        let nanos = ((epoch_ms % 1000) * 1_000_000) as u32;
-        match self.tz.timestamp_opt(seconds, nanos) {
-            chrono::LocalResult::Single(moment) => {
-                moment.format("%Y-%m-%d %H:%M:%S %:z").to_string()
-            }
-            _ => Utc
-                .timestamp_opt(seconds, nanos)
-                .single()
-                .map(|moment| moment.format("%Y-%m-%d %H:%M:%S +00:00").to_string())
-                .unwrap_or_default(),
-        }
+        let moment =
+            jiff::Timestamp::from_millisecond(epoch_ms).unwrap_or(jiff::Timestamp::UNIX_EPOCH);
+        moment
+            .to_zoned_datetime(self.tz.clone())
+            .strftime("%Y-%m-%d %H:%M:%S %:z")
+            .to_string()
     }
 }
 
@@ -176,7 +168,10 @@ pub fn build_chat(
         "tzdata": tzdata_version(),
         "source_app_version": context.app_version,
         "builder": format!("wexport {}", env!("CARGO_PKG_VERSION")),
-        "built": Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string(),
+        "built": jiff::Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .strftime("%Y-%m-%dT%H:%M:%S%:z")
+            .to_string(),
         "media": summary.media,
         "missing": summary.missing,
         "people": summary.people + if chat.is_group { 1 } else { 0 },
@@ -492,7 +487,9 @@ fn write_readme(archive: &Path, summary: &Summary, clock: &Clock, app_version: &
     let text = format!(
         "wexport archive — {}\n\nOpen index.html in any browser. No server is needed, nothing needs to be installed, and\nnothing is loaded from the network.\n\nBuilt ......... {} by wexport {}\nSource app .... WhatsApp {}\nTime zone ..... {} (timestamps are fixed strings with their UTC offset)\nMessages ...... {}\nMedia files ... {} ({} referenced but not present in the copied folder)\n\nThis folder is complete on its own: messages, data chunks, images, video and voice notes.\nKeep it as a folder; if you share it, share the whole folder (a zip of it works).\n",
         summary.name,
-        Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        jiff::Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .strftime("%Y-%m-%dT%H:%M:%S%:z"),
         env!("CARGO_PKG_VERSION"),
         app_version,
         clock.name,

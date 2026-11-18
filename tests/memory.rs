@@ -81,7 +81,7 @@ fn peak_for(messages: i64, name: &str) -> usize {
     let out = workspace.join("archives");
     std::fs::create_dir_all(&out).unwrap();
     let clock = Clock {
-        tz: chrono_tz::UTC,
+        tz: jiff::tz::TimeZone::UTC,
         name: "UTC".into(),
     };
     let context = archive::BuildContext {

@@ -412,7 +412,7 @@ it was compiled on.
 | `aes-gcm`, `hmac`, `sha2`, `sha1`, `md-5`, `flate2`, `zip` | crypt15 container: AES-256-GCM, the HMAC key derivation, zlib and ZIP payloads | Apache-2.0 / MIT |
 | `rusqlite` (bundled SQLite) | read the msgstore, merge incrementals, read `wa.db` | MIT |
 | `serde_json` | records and the manifest | Apache-2.0 / MIT |
-| `chrono`, `chrono-tz` | frozen timestamps with an explicit offset, and the tzdata version | Apache-2.0 / MIT |
+| `jiff` | frozen timestamps with an explicit offset, and the zone database | Unlicense / MIT |
 | `ffmpeg`, `ffprobe` (external) | metadata, thumbnails, poster frames, waveform peaks | LGPL/GPL builds vary |
 | `tesseract` (external, optional) | read the 64 digits from a screenshot | Apache-2.0 |
 

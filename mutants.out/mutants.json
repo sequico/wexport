@@ -1,0 +1,1634 @@
+[
+  {
+    "diff": "--- src/chunks.rs\n+++ replace Writer<'a>::push -> Result<()> with Ok(())\n@@ -45,30 +45,17 @@\n             current: None,\n             buffer: Vec::new(),\n             parts: 0,\n             chunks: Vec::new(),\n         })\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n-        match &self.current {\n-            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n-            Some(month) => {\n-                let month = month.clone();\n-                self.flush(&month)?;\n-                if record.month != month {\n-                    self.parts = 0;\n-                }\n-            }\n-            None => {}\n-        }\n-        self.current = Some(record.month.clone());\n-        self.buffer.push(record);\n-        Ok(())\n+        Ok(()) /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Write the manifest and return what was emitted; consumes the writer.\n     pub fn finish(mut self, mut manifest: Value) -> Result<Vec<Chunk>> {\n         if let Some(month) = self.current.clone() {\n             self.flush(&month)?;\n         }\n         let chunk_list: Vec<Value> = self\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/chunks.rs:53:9: replace Writer<'a>::push -> Result<()> with Ok(())",
+    "package": "wexport",
+    "replacement": "Ok(())",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 66
+      },
+      "start": {
+        "column": 9,
+        "line": 53
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace match guard record.month == *month && self.buffer.len() < self.max_records with true in Writer<'a>::push\n@@ -46,17 +46,17 @@\n             buffer: Vec::new(),\n             parts: 0,\n             chunks: Vec::new(),\n         })\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n         match &self.current {\n-            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n+            Some(month) if true /* ~ changed by cargo-mutants ~ */ => {}\n             Some(month) => {\n                 let month = month.clone();\n                 self.flush(&month)?;\n                 if record.month != month {\n                     self.parts = 0;\n                 }\n             }\n             None => {}\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "MatchArmGuard",
+    "name": "src/chunks.rs:54:28: replace match guard record.month == *month && self.buffer.len() < self.max_records with true in Writer<'a>::push",
+    "package": "wexport",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 90,
+        "line": 54
+      },
+      "start": {
+        "column": 28,
+        "line": 54
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace match guard record.month == *month && self.buffer.len() < self.max_records with false in Writer<'a>::push\n@@ -46,17 +46,17 @@\n             buffer: Vec::new(),\n             parts: 0,\n             chunks: Vec::new(),\n         })\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n         match &self.current {\n-            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n+            Some(month) if false /* ~ changed by cargo-mutants ~ */ => {}\n             Some(month) => {\n                 let month = month.clone();\n                 self.flush(&month)?;\n                 if record.month != month {\n                     self.parts = 0;\n                 }\n             }\n             None => {}\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "MatchArmGuard",
+    "name": "src/chunks.rs:54:28: replace match guard record.month == *month && self.buffer.len() < self.max_records with false in Writer<'a>::push",
+    "package": "wexport",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 90,
+        "line": 54
+      },
+      "start": {
+        "column": 28,
+        "line": 54
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace && with || in Writer<'a>::push\n@@ -46,17 +46,17 @@\n             buffer: Vec::new(),\n             parts: 0,\n             chunks: Vec::new(),\n         })\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n         match &self.current {\n-            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n+            Some(month) if record.month == *month || /* ~ changed by cargo-mutants ~ */ self.buffer.len() < self.max_records => {}\n             Some(month) => {\n                 let month = month.clone();\n                 self.flush(&month)?;\n                 if record.month != month {\n                     self.parts = 0;\n                 }\n             }\n             None => {}\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:54:51: replace && with || in Writer<'a>::push",
+    "package": "wexport",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 54
+      },
+      "start": {
+        "column": 51,
+        "line": 54
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace == with != in Writer<'a>::push\n@@ -46,17 +46,17 @@\n             buffer: Vec::new(),\n             parts: 0,\n             chunks: Vec::new(),\n         })\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n         match &self.current {\n-            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n+            Some(month) if record.month != /* ~ changed by cargo-mutants ~ */ *month && self.buffer.len() < self.max_records => {}\n             Some(month) => {\n                 let month = month.clone();\n                 self.flush(&month)?;\n                 if record.month != month {\n                     self.parts = 0;\n                 }\n             }\n             None => {}\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:54:41: replace == with != in Writer<'a>::push",
+    "package": "wexport",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 43,
+        "line": 54
+      },
+      "start": {
+        "column": 41,
+        "line": 54
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace < with == in Writer<'a>::push\n@@ -46,17 +46,17 @@\n             buffer: Vec::new(),\n             parts: 0,\n             chunks: Vec::new(),\n         })\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n         match &self.current {\n-            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n+            Some(month) if record.month == *month && self.buffer.len() == /* ~ changed by cargo-mutants ~ */ self.max_records => {}\n             Some(month) => {\n                 let month = month.clone();\n                 self.flush(&month)?;\n                 if record.month != month {\n                     self.parts = 0;\n                 }\n             }\n             None => {}\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:54:72: replace < with == in Writer<'a>::push",
+    "package": "wexport",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 73,
+        "line": 54
+      },
+      "start": {
+        "column": 72,
+        "line": 54
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace < with > in Writer<'a>::push\n@@ -46,17 +46,17 @@\n             buffer: Vec::new(),\n             parts: 0,\n             chunks: Vec::new(),\n         })\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n         match &self.current {\n-            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n+            Some(month) if record.month == *month && self.buffer.len() > /* ~ changed by cargo-mutants ~ */ self.max_records => {}\n             Some(month) => {\n                 let month = month.clone();\n                 self.flush(&month)?;\n                 if record.month != month {\n                     self.parts = 0;\n                 }\n             }\n             None => {}\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:54:72: replace < with > in Writer<'a>::push",
+    "package": "wexport",
+    "replacement": ">",
+    "span": {
+      "end": {
+        "column": 73,
+        "line": 54
+      },
+      "start": {
+        "column": 72,
+        "line": 54
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace < with <= in Writer<'a>::push\n@@ -46,17 +46,17 @@\n             buffer: Vec::new(),\n             parts: 0,\n             chunks: Vec::new(),\n         })\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n         match &self.current {\n-            Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n+            Some(month) if record.month == *month && self.buffer.len() <= /* ~ changed by cargo-mutants ~ */ self.max_records => {}\n             Some(month) => {\n                 let month = month.clone();\n                 self.flush(&month)?;\n                 if record.month != month {\n                     self.parts = 0;\n                 }\n             }\n             None => {}\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:54:72: replace < with <= in Writer<'a>::push",
+    "package": "wexport",
+    "replacement": "<=",
+    "span": {
+      "end": {
+        "column": 73,
+        "line": 54
+      },
+      "start": {
+        "column": 72,
+        "line": 54
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace != with == in Writer<'a>::push\n@@ -50,17 +50,17 @@\n     }\n \n     pub fn push(&mut self, record: Record) -> Result<()> {\n         match &self.current {\n             Some(month) if record.month == *month && self.buffer.len() < self.max_records => {}\n             Some(month) => {\n                 let month = month.clone();\n                 self.flush(&month)?;\n-                if record.month != month {\n+                if record.month == /* ~ changed by cargo-mutants ~ */ month {\n                     self.parts = 0;\n                 }\n             }\n             None => {}\n         }\n         self.current = Some(record.month.clone());\n         self.buffer.push(record);\n         Ok(())\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::push",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 67
+        },
+        "start": {
+          "column": 5,
+          "line": 52
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:58:33: replace != with == in Writer<'a>::push",
+    "package": "wexport",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 35,
+        "line": 58
+      },
+      "start": {
+        "column": 33,
+        "line": 58
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace Writer<'a>::finish -> Result<Vec<Chunk>> with Ok(vec![])\n@@ -63,37 +63,17 @@\n         }\n         self.current = Some(record.month.clone());\n         self.buffer.push(record);\n         Ok(())\n     }\n \n     /// Write the manifest and return what was emitted; consumes the writer.\n     pub fn finish(mut self, mut manifest: Value) -> Result<Vec<Chunk>> {\n-        if let Some(month) = self.current.clone() {\n-            self.flush(&month)?;\n-        }\n-        let chunk_list: Vec<Value> = self\n-            .chunks\n-            .iter()\n-            .map(|chunk| {\n-                json!({ \"n\": chunk.name, \"c\": chunk.messages, \"f\": chunk.first_ts, \"l\": chunk.last_ts })\n-            })\n-            .collect();\n-        let total: usize = self.chunks.iter().map(|chunk| chunk.messages).sum();\n-        manifest[\"chunks\"] = Value::Array(chunk_list);\n-        manifest[\"messages\"] = json!(total);\n-        std::fs::write(\n-            self.destination.join(\"manifest.js\"),\n-            format!(\n-                \"WEX.manifest({});\\n\",\n-                escape(&serde_json::to_string(&manifest)?)\n-            ),\n-        )?;\n-        Ok(self.chunks)\n+        Ok(vec![]) /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn flush(&mut self, month: &str) -> Result<()> {\n         if self.buffer.is_empty() {\n             return Ok(());\n         }\n         let name = if self.parts == 0 {\n             month.to_string()\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::finish",
+      "return_type": "-> Result<Vec<Chunk>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 92
+        },
+        "start": {
+          "column": 5,
+          "line": 69
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/chunks.rs:71:9: replace Writer<'a>::finish -> Result<Vec<Chunk>> with Ok(vec![])",
+    "package": "wexport",
+    "replacement": "Ok(vec![])",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 91
+      },
+      "start": {
+        "column": 9,
+        "line": 71
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace Writer<'a>::finish -> Result<Vec<Chunk>> with Ok(vec![Default::default()])\n@@ -63,37 +63,17 @@\n         }\n         self.current = Some(record.month.clone());\n         self.buffer.push(record);\n         Ok(())\n     }\n \n     /// Write the manifest and return what was emitted; consumes the writer.\n     pub fn finish(mut self, mut manifest: Value) -> Result<Vec<Chunk>> {\n-        if let Some(month) = self.current.clone() {\n-            self.flush(&month)?;\n-        }\n-        let chunk_list: Vec<Value> = self\n-            .chunks\n-            .iter()\n-            .map(|chunk| {\n-                json!({ \"n\": chunk.name, \"c\": chunk.messages, \"f\": chunk.first_ts, \"l\": chunk.last_ts })\n-            })\n-            .collect();\n-        let total: usize = self.chunks.iter().map(|chunk| chunk.messages).sum();\n-        manifest[\"chunks\"] = Value::Array(chunk_list);\n-        manifest[\"messages\"] = json!(total);\n-        std::fs::write(\n-            self.destination.join(\"manifest.js\"),\n-            format!(\n-                \"WEX.manifest({});\\n\",\n-                escape(&serde_json::to_string(&manifest)?)\n-            ),\n-        )?;\n-        Ok(self.chunks)\n+        Ok(vec![Default::default()]) /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn flush(&mut self, month: &str) -> Result<()> {\n         if self.buffer.is_empty() {\n             return Ok(());\n         }\n         let name = if self.parts == 0 {\n             month.to_string()\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::finish",
+      "return_type": "-> Result<Vec<Chunk>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 92
+        },
+        "start": {
+          "column": 5,
+          "line": 69
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/chunks.rs:71:9: replace Writer<'a>::finish -> Result<Vec<Chunk>> with Ok(vec![Default::default()])",
+    "package": "wexport",
+    "replacement": "Ok(vec![Default::default()])",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 91
+      },
+      "start": {
+        "column": 9,
+        "line": 71
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace Writer<'a>::flush -> Result<()> with Ok(())\n@@ -87,39 +87,17 @@\n                 \"WEX.manifest({});\\n\",\n                 escape(&serde_json::to_string(&manifest)?)\n             ),\n         )?;\n         Ok(self.chunks)\n     }\n \n     fn flush(&mut self, month: &str) -> Result<()> {\n-        if self.buffer.is_empty() {\n-            return Ok(());\n-        }\n-        let name = if self.parts == 0 {\n-            month.to_string()\n-        } else {\n-            format!(\"{month}-{}\", self.parts + 1)\n-        };\n-        self.parts += 1;\n-        let values: Vec<&Value> = self.buffer.iter().map(|record| &record.value).collect();\n-        let body = escape(&serde_json::to_string(&values)?);\n-        std::fs::write(\n-            self.destination.join(format!(\"{name}.js\")),\n-            format!(\"WEX.chunk(\\\"{name}\\\",{body});\\n\"),\n-        )?;\n-        self.chunks.push(Chunk {\n-            name,\n-            messages: self.buffer.len(),\n-            first_ts: self.buffer.first().map(|record| record.ts).unwrap_or(0),\n-            last_ts: self.buffer.last().map(|record| record.ts).unwrap_or(0),\n-        });\n-        self.buffer.clear();\n-        Ok(())\n+        Ok(()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n fn escape(text: &str) -> String {\n     text.replace('<', \"\\\\u003c\")\n         .replace('\\u{2028}', \"\\\\u2028\")\n         .replace('\\u{2029}', \"\\\\u2029\")\n }\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::flush",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 94
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/chunks.rs:95:9: replace Writer<'a>::flush -> Result<()> with Ok(())",
+    "package": "wexport",
+    "replacement": "Ok(())",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 95
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace == with != in Writer<'a>::flush\n@@ -90,17 +90,17 @@\n         )?;\n         Ok(self.chunks)\n     }\n \n     fn flush(&mut self, month: &str) -> Result<()> {\n         if self.buffer.is_empty() {\n             return Ok(());\n         }\n-        let name = if self.parts == 0 {\n+        let name = if self.parts != /* ~ changed by cargo-mutants ~ */ 0 {\n             month.to_string()\n         } else {\n             format!(\"{month}-{}\", self.parts + 1)\n         };\n         self.parts += 1;\n         let values: Vec<&Value> = self.buffer.iter().map(|record| &record.value).collect();\n         let body = escape(&serde_json::to_string(&values)?);\n         std::fs::write(\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::flush",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 94
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:98:34: replace == with != in Writer<'a>::flush",
+    "package": "wexport",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 36,
+        "line": 98
+      },
+      "start": {
+        "column": 34,
+        "line": 98
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace += with -= in Writer<'a>::flush\n@@ -95,17 +95,17 @@\n         if self.buffer.is_empty() {\n             return Ok(());\n         }\n         let name = if self.parts == 0 {\n             month.to_string()\n         } else {\n             format!(\"{month}-{}\", self.parts + 1)\n         };\n-        self.parts += 1;\n+        self.parts -= /* ~ changed by cargo-mutants ~ */ 1;\n         let values: Vec<&Value> = self.buffer.iter().map(|record| &record.value).collect();\n         let body = escape(&serde_json::to_string(&values)?);\n         std::fs::write(\n             self.destination.join(format!(\"{name}.js\")),\n             format!(\"WEX.chunk(\\\"{name}\\\",{body});\\n\"),\n         )?;\n         self.chunks.push(Chunk {\n             name,\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::flush",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 94
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:103:20: replace += with -= in Writer<'a>::flush",
+    "package": "wexport",
+    "replacement": "-=",
+    "span": {
+      "end": {
+        "column": 22,
+        "line": 103
+      },
+      "start": {
+        "column": 20,
+        "line": 103
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace += with *= in Writer<'a>::flush\n@@ -95,17 +95,17 @@\n         if self.buffer.is_empty() {\n             return Ok(());\n         }\n         let name = if self.parts == 0 {\n             month.to_string()\n         } else {\n             format!(\"{month}-{}\", self.parts + 1)\n         };\n-        self.parts += 1;\n+        self.parts *= /* ~ changed by cargo-mutants ~ */ 1;\n         let values: Vec<&Value> = self.buffer.iter().map(|record| &record.value).collect();\n         let body = escape(&serde_json::to_string(&values)?);\n         std::fs::write(\n             self.destination.join(format!(\"{name}.js\")),\n             format!(\"WEX.chunk(\\\"{name}\\\",{body});\\n\"),\n         )?;\n         self.chunks.push(Chunk {\n             name,\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "Writer<'a>::flush",
+      "return_type": "-> Result<()>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 94
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/chunks.rs:103:20: replace += with *= in Writer<'a>::flush",
+    "package": "wexport",
+    "replacement": "*=",
+    "span": {
+      "end": {
+        "column": 22,
+        "line": 103
+      },
+      "start": {
+        "column": 20,
+        "line": 103
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace escape -> String with String::new()\n@@ -114,19 +114,17 @@\n             last_ts: self.buffer.last().map(|record| record.ts).unwrap_or(0),\n         });\n         self.buffer.clear();\n         Ok(())\n     }\n }\n \n fn escape(text: &str) -> String {\n-    text.replace('<', \"\\\\u003c\")\n-        .replace('\\u{2028}', \"\\\\u2028\")\n-        .replace('\\u{2029}', \"\\\\u2029\")\n+    String::new() /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n     use proptest::prelude::*;\n \n     #[test]\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "escape",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 125
+        },
+        "start": {
+          "column": 1,
+          "line": 121
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/chunks.rs:122:5: replace escape -> String with String::new()",
+    "package": "wexport",
+    "replacement": "String::new()",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 124
+      },
+      "start": {
+        "column": 5,
+        "line": 122
+      }
+    }
+  },
+  {
+    "diff": "--- src/chunks.rs\n+++ replace escape -> String with \"xyzzy\".into()\n@@ -114,19 +114,17 @@\n             last_ts: self.buffer.last().map(|record| record.ts).unwrap_or(0),\n         });\n         self.buffer.clear();\n         Ok(())\n     }\n }\n \n fn escape(text: &str) -> String {\n-    text.replace('<', \"\\\\u003c\")\n-        .replace('\\u{2028}', \"\\\\u2028\")\n-        .replace('\\u{2029}', \"\\\\u2029\")\n+    \"xyzzy\".into() /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n     use proptest::prelude::*;\n \n     #[test]\n",
+    "file": "src/chunks.rs",
+    "function": {
+      "function_name": "escape",
+      "return_type": "-> String",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 125
+        },
+        "start": {
+          "column": 1,
+          "line": 121
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/chunks.rs:122:5: replace escape -> String with \"xyzzy\".into()",
+    "package": "wexport",
+    "replacement": "\"xyzzy\".into()",
+    "span": {
+      "end": {
+        "column": 40,
+        "line": 124
+      },
+      "start": {
+        "column": 5,
+        "line": 122
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace normalize_hex -> Option<[u8; 32]> with None\n@@ -3,28 +3,17 @@\n use std::path::Path;\n use std::process::Command;\n \n use crate::error::{Error, Result};\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n-    let digits: String = text\n-        .chars()\n-        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n-        .collect();\n-    if digits.len() != 64 {\n-        return None;\n-    }\n-    let mut out = [0u8; 32];\n-    for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n-    }\n-    Some(out)\n+    None /* ~ changed by cargo-mutants ~ */\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n     }\n     let path = Path::new(spec);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:11:5: replace normalize_hex -> Option<[u8; 32]> with None",
+    "package": "wexport",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 22
+      },
+      "start": {
+        "column": 5,
+        "line": 11
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace normalize_hex -> Option<[u8; 32]> with Some([0; 32])\n@@ -3,28 +3,17 @@\n use std::path::Path;\n use std::process::Command;\n \n use crate::error::{Error, Result};\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n-    let digits: String = text\n-        .chars()\n-        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n-        .collect();\n-    if digits.len() != 64 {\n-        return None;\n-    }\n-    let mut out = [0u8; 32];\n-    for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n-    }\n-    Some(out)\n+    Some([0; 32]) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n     }\n     let path = Path::new(spec);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:11:5: replace normalize_hex -> Option<[u8; 32]> with Some([0; 32])",
+    "package": "wexport",
+    "replacement": "Some([0; 32])",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 22
+      },
+      "start": {
+        "column": 5,
+        "line": 11
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace normalize_hex -> Option<[u8; 32]> with Some([1; 32])\n@@ -3,28 +3,17 @@\n use std::path::Path;\n use std::process::Command;\n \n use crate::error::{Error, Result};\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n-    let digits: String = text\n-        .chars()\n-        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n-        .collect();\n-    if digits.len() != 64 {\n-        return None;\n-    }\n-    let mut out = [0u8; 32];\n-    for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n-    }\n-    Some(out)\n+    Some([1; 32]) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n     }\n     let path = Path::new(spec);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:11:5: replace normalize_hex -> Option<[u8; 32]> with Some([1; 32])",
+    "package": "wexport",
+    "replacement": "Some([1; 32])",
+    "span": {
+      "end": {
+        "column": 14,
+        "line": 22
+      },
+      "start": {
+        "column": 5,
+        "line": 11
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace && with || in normalize_hex\n@@ -5,17 +5,17 @@\n \n use crate::error::{Error, Result};\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n     let digits: String = text\n         .chars()\n-        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n+        .filter(|c| !c.is_whitespace() && *c != '-' || /* ~ changed by cargo-mutants ~ */ *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n         *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n     }\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:13:53: replace && with || in normalize_hex",
+    "package": "wexport",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 55,
+        "line": 13
+      },
+      "start": {
+        "column": 53,
+        "line": 13
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace && with || in normalize_hex\n@@ -5,17 +5,17 @@\n \n use crate::error::{Error, Result};\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n     let digits: String = text\n         .chars()\n-        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n+        .filter(|c| !c.is_whitespace() || /* ~ changed by cargo-mutants ~ */ *c != '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n         *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n     }\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:13:40: replace && with || in normalize_hex",
+    "package": "wexport",
+    "replacement": "||",
+    "span": {
+      "end": {
+        "column": 42,
+        "line": 13
+      },
+      "start": {
+        "column": 40,
+        "line": 13
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ delete ! in normalize_hex\n@@ -5,17 +5,17 @@\n \n use crate::error::{Error, Result};\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n     let digits: String = text\n         .chars()\n-        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n+        .filter(|c|  /* ~ changed by cargo-mutants ~ */c.is_whitespace() && *c != '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n         *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n     }\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/keys.rs:13:21: delete ! in normalize_hex",
+    "package": "wexport",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 22,
+        "line": 13
+      },
+      "start": {
+        "column": 21,
+        "line": 13
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace != with == in normalize_hex\n@@ -5,17 +5,17 @@\n \n use crate::error::{Error, Result};\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n     let digits: String = text\n         .chars()\n-        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n+        .filter(|c| !c.is_whitespace() && *c == /* ~ changed by cargo-mutants ~ */ '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n         *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n     }\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:13:46: replace != with == in normalize_hex",
+    "package": "wexport",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 48,
+        "line": 13
+      },
+      "start": {
+        "column": 46,
+        "line": 13
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace != with == in normalize_hex\n@@ -5,17 +5,17 @@\n \n use crate::error::{Error, Result};\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n     let digits: String = text\n         .chars()\n-        .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n+        .filter(|c| !c.is_whitespace() && *c != '-' && *c == /* ~ changed by cargo-mutants ~ */ ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n         *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n     }\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:13:59: replace != with == in normalize_hex",
+    "package": "wexport",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 61,
+        "line": 13
+      },
+      "start": {
+        "column": 59,
+        "line": 13
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace != with == in normalize_hex\n@@ -7,17 +7,17 @@\n \n const IMAGE_SUFFIXES: [&str; 7] = [\"png\", \"jpg\", \"jpeg\", \"webp\", \"bmp\", \"tif\", \"tiff\"];\n \n pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {\n     let digits: String = text\n         .chars()\n         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n         .collect();\n-    if digits.len() != 64 {\n+    if digits.len() == /* ~ changed by cargo-mutants ~ */ 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n         *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n     }\n     Some(out)\n }\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:15:21: replace != with == in normalize_hex",
+    "package": "wexport",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 23,
+        "line": 15
+      },
+      "start": {
+        "column": 21,
+        "line": 15
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace * with + in normalize_hex\n@@ -12,17 +12,17 @@\n         .chars()\n         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n+        *byte = u8::from_str_radix(&digits[index + /* ~ changed by cargo-mutants ~ */ 2..index * 2 + 2], 16).ok()?;\n     }\n     Some(out)\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:20:50: replace * with + in normalize_hex",
+    "package": "wexport",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 51,
+        "line": 20
+      },
+      "start": {
+        "column": 50,
+        "line": 20
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace * with / in normalize_hex\n@@ -12,17 +12,17 @@\n         .chars()\n         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n+        *byte = u8::from_str_radix(&digits[index / /* ~ changed by cargo-mutants ~ */ 2..index * 2 + 2], 16).ok()?;\n     }\n     Some(out)\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:20:50: replace * with / in normalize_hex",
+    "package": "wexport",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 51,
+        "line": 20
+      },
+      "start": {
+        "column": 50,
+        "line": 20
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace + with - in normalize_hex\n@@ -12,17 +12,17 @@\n         .chars()\n         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n+        *byte = u8::from_str_radix(&digits[index * 2..index * 2 - /* ~ changed by cargo-mutants ~ */ 2], 16).ok()?;\n     }\n     Some(out)\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:20:65: replace + with - in normalize_hex",
+    "package": "wexport",
+    "replacement": "-",
+    "span": {
+      "end": {
+        "column": 66,
+        "line": 20
+      },
+      "start": {
+        "column": 65,
+        "line": 20
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace + with * in normalize_hex\n@@ -12,17 +12,17 @@\n         .chars()\n         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n+        *byte = u8::from_str_radix(&digits[index * 2..index * 2 * /* ~ changed by cargo-mutants ~ */ 2], 16).ok()?;\n     }\n     Some(out)\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:20:65: replace + with * in normalize_hex",
+    "package": "wexport",
+    "replacement": "*",
+    "span": {
+      "end": {
+        "column": 66,
+        "line": 20
+      },
+      "start": {
+        "column": 65,
+        "line": 20
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace * with + in normalize_hex\n@@ -12,17 +12,17 @@\n         .chars()\n         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n+        *byte = u8::from_str_radix(&digits[index * 2..index + /* ~ changed by cargo-mutants ~ */ 2 + 2], 16).ok()?;\n     }\n     Some(out)\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:20:61: replace * with + in normalize_hex",
+    "package": "wexport",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 62,
+        "line": 20
+      },
+      "start": {
+        "column": 61,
+        "line": 20
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace * with / in normalize_hex\n@@ -12,17 +12,17 @@\n         .chars()\n         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')\n         .collect();\n     if digits.len() != 64 {\n         return None;\n     }\n     let mut out = [0u8; 32];\n     for (index, byte) in out.iter_mut().enumerate() {\n-        *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n+        *byte = u8::from_str_radix(&digits[index * 2..index / /* ~ changed by cargo-mutants ~ */ 2 + 2], 16).ok()?;\n     }\n     Some(out)\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "normalize_hex",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 23
+        },
+        "start": {
+          "column": 1,
+          "line": 10
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:20:61: replace * with / in normalize_hex",
+    "package": "wexport",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 62,
+        "line": 20
+      },
+      "start": {
+        "column": 61,
+        "line": 20
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace load -> Result<[u8; 32]> with Ok([0; 32])\n@@ -19,50 +19,17 @@\n     for (index, byte) in out.iter_mut().enumerate() {\n         *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n     }\n     Some(out)\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n-    if let Some(key) = normalize_hex(spec) {\n-        return Ok(key);\n-    }\n-    let path = Path::new(spec);\n-    if !path.is_file() {\n-        return Err(Error::key(format!(\n-            \"key not found: {spec}\\nGive the 64 hex digits, a screenshot of them, or encrypted_backup.key.\"\n-        )));\n-    }\n-    let suffix = path\n-        .extension()\n-        .and_then(|value| value.to_str())\n-        .unwrap_or(\"\")\n-        .to_ascii_lowercase();\n-    if IMAGE_SUFFIXES.contains(&suffix.as_str()) {\n-        return read_from_image(path);\n-    }\n-    let bytes = std::fs::read(path)?;\n-    if let Ok(text) = std::str::from_utf8(&bytes) {\n-        if let Some(key) = normalize_hex(text) {\n-            return Ok(key);\n-        }\n-    }\n-    if bytes.len() >= 32 {\n-        // encrypted_backup.key is a serialised byte[]; the root key is its last 32 bytes.\n-        let mut key = [0u8; 32];\n-        key.copy_from_slice(&bytes[bytes.len() - 32..]);\n-        return Ok(key);\n-    }\n-    Err(Error::key(format!(\n-        \"{} is not a usable key file: it holds {} bytes\",\n-        path.display(),\n-        bytes.len()\n-    )))\n+    Ok([0; 32]) /* ~ changed by cargo-mutants ~ */\n }\n \n fn read_from_image(path: &Path) -> Result<[u8; 32]> {\n     let output = Command::new(\"tesseract\")\n         .arg(path)\n         .arg(\"stdout\")\n         .output()\n         .map_err(|_| {\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "load",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 25
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:27:5: replace load -> Result<[u8; 32]> with Ok([0; 32])",
+    "package": "wexport",
+    "replacement": "Ok([0; 32])",
+    "span": {
+      "end": {
+        "column": 8,
+        "line": 60
+      },
+      "start": {
+        "column": 5,
+        "line": 27
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace load -> Result<[u8; 32]> with Ok([1; 32])\n@@ -19,50 +19,17 @@\n     for (index, byte) in out.iter_mut().enumerate() {\n         *byte = u8::from_str_radix(&digits[index * 2..index * 2 + 2], 16).ok()?;\n     }\n     Some(out)\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n-    if let Some(key) = normalize_hex(spec) {\n-        return Ok(key);\n-    }\n-    let path = Path::new(spec);\n-    if !path.is_file() {\n-        return Err(Error::key(format!(\n-            \"key not found: {spec}\\nGive the 64 hex digits, a screenshot of them, or encrypted_backup.key.\"\n-        )));\n-    }\n-    let suffix = path\n-        .extension()\n-        .and_then(|value| value.to_str())\n-        .unwrap_or(\"\")\n-        .to_ascii_lowercase();\n-    if IMAGE_SUFFIXES.contains(&suffix.as_str()) {\n-        return read_from_image(path);\n-    }\n-    let bytes = std::fs::read(path)?;\n-    if let Ok(text) = std::str::from_utf8(&bytes) {\n-        if let Some(key) = normalize_hex(text) {\n-            return Ok(key);\n-        }\n-    }\n-    if bytes.len() >= 32 {\n-        // encrypted_backup.key is a serialised byte[]; the root key is its last 32 bytes.\n-        let mut key = [0u8; 32];\n-        key.copy_from_slice(&bytes[bytes.len() - 32..]);\n-        return Ok(key);\n-    }\n-    Err(Error::key(format!(\n-        \"{} is not a usable key file: it holds {} bytes\",\n-        path.display(),\n-        bytes.len()\n-    )))\n+    Ok([1; 32]) /* ~ changed by cargo-mutants ~ */\n }\n \n fn read_from_image(path: &Path) -> Result<[u8; 32]> {\n     let output = Command::new(\"tesseract\")\n         .arg(path)\n         .arg(\"stdout\")\n         .output()\n         .map_err(|_| {\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "load",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 25
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:27:5: replace load -> Result<[u8; 32]> with Ok([1; 32])",
+    "package": "wexport",
+    "replacement": "Ok([1; 32])",
+    "span": {
+      "end": {
+        "column": 8,
+        "line": 60
+      },
+      "start": {
+        "column": 5,
+        "line": 27
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ delete ! in load\n@@ -23,17 +23,17 @@\n }\n \n /// The 32-byte root key for whatever the user handed over.\n pub fn load(spec: &str) -> Result<[u8; 32]> {\n     if let Some(key) = normalize_hex(spec) {\n         return Ok(key);\n     }\n     let path = Path::new(spec);\n-    if !path.is_file() {\n+    if  /* ~ changed by cargo-mutants ~ */path.is_file() {\n         return Err(Error::key(format!(\n             \"key not found: {spec}\\nGive the 64 hex digits, a screenshot of them, or encrypted_backup.key.\"\n         )));\n     }\n     let suffix = path\n         .extension()\n         .and_then(|value| value.to_str())\n         .unwrap_or(\"\")\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "load",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 25
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/keys.rs:31:8: delete ! in load",
+    "package": "wexport",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 9,
+        "line": 31
+      },
+      "start": {
+        "column": 8,
+        "line": 31
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace >= with < in load\n@@ -42,17 +42,17 @@\n         return read_from_image(path);\n     }\n     let bytes = std::fs::read(path)?;\n     if let Ok(text) = std::str::from_utf8(&bytes) {\n         if let Some(key) = normalize_hex(text) {\n             return Ok(key);\n         }\n     }\n-    if bytes.len() >= 32 {\n+    if bytes.len() < /* ~ changed by cargo-mutants ~ */ 32 {\n         // encrypted_backup.key is a serialised byte[]; the root key is its last 32 bytes.\n         let mut key = [0u8; 32];\n         key.copy_from_slice(&bytes[bytes.len() - 32..]);\n         return Ok(key);\n     }\n     Err(Error::key(format!(\n         \"{} is not a usable key file: it holds {} bytes\",\n         path.display(),\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "load",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 25
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:50:20: replace >= with < in load",
+    "package": "wexport",
+    "replacement": "<",
+    "span": {
+      "end": {
+        "column": 22,
+        "line": 50
+      },
+      "start": {
+        "column": 20,
+        "line": 50
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace - with + in load\n@@ -45,17 +45,17 @@\n     if let Ok(text) = std::str::from_utf8(&bytes) {\n         if let Some(key) = normalize_hex(text) {\n             return Ok(key);\n         }\n     }\n     if bytes.len() >= 32 {\n         // encrypted_backup.key is a serialised byte[]; the root key is its last 32 bytes.\n         let mut key = [0u8; 32];\n-        key.copy_from_slice(&bytes[bytes.len() - 32..]);\n+        key.copy_from_slice(&bytes[bytes.len() + /* ~ changed by cargo-mutants ~ */ 32..]);\n         return Ok(key);\n     }\n     Err(Error::key(format!(\n         \"{} is not a usable key file: it holds {} bytes\",\n         path.display(),\n         bytes.len()\n     )))\n }\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "load",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 25
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:53:48: replace - with + in load",
+    "package": "wexport",
+    "replacement": "+",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 53
+      },
+      "start": {
+        "column": 48,
+        "line": 53
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace - with / in load\n@@ -45,17 +45,17 @@\n     if let Ok(text) = std::str::from_utf8(&bytes) {\n         if let Some(key) = normalize_hex(text) {\n             return Ok(key);\n         }\n     }\n     if bytes.len() >= 32 {\n         // encrypted_backup.key is a serialised byte[]; the root key is its last 32 bytes.\n         let mut key = [0u8; 32];\n-        key.copy_from_slice(&bytes[bytes.len() - 32..]);\n+        key.copy_from_slice(&bytes[bytes.len() / /* ~ changed by cargo-mutants ~ */ 32..]);\n         return Ok(key);\n     }\n     Err(Error::key(format!(\n         \"{} is not a usable key file: it holds {} bytes\",\n         path.display(),\n         bytes.len()\n     )))\n }\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "load",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "line": 25
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:53:48: replace - with / in load",
+    "package": "wexport",
+    "replacement": "/",
+    "span": {
+      "end": {
+        "column": 49,
+        "line": 53
+      },
+      "start": {
+        "column": 48,
+        "line": 53
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace read_from_image -> Result<[u8; 32]> with Ok([0; 32])\n@@ -56,40 +56,17 @@\n     Err(Error::key(format!(\n         \"{} is not a usable key file: it holds {} bytes\",\n         path.display(),\n         bytes.len()\n     )))\n }\n \n fn read_from_image(path: &Path) -> Result<[u8; 32]> {\n-    let output = Command::new(\"tesseract\")\n-        .arg(path)\n-        .arg(\"stdout\")\n-        .output()\n-        .map_err(|_| {\n-            Error::dependency(format!(\n-                \"tesseract not found on PATH, needed to read the key from a screenshot.\\n{}\\nOr type the 64 hex digits instead of passing an image.\",\n-                crate::error::install_hints(\"tesseract\")\n-            ))\n-        })?;\n-    if !output.status.success() {\n-        return Err(Error::key(format!(\n-            \"tesseract could not read {}: {}\",\n-            path.display(),\n-            String::from_utf8_lossy(&output.stderr).trim()\n-        )));\n-    }\n-    let text = String::from_utf8_lossy(&output.stdout);\n-    if let Some(key) = normalize_hex(&text).or_else(|| key_among_text(&text)) {\n-        return Ok(key);\n-    }\n-    Err(Error::key(\n-        \"could not read 64 hex digits from that image.\\nCrop the screenshot to the key itself, or type the digits.\",\n-    ))\n+    Ok([0; 32]) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The key as it comes out of OCR: a label, line breaks, often a 4×4 grid.\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "read_from_image",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 88
+        },
+        "start": {
+          "column": 1,
+          "line": 63
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:64:5: replace read_from_image -> Result<[u8; 32]> with Ok([0; 32])",
+    "package": "wexport",
+    "replacement": "Ok([0; 32])",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 87
+      },
+      "start": {
+        "column": 5,
+        "line": 64
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace read_from_image -> Result<[u8; 32]> with Ok([1; 32])\n@@ -56,40 +56,17 @@\n     Err(Error::key(format!(\n         \"{} is not a usable key file: it holds {} bytes\",\n         path.display(),\n         bytes.len()\n     )))\n }\n \n fn read_from_image(path: &Path) -> Result<[u8; 32]> {\n-    let output = Command::new(\"tesseract\")\n-        .arg(path)\n-        .arg(\"stdout\")\n-        .output()\n-        .map_err(|_| {\n-            Error::dependency(format!(\n-                \"tesseract not found on PATH, needed to read the key from a screenshot.\\n{}\\nOr type the 64 hex digits instead of passing an image.\",\n-                crate::error::install_hints(\"tesseract\")\n-            ))\n-        })?;\n-    if !output.status.success() {\n-        return Err(Error::key(format!(\n-            \"tesseract could not read {}: {}\",\n-            path.display(),\n-            String::from_utf8_lossy(&output.stderr).trim()\n-        )));\n-    }\n-    let text = String::from_utf8_lossy(&output.stdout);\n-    if let Some(key) = normalize_hex(&text).or_else(|| key_among_text(&text)) {\n-        return Ok(key);\n-    }\n-    Err(Error::key(\n-        \"could not read 64 hex digits from that image.\\nCrop the screenshot to the key itself, or type the digits.\",\n-    ))\n+    Ok([1; 32]) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The key as it comes out of OCR: a label, line breaks, often a 4×4 grid.\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "read_from_image",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 88
+        },
+        "start": {
+          "column": 1,
+          "line": 63
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:64:5: replace read_from_image -> Result<[u8; 32]> with Ok([1; 32])",
+    "package": "wexport",
+    "replacement": "Ok([1; 32])",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 87
+      },
+      "start": {
+        "column": 5,
+        "line": 64
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ delete ! in read_from_image\n@@ -66,17 +66,17 @@\n         .arg(\"stdout\")\n         .output()\n         .map_err(|_| {\n             Error::dependency(format!(\n                 \"tesseract not found on PATH, needed to read the key from a screenshot.\\n{}\\nOr type the 64 hex digits instead of passing an image.\",\n                 crate::error::install_hints(\"tesseract\")\n             ))\n         })?;\n-    if !output.status.success() {\n+    if  /* ~ changed by cargo-mutants ~ */output.status.success() {\n         return Err(Error::key(format!(\n             \"tesseract could not read {}: {}\",\n             path.display(),\n             String::from_utf8_lossy(&output.stderr).trim()\n         )));\n     }\n     let text = String::from_utf8_lossy(&output.stdout);\n     if let Some(key) = normalize_hex(&text).or_else(|| key_among_text(&text)) {\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "read_from_image",
+      "return_type": "-> Result<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 88
+        },
+        "start": {
+          "column": 1,
+          "line": 63
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/keys.rs:74:8: delete ! in read_from_image",
+    "package": "wexport",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 9,
+        "line": 74
+      },
+      "start": {
+        "column": 8,
+        "line": 74
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace key_among_text -> Option<[u8; 32]> with None\n@@ -88,30 +88,17 @@\n }\n \n /// The key as it comes out of OCR: a label, line breaks, often a 4×4 grid.\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n-    text.split(|character: char| {\n-        !(character.is_ascii_hexdigit()\n-            || character.is_whitespace()\n-            || character == '-'\n-            || character == ':')\n-    })\n-    .filter_map(|run| {\n-        let digits: String = run\n-            .chars()\n-            .filter(|character| character.is_ascii_hexdigit())\n-            .collect();\n-        (digits.len() == 64).then_some(digits)\n-    })\n-    .find_map(|digits| normalize_hex(&digits))\n+    None /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n     #[test]\n     fn the_fixture_key_is_accepted_in_the_shapes_a_person_types_it() {\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:96:5: replace key_among_text -> Option<[u8; 32]> with None",
+    "package": "wexport",
+    "replacement": "None",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 109
+      },
+      "start": {
+        "column": 5,
+        "line": 96
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace key_among_text -> Option<[u8; 32]> with Some([0; 32])\n@@ -88,30 +88,17 @@\n }\n \n /// The key as it comes out of OCR: a label, line breaks, often a 4×4 grid.\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n-    text.split(|character: char| {\n-        !(character.is_ascii_hexdigit()\n-            || character.is_whitespace()\n-            || character == '-'\n-            || character == ':')\n-    })\n-    .filter_map(|run| {\n-        let digits: String = run\n-            .chars()\n-            .filter(|character| character.is_ascii_hexdigit())\n-            .collect();\n-        (digits.len() == 64).then_some(digits)\n-    })\n-    .find_map(|digits| normalize_hex(&digits))\n+    Some([0; 32]) /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n     #[test]\n     fn the_fixture_key_is_accepted_in_the_shapes_a_person_types_it() {\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:96:5: replace key_among_text -> Option<[u8; 32]> with Some([0; 32])",
+    "package": "wexport",
+    "replacement": "Some([0; 32])",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 109
+      },
+      "start": {
+        "column": 5,
+        "line": 96
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace key_among_text -> Option<[u8; 32]> with Some([1; 32])\n@@ -88,30 +88,17 @@\n }\n \n /// The key as it comes out of OCR: a label, line breaks, often a 4×4 grid.\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n-    text.split(|character: char| {\n-        !(character.is_ascii_hexdigit()\n-            || character.is_whitespace()\n-            || character == '-'\n-            || character == ':')\n-    })\n-    .filter_map(|run| {\n-        let digits: String = run\n-            .chars()\n-            .filter(|character| character.is_ascii_hexdigit())\n-            .collect();\n-        (digits.len() == 64).then_some(digits)\n-    })\n-    .find_map(|digits| normalize_hex(&digits))\n+    Some([1; 32]) /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n     #[test]\n     fn the_fixture_key_is_accepted_in_the_shapes_a_person_types_it() {\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "src/keys.rs:96:5: replace key_among_text -> Option<[u8; 32]> with Some([1; 32])",
+    "package": "wexport",
+    "replacement": "Some([1; 32])",
+    "span": {
+      "end": {
+        "column": 47,
+        "line": 109
+      },
+      "start": {
+        "column": 5,
+        "line": 96
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ delete ! in key_among_text\n@@ -89,17 +89,17 @@\n \n /// The key as it comes out of OCR: a label, line breaks, often a 4×4 grid.\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n     text.split(|character: char| {\n-        !(character.is_ascii_hexdigit()\n+         /* ~ changed by cargo-mutants ~ */(character.is_ascii_hexdigit()\n             || character.is_whitespace()\n             || character == '-'\n             || character == ':')\n     })\n     .filter_map(|run| {\n         let digits: String = run\n             .chars()\n             .filter(|character| character.is_ascii_hexdigit())\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "src/keys.rs:97:9: delete ! in key_among_text",
+    "package": "wexport",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 97
+      },
+      "start": {
+        "column": 9,
+        "line": 97
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace || with && in key_among_text\n@@ -92,17 +92,17 @@\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n     text.split(|character: char| {\n         !(character.is_ascii_hexdigit()\n             || character.is_whitespace()\n             || character == '-'\n-            || character == ':')\n+            && /* ~ changed by cargo-mutants ~ */ character == ':')\n     })\n     .filter_map(|run| {\n         let digits: String = run\n             .chars()\n             .filter(|character| character.is_ascii_hexdigit())\n             .collect();\n         (digits.len() == 64).then_some(digits)\n     })\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:100:13: replace || with && in key_among_text",
+    "package": "wexport",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 100
+      },
+      "start": {
+        "column": 13,
+        "line": 100
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace || with && in key_among_text\n@@ -91,17 +91,17 @@\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n     text.split(|character: char| {\n         !(character.is_ascii_hexdigit()\n             || character.is_whitespace()\n-            || character == '-'\n+            && /* ~ changed by cargo-mutants ~ */ character == '-'\n             || character == ':')\n     })\n     .filter_map(|run| {\n         let digits: String = run\n             .chars()\n             .filter(|character| character.is_ascii_hexdigit())\n             .collect();\n         (digits.len() == 64).then_some(digits)\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:99:13: replace || with && in key_among_text",
+    "package": "wexport",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 99
+      },
+      "start": {
+        "column": 13,
+        "line": 99
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace || with && in key_among_text\n@@ -90,17 +90,17 @@\n /// The key as it comes out of OCR: a label, line breaks, often a 4×4 grid.\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n     text.split(|character: char| {\n         !(character.is_ascii_hexdigit()\n-            || character.is_whitespace()\n+            && /* ~ changed by cargo-mutants ~ */ character.is_whitespace()\n             || character == '-'\n             || character == ':')\n     })\n     .filter_map(|run| {\n         let digits: String = run\n             .chars()\n             .filter(|character| character.is_ascii_hexdigit())\n             .collect();\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:98:13: replace || with && in key_among_text",
+    "package": "wexport",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 15,
+        "line": 98
+      },
+      "start": {
+        "column": 13,
+        "line": 98
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace == with != in key_among_text\n@@ -91,17 +91,17 @@\n ///\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n     text.split(|character: char| {\n         !(character.is_ascii_hexdigit()\n             || character.is_whitespace()\n-            || character == '-'\n+            || character != /* ~ changed by cargo-mutants ~ */ '-'\n             || character == ':')\n     })\n     .filter_map(|run| {\n         let digits: String = run\n             .chars()\n             .filter(|character| character.is_ascii_hexdigit())\n             .collect();\n         (digits.len() == 64).then_some(digits)\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:99:26: replace == with != in key_among_text",
+    "package": "wexport",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 99
+      },
+      "start": {
+        "column": 26,
+        "line": 99
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace == with != in key_among_text\n@@ -92,17 +92,17 @@\n /// The text is cut into runs of hex characters, spaces, dashes and colons; a run that holds exactly\n /// 64 hex digits is the key. Filtering the whole page instead would mix the letters of the label\n /// into the digits — \"backup\" contributes four of them.\n fn key_among_text(text: &str) -> Option<[u8; 32]> {\n     text.split(|character: char| {\n         !(character.is_ascii_hexdigit()\n             || character.is_whitespace()\n             || character == '-'\n-            || character == ':')\n+            || character != /* ~ changed by cargo-mutants ~ */ ':')\n     })\n     .filter_map(|run| {\n         let digits: String = run\n             .chars()\n             .filter(|character| character.is_ascii_hexdigit())\n             .collect();\n         (digits.len() == 64).then_some(digits)\n     })\n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:100:26: replace == with != in key_among_text",
+    "package": "wexport",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 28,
+        "line": 100
+      },
+      "start": {
+        "column": 26,
+        "line": 100
+      }
+    }
+  },
+  {
+    "diff": "--- src/keys.rs\n+++ replace == with != in key_among_text\n@@ -99,17 +99,17 @@\n             || character == '-'\n             || character == ':')\n     })\n     .filter_map(|run| {\n         let digits: String = run\n             .chars()\n             .filter(|character| character.is_ascii_hexdigit())\n             .collect();\n-        (digits.len() == 64).then_some(digits)\n+        (digits.len() != /* ~ changed by cargo-mutants ~ */ 64).then_some(digits)\n     })\n     .find_map(|digits| normalize_hex(&digits))\n }\n \n #[cfg(test)]\n mod tests {\n     use super::*;\n \n",
+    "file": "src/keys.rs",
+    "function": {
+      "function_name": "key_among_text",
+      "return_type": "-> Option<[u8; 32]>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 110
+        },
+        "start": {
+          "column": 1,
+          "line": 90
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "src/keys.rs:107:23: replace == with != in key_among_text",
+    "package": "wexport",
+    "replacement": "!=",
+    "span": {
+      "end": {
+        "column": 25,
+        "line": 107
+      },
+      "start": {
+        "column": 23,
+        "line": 107
+      }
+    }
+  }
+]

@@ -272,14 +272,18 @@ fn largest_database(zip_bytes: &[u8]) -> Result<Vec<u8>> {
         let entry = archive
             .by_index(index)
             .map_err(|error| Error::input(format!("ZIP entry unreadable: {error}")))?;
-        if entry.name().ends_with(".db") {
+        let name = entry
+            .name()
+            .map_err(|error| Error::input(format!("ZIP entry name unreadable: {error}")))?
+            .to_string();
+        if name.ends_with(".db") {
             let size = entry.size();
             if best
                 .as_ref()
                 .map(|(current, _)| size > *current)
                 .unwrap_or(true)
             {
-                best = Some((size, entry.name().to_string()));
+                best = Some((size, name));
             }
         }
     }

@@ -29,6 +29,8 @@ allow = [
   "Unicode-DFS-2016",
   "Unlicense",
   "Zlib",
+  # our own crate, and the licence the whole tree is under
+  "GPL-3.0-or-later",
 ]
 
 [bans]

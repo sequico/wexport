@@ -47,7 +47,7 @@ fn decrypt_file(source: &Path, dest: &Path) {
 /// A fixed zone, so the golden chunk does not depend on the machine running the test.
 fn rome() -> archive::Clock {
     archive::Clock {
-        tz: chrono_tz::Europe::Rome,
+        tz: jiff::tz::TimeZone::get("Europe/Rome").expect("a zone name jiff knows"),
         name: "Europe/Rome".into(),
     }
 }
