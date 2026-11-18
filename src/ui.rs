@@ -147,6 +147,7 @@ pub fn run(args: &[String]) -> Result<i32> {
         return Err(Error::input("this backup holds no chat"));
     }
     // The codes are this list's identity: assigned once, in the default order, and never moved.
+    let total = stats.len();
     let numbers = numbered(&stats);
     let selected = if options.all {
         stats.clone()
@@ -160,7 +161,7 @@ pub fn run(args: &[String]) -> Result<i32> {
         display.truncate(limit);
     }
     if selected.is_empty() {
-        show_chats(&display, &clock, &numbers);
+        show_chats(&display, &clock, &numbers, total);
         return Ok(0);
     }
     let chosen = selected;
@@ -362,6 +363,7 @@ fn show_chats(
     stats: &[ChatStat],
     clock: &Clock,
     numbers: &std::collections::HashMap<String, usize>,
+    total: usize,
 ) {
     let labels: Vec<&str> = stats.iter().map(label_of).collect();
     let width = labels
@@ -393,10 +395,15 @@ fn show_chats(
     let messages: i64 = stats.iter().map(|stat| stat.messages).sum();
     let bytes: i64 = stats.iter().map(|stat| stat.media_bytes).sum();
     println!(
-        "\n{} chat(s), {} message(s), {} of media",
+        "\n{} chat(s), {} message(s), {} of media{}",
         stats.len(),
         messages,
-        human_bytes(bytes.max(0) as u64)
+        human_bytes(bytes.max(0) as u64),
+        if stats.len() < total {
+            format!(" (of {total} in this backup)")
+        } else {
+            String::new()
+        }
     );
 }
 
