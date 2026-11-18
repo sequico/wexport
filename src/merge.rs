@@ -65,7 +65,8 @@ fn replay(connection: &rusqlite::Connection, delta: &Path) -> Result<()> {
                 delta.display()
             )));
         }
-        let query = format!("INSERT OR REPLACE INTO main.\"{table}\" SELECT * FROM inc.\"{table}\"");
+        let query =
+            format!("INSERT OR REPLACE INTO main.\"{table}\" SELECT * FROM inc.\"{table}\"");
         transaction.execute(&query, [])?;
     }
     transaction.commit()?;

@@ -717,6 +717,9 @@ impl Msgstore {
         }
         drop(rows);
         out.extend(self.calls(chat)?);
+        // Calls are fetched separately, so they have to land where their timestamp says: the build
+        // reads the first and last record as the chat's range, and the folder is named from it.
+        out.sort_by_key(|message| (message.ts, message.id));
         Ok(out)
     }
 
@@ -968,7 +971,8 @@ mod tests {
              INSERT INTO message_media VALUES
                  (2, 'Media/WhatsApp Images/x.jpg', 'image/jpeg', 1234);
              INSERT INTO call_log VALUES
-                 (1, '393331234567@s.whatsapp.net', 9000, 5, 0, 1, 1);",
+                 (1, '393331234567@s.whatsapp.net', 9000, 5, 0, 1, 1),
+                 (2, '393331234567@s.whatsapp.net', 500, 9, 0, 0, 0);",
         )
         .unwrap();
         drop(con);
@@ -988,9 +992,22 @@ mod tests {
         assert_eq!(stats[0].last_ts, 9000, "the call is the newest event");
 
         let messages = store.messages(&stats[0].chat).unwrap();
-        assert_eq!(messages.len(), 3);
-        assert_eq!(messages[2].kind, "call");
-        assert!(messages[2].payload.is_some());
+        assert_eq!(messages.len(), 4);
+        // The call table is read on its own, so its rows must still arrive in time order.
+        let order: Vec<(&str, i64)> = messages
+            .iter()
+            .map(|message| (message.kind.as_str(), message.ts))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                ("call", 500),
+                ("text", 1000),
+                ("image", 2000),
+                ("call", 9000)
+            ]
+        );
+        assert!(messages[3].payload.is_some());
         let _ = std::fs::remove_file(path);
     }
 }
