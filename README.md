@@ -1,15 +1,22 @@
 # wexport
 
-Turn an Android WhatsApp backup into a local, scrollable archive of your chats — every message,
-every image, video and voice note, with every timestamp frozen at build time so the archive still
-says exactly when something happened in ten years.
+Turn an Android WhatsApp backup into a local, scrollable archive of your chats — every message, every
+image, video and voice note, with each timestamp frozen at build time so the archive still says when
+something happened in ten years.
 
 Each chat becomes one folder that opens by double-clicking `index.html`: no server, no wexport, no
-network. A folder can be zipped and given to someone without exposing the other chats.
+network. Give someone one folder and they see one conversation and nothing else.
 
-One static binary, no runtime dependencies beyond `ffmpeg`/`ffprobe`.
+![The archive viewer](docs/viewer.png)
 
-## What it does
+- **Offline, always.** The tool never opens a connection; the archive never loads anything from
+  outside its own folder.
+- **One folder per chat.** Zip it, copy it to a USB stick, send it: it still works.
+- **Frozen time.** Every message carries its wall clock with an explicit UTC offset, written once at
+  build time. Reopened in ten years, on any machine, it shows the same hour.
+- **One static binary.** No runtime, no installer; `ffmpeg` and `ffprobe` are the only external tools.
+
+## How it works
 
 ```
 phone ──► folder you copy by USB ──► wexport ──► one folder per chat ──► double-click index.html
@@ -18,17 +25,17 @@ phone ──► folder you copy by USB ──► wexport ──► one folder pe
 
 `wexport` reads `msgstore.db.crypt15` (and the daily incrementals), decrypts it with the 64-digit key
 WhatsApp showed you when you enabled end-to-end encrypted backups, joins the messages with the
-`Media/` folder you copied, and writes the archive. It runs entirely offline and uploads nothing.
+`Media/` folder you copied, and writes the archive.
 
-## Build and run
+## Quick start
 
 ```sh
 cargo build --release
 ./target/release/wexport ~/whatsapp/phone-copy
 ```
 
-It finds the backup, asks for the key when it cannot find `key.png`/`key.txt` beside it, and lists the
-chats with a code each:
+It finds the backup wherever the copy put it, asks for the key when it cannot find `key.png`,
+`key.txt` or `encrypted_backup.key` beside it, and lists the chats with a code each:
 
 ```
   #  last event                     msgs  media      size  chat
@@ -36,116 +43,92 @@ chats with a code each:
   2  2026-12-02 11:04:00 +01:00        9      6    7.1 kB  Family
 ```
 
-The code is what `-b` takes. Archives land in `<folder>/output/`, one folder per chat, plus an
-`index.html`; the media part runs behind a progress bar:
+The code is what `-b` takes. Archives land in `<folder>/output/`, one folder per chat plus an
+`index.html`, and the media part runs behind a progress bar:
 
 ```sh
-wexport ~/whatsapp/phone-copy                   # the list, recent first
+wexport ~/whatsapp/phone-copy                   # the list, most recent first
 wexport ~/whatsapp/phone-copy -l 10 size        # the ten heaviest
 wexport ~/whatsapp/phone-copy -b 2              # one chat, by its code
-wexport ~/whatsapp/phone-copy -b 2,5
+wexport ~/whatsapp/phone-copy -b 2,5 -o /media/backup
 wexport ~/whatsapp/phone-copy -b all            # everything
 ```
 
 `wexport -h` prints the flags, the exit codes, the requirements and worked examples.
 
-The key can be 64 hex digits (spaces and a 4×4 grid are fine), a screenshot of them, or the phone's
-`encrypted_backup.key` on a rooted device. The screenshot path needs `tesseract`. `ffmpeg` and
-`ffprobe` are required and missing ones abort at startup with the install command for the platform.
-See [the user flow](docs/user-flow.md).
+## The archive
+
+```
+output/2026-12-02-family-9fd6/
+├── index.html      # opens by double-click; no server, no fetch, no modules
+├── app.js, app.css
+├── README.txt      # what this folder is, and when it was built
+├── data/           # manifest.js plus one classic script per month
+├── media/          # originals, content-addressed
+└── deriv/          # thumbnails and posters
+```
+
+The viewer is plain classic scripts — no bundler, no `fetch`, no workers — because that is what
+`file://` allows. It virtualises the timeline (a few hundred nodes whatever the chat length), releases
+chunks that scroll out of view, searches across all of them, jumps to a date, and opens images, video
+and voice notes straight from the folder. Keyboard: `/` search, `j`/`k` scroll, `g`/`Home` first
+message, `G`/`End` last.
+
+Media the user did not copy is a normal state, not an error: the archive shows a labelled placeholder.
+
+## The key
+
+Three forms, all read offline:
+
+- the 64 hex digits (spaces and a 4×4 grid are fine);
+- a screenshot of them (needs `tesseract`);
+- `encrypted_backup.key` from a rooted phone.
+
+Without any of them the tool asks once on the terminal.
 
 ## Scope
 
 - **Android only**, backups in `crypt15` format (end-to-end encrypted, 64-digit key).
 - The user copies the phone folder themselves; the tool never touches the device.
 - Not supported, deliberately: iPhone, Google Drive download, password-based or passkey-based
-  backups, legacy `crypt12`/`crypt14`, re-encrypting anything back.
+  backups, `crypt12`/`crypt14`, re-encrypting anything back.
 
-## Archive
+## Privacy
 
-Per chat: `index.html`, `app.js`, `app.css`, `README.txt`, `data/` (one script per month,
-`manifest.js`), `media/` (content-addressed originals), `deriv/` (thumbnails, posters). The viewer is
-plain classic scripts — no modules, no bundler, no `fetch` — so it works from `file://`. Timestamps
-are strings with their UTC offset, computed at build time; nothing in the archive needs the machine
-that built it.
+- Nothing leaves the machine: no telemetry, no update check, no network code at all.
+- The archive is **plaintext**: anyone holding the folder can read the conversation. The build summary
+  says so.
+- The test fixture in this repository is generated by the repository itself. No real WhatsApp data is
+  committed.
 
-## Layout
+## Requirements
 
-| Path | Job |
-|---|---|
-| `src/crypt15.rs` | varint + protobuf header, AES-256-GCM, zlib/ZIP payload |
-| `src/keys.rs` | 64 hex digits, key file, screenshot via tesseract |
-| `src/discover.rs` | find the backup anywhere in the copy, the key-type gate, the older-chain report |
-| `src/msgstore.rs` | the only place WhatsApp's table and column names live |
-| `src/merge.rs` | incremental replay into the full backup |
-| `src/media.rs` | content-addressed placement, thumbnails, posters, waveform peaks |
-| `src/chunks.rs` | month chunks as classic scripts, escaping, splitting |
-| `src/archive.rs` | one folder per chat, manifest, README, index page, prune |
-| `src/ui.rs` | flags, the chat codes, the run |
-| `src/progress.rs` | the one-line progress bar |
-| `src/assets/` | the viewer |
+`ffmpeg` and `ffprobe` on `PATH`; `tesseract` only for a screenshot key. Missing ones abort at startup
+with the install command for the platform.
 
-## Tests
+Exit codes: `0` success · `1` unreadable input, or a question with no terminal · `2` unusable key ·
+`3` wrong backup type · `4` build incomplete (the archive is usable) · `5` missing dependency.
+
+## Status
+
+**1.0.0.** The suite covers the container, the schema adapter, the archive bytes (a committed golden
+chunk), a rebuild that changes nothing and removes what is gone, and the memory ceiling. The viewer is
+checked from `file://` in headless Chromium; a manual pass in Firefox and Edge is the remaining check.
+
+## Development
 
 ```sh
-cargo test                     # unit tests plus end-to-end runs on the committed fixture
-cargo clippy --all-targets     # must be silent
-cargo fmt --check
+cargo test                                   # unit and end-to-end runs on the fixture
+./scripts/gate.sh                            # what a push must pass, about twenty seconds
+./scripts/gate-release.sh                    # the same, plus mutation testing, fuzzing and TSan
 ```
 
-The suite runs on `tests/fixtures/synthetic/phone`: a crypt15 backup this repository builds itself,
-with one message per kind, a group, a call, a reaction, a missing media file and a delta. No real
-WhatsApp data is ever committed. The generator is `tests/fixtures/synthetic/build.py`, and the key it
-encrypts with is a fixed test constant.
-
-The unit test that matters most pins the key derivation to the value the reference implementation
-computes: a silent change there would make every archive wrong in a way no fixture catches.
-
-## Verification before a push
-
-Warnings are errors here: `Cargo.toml` denies rustc, rustdoc and clippy warnings, and the library
-denies `unwrap`/`panic` outside tests.
-
-```sh
-./scripts/gate.sh            # whole tree, about twenty seconds
-./scripts/gate-release.sh    # the same, plus the proofs that cost minutes
-```
-
-The push gate runs the format check, clippy, the suite, the dependency check (`deny.toml`: licences,
-advisories, sources, duplicates) and a `cargo check` for Windows — the platform the binary is also
-shipped for, and the one where a missing `sh` or a POSIX path shows up.
-
-The release gate adds what is too slow for every push:
-
-- **mutation testing** (`cargo mutants`) — it answers what coverage does not: do the tests fail when
-  the code changes? Survivors are untested logic.
-- **fuzzing** (`cargo fuzz`, three targets) on the parsers that read a file the user was told to
-  copy: the header, the whole decrypt path, and the typed key.
-- **ThreadSanitizer** over the fixture build, where the media workers run.
-- the release build itself, from the committed `Cargo.lock` (`--locked`).
-
-
-## Documentation
-
-- [Implementation plan](docs/implementation-plan.md) — the specification: pipeline, data model,
-  archive format, milestones, risks, decisions.
-- [Android backup formats](docs/android-backup-formats.md) — what is inside the files, and which key
-  opens which format.
-- [User flow](docs/user-flow.md) — what the person with the phone has to do, step by step.
-
-## Working on it with an agent
-
-Two skills live in `.opencode/skills/`, and they load only when relevant:
-
-- `wexport-implement` — the procedure and the invariants for editing code here, plus the synthetic
-  fixture recipe in `references/fixtures.md`.
-- `offline-html-archive` — how to build an archive that opens from `file://` with no server.
-
-They point at the plan rather than restating it: the plan is the spec, the skills are the practice.
+The fixture is `tests/fixtures/synthetic/phone`, built by `tests/fixtures/synthetic/build.py`; see
+[docs/implementation-plan.md](docs/implementation-plan.md) for the specification, and `AGENTS.md` for
+the project rules an agent follows here.
 
 ## License
 
-**GPL-3.0-or-later** (`SPDX-License-Identifier: GPL-3.0-or-later`), see [LICENSE](LICENSE). The
-`crypt15` key derivation and container layout are the same as those of
+**GPL-3.0-or-later**, see [LICENSE](LICENSE). The `crypt15` key derivation and container layout follow
 [`wa-crypt-tools`](https://github.com/ElDavoo/wa-crypt-tools) (GPL-3.0), reimplemented here and pinned
-by a test to the value that reference implementation computes.
+by a test to the value that reference computes.
