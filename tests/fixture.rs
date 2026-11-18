@@ -28,7 +28,11 @@ fn decrypted() -> (Msgstore, PathBuf) {
     if let Ok(bytes) = std::fs::read(&contacts) {
         let header = crypt15::parse_header(&bytes).unwrap();
         let contacts_path = path.with_file_name("wexport-it-contacts.db");
-        std::fs::write(&contacts_path, crypt15::decrypt(&bytes, &header, &key).unwrap()).unwrap();
+        std::fs::write(
+            &contacts_path,
+            crypt15::decrypt(&bytes, &header, &key).unwrap(),
+        )
+        .unwrap();
         store.apply_contacts(&contacts_path);
         let _ = std::fs::remove_file(contacts_path);
     }
@@ -219,6 +223,24 @@ fn the_listing_finds_every_chat() {
 }
 
 #[test]
+fn a_chat_selection_that_matches_nothing_is_an_error() {
+    let out = scratch("nosuch");
+    let args = vec![
+        fixture().display().to_string(),
+        "--key".into(),
+        KEY.into(),
+        "--chat".into(),
+        "no-such-chat".into(),
+        "--out".into(),
+        out.display().to_string(),
+    ];
+    let error = ui::run(&args).expect_err("an unmatched selection stops the run");
+    assert_eq!(error.code, wexport::error::EXIT_INPUT);
+    assert!(error.message.contains("no chat matches"));
+    let _ = std::fs::remove_dir_all(out);
+}
+
+#[test]
 fn the_listing_puts_the_newest_conversation_first() {
     let (store, database) = decrypted();
     let stats = store.chat_stats().unwrap();
@@ -231,7 +253,10 @@ fn the_listing_puts_the_newest_conversation_first() {
 fn the_family_chunk_is_the_committed_golden_file() {
     let (store, database) = decrypted();
     let stats = store.chat_stats().unwrap();
-    let family = stats.iter().find(|stat| stat.chat.name == "Family").unwrap();
+    let family = stats
+        .iter()
+        .find(|stat| stat.chat.name == "Family")
+        .unwrap();
     let out = scratch("golden");
     let root = fixture();
     let media = root.join("Media");
@@ -246,7 +271,8 @@ fn the_family_chunk_is_the_committed_golden_file() {
     };
     let built = archive::build_chat(&store, family, &context, "Family").unwrap();
     let chunk = built.archive.join("data/2026-12.js");
-    let golden = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/golden/family-2026-12.js");
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/golden/family-2026-12.js");
     if let Ok(expected) = std::fs::read(&golden) {
         assert_eq!(
             String::from_utf8_lossy(&std::fs::read(&chunk).unwrap()),
@@ -257,7 +283,10 @@ fn the_family_chunk_is_the_committed_golden_file() {
     } else {
         std::fs::create_dir_all(golden.parent().unwrap()).unwrap();
         std::fs::copy(&chunk, &golden).unwrap();
-        panic!("golden written to {}: review it and commit it", golden.display());
+        panic!(
+            "golden written to {}: review it and commit it",
+            golden.display()
+        );
     }
     let _ = std::fs::remove_dir_all(out);
     let _ = std::fs::remove_file(database);

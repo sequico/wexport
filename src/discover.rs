@@ -193,7 +193,11 @@ fn find_databases(root: &Path) -> Option<PathBuf> {
             "WhatsApp Business/Databases",
         ],
     ) {
-        return Some(explicit);
+        // A folder named Databases is a hint, not proof: another app's copy can carry the same
+        // name, and the backup may sit one level further down.
+        if looks_like(&explicit) {
+            return Some(explicit);
+        }
     }
 
     let mut queue = vec![(root.to_path_buf(), 0usize)];
@@ -256,5 +260,18 @@ mod tests {
         let error = require_binaries(&["wexport-no-such-binary"]).unwrap_err();
         assert_eq!(error.code, crate::error::EXIT_DEPENDENCY);
         assert!(error.message.contains("sudo apt install ffmpeg"));
+    }
+
+    #[test]
+    fn an_empty_databases_folder_does_not_hide_the_backup() {
+        let root = std::env::temp_dir().join(format!("wexport-discover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("Databases")).unwrap();
+        let nested = root.join("WhatsApp/Databases");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("msgstore.db.crypt15"), b"a backup lives here").unwrap();
+        let inputs = discover(&root).unwrap();
+        assert_eq!(inputs.database, nested.join("msgstore.db.crypt15"));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -314,7 +314,15 @@ fn choose<'a>(stats: &'a [ChatStat], options: &Options) -> Result<Vec<&'a ChatSt
         return Ok(stats.iter().collect());
     }
     if !options.chats.is_empty() {
-        return Ok(match_rows(stats, &options.chats));
+        let matched = match_rows(stats, &options.chats);
+        if matched.is_empty() {
+            // A typo in a script must not end with "0 archives" and exit 0.
+            return Err(Error::input(format!(
+                "no chat matches {}: --list shows the numbers and names",
+                options.chats.join(", ")
+            )));
+        }
+        return Ok(matched);
     }
     if !std::io::stdin().is_terminal() {
         return Err(Error::input(
