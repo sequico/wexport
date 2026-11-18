@@ -1,0 +1,33 @@
+[package]
+name = "wexport-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+wexport = { path = ".." }
+
+[[bin]]
+name = "parse_header"
+path = "fuzz_targets/parse_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decrypt"
+path = "fuzz_targets/decrypt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "normalize_hex"
+path = "fuzz_targets/normalize_hex.rs"
+test = false
+doc = false
+bench = false
