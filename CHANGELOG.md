@@ -7,6 +7,9 @@ One line per release. The detailed history is `git log`.
 - A usage page: the 64-digit key is the only key that works, the phone steps — turning the backup on,
   saving the key, making a full backup, copying the folder — drawn screen by screen, and the flags with
   their syntax, their rules and the exit codes.
+- The README opens with why the tool exists: WhatsApp's own export tangles on the long chats worth
+  keeping, so wexport takes the whole backup instead, with no ceiling on the number of chats, the
+  length of one chat, or the size of the archive.
 
 ## 1.0.0
 

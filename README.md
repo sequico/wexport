@@ -7,19 +7,31 @@ something happened in ten years.
 Each chat becomes one folder that opens by double-clicking `index.html`: no server, no wexport, no
 network. Give someone one folder and they see one conversation and nothing else.
 
-![The archive viewer](docs/viewer.png)
+**WhatsApp's own *Export chat* is built for forwarding a conversation, not for keeping one.** It
+exports a single chat at a time, as a plain-text file with the media flattened beside it — and on the
+long conversations people actually want to keep, its text comes out tangled. That is the problem
+wexport was written for, and it is why it goes after the backup instead of the export:
 
-> **It needs the 64-digit key.** wexport opens Android `crypt15` backups protected by the 64-digit
-> encryption key WhatsApp shows when end-to-end encrypted backup is turned on. A password or a passkey
-> keeps that key on WhatsApp's servers, so the file cannot be opened offline; iPhone backups are a
-> different format. [Turning on the backup and saving the key →](docs/usage.md)
-
+- **Every chat in one run, with no practical ceiling.** 7 000 chats and 566 000 messages is the real
+  backup this tool was built against, and `-b all` builds them all.
+- **No ceiling on how long a chat is.** A conversation is streamed out of the database and written one
+  month at a time, so a chat of hundreds of thousands of messages never has to fit in memory.
+- **A site that stays usable at gigabytes.** The viewer keeps only the rows on screen, loads one month
+  at a time and releases the months far from the viewport; search walks the chunks with a progress
+  line instead of freezing the tab. Media is content-addressed, so a photo sent ten times is one file.
 - **Offline, always.** The tool never opens a connection; the archive never loads anything from
   outside its own folder.
 - **One folder per chat.** Zip it, copy it to a USB stick, send it: it still works.
 - **Frozen time.** Every message carries its wall clock with an explicit UTC offset, written once at
   build time. Reopened in ten years, on any machine, it shows the same hour.
 - **One static binary.** No runtime, no installer; `ffmpeg` and `ffprobe` are the only external tools.
+
+![The archive viewer](docs/viewer.png)
+
+> **It needs the 64-digit key.** wexport opens Android `crypt15` backups protected by the 64-digit
+> encryption key WhatsApp shows when end-to-end encrypted backup is turned on. A password or a passkey
+> keeps that key on WhatsApp's servers, so the file cannot be opened offline; iPhone backups are a
+> different format. [Turning on the backup and saving the key →](docs/usage.md)
 
 ## How it works
 
