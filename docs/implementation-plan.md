@@ -136,7 +136,8 @@ wexport/
 ├── docs/
 │   ├── implementation-plan.md   # this file
 │   ├── android-backup-formats.md
-│   └── user-flow.md
+│   ├── usage.md
+│   └── figures/                 # the phone screens usage.md shows
 ├── .opencode/skills/            # agent skills for working in this repo
 │   ├── wexport-implement/       # procedure + invariants + fixtures recipe
 │   └── offline-html-archive/    # file:// archive technique
@@ -383,9 +384,9 @@ tab; jump-to-date lands on the right message including for DST boundaries.
 
 ### M5 — error UX, packaging, docs
 Every exit code has a test; **`cargo build --release`** produces one static binary per platform
-(**Linux and Windows**; macOS is not built). README and `docs/user-flow.md` checked against a fresh
+(**Linux and Windows**; macOS is not built). README and `docs/usage.md` checked against a fresh
 account with nothing but the binary.
-**Acceptance:** a non-technical person follows `docs/user-flow.md` end to end on a machine with no
+**Acceptance:** a non-technical person follows `docs/usage.md` end to end on a machine with no
 toolchain, using only the single binary; the Windows build starts under Defender without a warning, and
 the Linux build is statically linked against glibc-free targets or runs on a distro older than the one
 it was compiled on.
@@ -468,7 +469,7 @@ Taken by the owner:
 3. **One site per chat**; the `<out>/index.html` page is the only place that lists chats together
    (§2, §6).
 4. **English** in code, CLI, UI and documentation. If the eventual recipient cannot read English, add
-   `docs/user-flow.it.md` as a short quick-start; the main artifact stays English.
+   `docs/usage.it.md` as a short quick-start; the main artifact stays English.
 5. **The archive is plaintext on disk**, with an explicit warning in the build summary. No encrypted
    archive mode.
 6. **GPL-3.0-or-later**, with the crypt15 reader ported from `wa-crypt-tools` (§9).

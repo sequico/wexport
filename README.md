@@ -9,6 +9,11 @@ network. Give someone one folder and they see one conversation and nothing else.
 
 ![The archive viewer](docs/viewer.png)
 
+> **It needs the 64-digit key.** wexport opens Android `crypt15` backups protected by the 64-digit
+> encryption key WhatsApp shows when end-to-end encrypted backup is turned on. A password or a passkey
+> keeps that key on WhatsApp's servers, so the file cannot be opened offline; iPhone backups are a
+> different format. [Turning on the backup and saving the key →](docs/usage.md)
+
 - **Offline, always.** The tool never opens a connection; the archive never loads anything from
   outside its own folder.
 - **One folder per chat.** Zip it, copy it to a USB stick, send it: it still works.
@@ -121,7 +126,8 @@ checked from `file://` in headless Chromium; a manual pass in Firefox and Edge i
   archive format, milestones, risks, decisions.
 - [Android backup formats](docs/android-backup-formats.md) — what is inside the files, and which key
   opens which format.
-- [User flow](docs/user-flow.md) — what the person with the phone has to do, step by step.
+- [Usage](docs/usage.md) — the phone steps: turning on the 64-digit key, saving it, making the
+  backup, copying the folder, running wexport, and what each error means.
 
 ## Development
 

@@ -16,7 +16,7 @@ Read before editing:
 1. `docs/implementation-plan.md` — the section covering the stage you touch (§2 pipeline, §4 data
    model, §5 media, §6 archive format, §7 milestones).
 2. `docs/android-backup-formats.md` — only for decryption, keys, msgstore schema, incrementals.
-3. `docs/user-flow.md` — only when the change is observable by the person using the tool.
+3. `docs/usage.md` — only when the change is observable by the person using the tool.
 
 ## Invariants a change may never break
 
@@ -99,6 +99,6 @@ plan and the viewer to change together.
 - Code in the planned location, no dead branches, no TODO without a `shortcut:` note.
 - A test that fails if the behaviour regresses (synthetic fixture, or `WEXPORT_REAL_BACKUP` when
   only real data can prove it — and the test says why in its comment).
-- Docs updated only where observable behaviour changed: §4/§5/§6 of the plan, or `docs/user-flow.md`
+- Docs updated only where observable behaviour changed: §4/§5/§6 of the plan, or `docs/usage.md`
   when the user sees it.
 - `git status` clean, one commit, message that names the unit.
