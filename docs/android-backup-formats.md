@@ -2,9 +2,8 @@
 
 What is inside the files, which key opens what, and where the tool's assumptions come from.
 Facts are from the sources listed at the end; anything derived rather than observed is marked
-`unverified`. Tested reference versions: WhatsApp **2.26.34.7**, `wa-crypt-tools` **0.2.0** — plus
-the post-0.2.0 work on `main` (OCR of the key screenshot, `wagui`) that the `Unreleased` changelog
-section describes.
+`unverified`. Tested reference versions: WhatsApp **2.26.34.7** and `wa-crypt-tools` (0.2.0 and its
+`main` branch, which adds the OCR of the key screenshot and the `wagui` interface).
 
 ---
 
@@ -133,7 +132,7 @@ Cautions:
 
 | Project | Does | License |
 |---|---|---|
-| [ElDavoo/wa-crypt-tools](https://github.com/ElDavoo/wa-crypt-tools) | crypt12/14/15 decrypt + encrypt, header parsing (`wainfo`), key from screenshot (OCR, post-0.2.0), GUI (`wagui`), tested on real 2.26.34.7 backups | GPL-3.0-or-later |
+| [ElDavoo/wa-crypt-tools](https://github.com/ElDavoo/wa-crypt-tools) | crypt12/14/15 decrypt + encrypt, header parsing (`wainfo`), key from screenshot (OCR), GUI (`wagui`), tested on real 2.26.34.7 backups | GPL-3.0-or-later |
 | [giacomoferretti/whatsapp-backup-downloader-decryptor](https://github.com/giacomoferretti/whatsapp-backup-downloader-decryptor) | Google Drive `mcrypt1` download + decrypt | Apache-2.0 |
 | [B16f00t/whapa](https://github.com/B16f00t/whapa) 2.00 (Jul 2026) | Android + iOS parsing, Drive extractor, HTML report | see repo |
 | [auanasgheps/whatsapp-backup-tools](https://github.com/auanasgheps/whatsapp-backup-tools) | media archive + Flask viewer, incremental merge | GPL-3.0 |

@@ -438,7 +438,7 @@ impl Msgstore {
                 columns = rows.filter_map(|row| row.ok()).collect();
             }
         }
-        if columns.is_empty() || !columns.iter().any(|name| name == "jid") {
+        if !columns.iter().any(|name| name == "jid") {
             return;
         }
         // The name column travels between versions; ask the schema which one is there.
@@ -597,12 +597,6 @@ impl Msgstore {
         if !self.tables.contains("call_log") {
             return HashMap::new();
         }
-        let columns = self.columns_of("call_log");
-        if !columns.iter().any(|name| name == column)
-            || !columns.iter().any(|name| name == "timestamp")
-        {
-            return HashMap::new();
-        }
         let Ok(mut statement) = self.con.prepare(&format!(
             "SELECT \"{column}\", MAX(timestamp) FROM call_log GROUP BY 1"
         )) else {
@@ -672,7 +666,8 @@ impl Msgstore {
             Some(layout) => {
                 let (filter, params) = self.call_filter(chat, layout);
                 let mut statement = self.con.prepare(&format!(
-                    "SELECT * FROM call_log WHERE {filter} ORDER BY timestamp"
+                    // Calls with one timestamp keep the order of the table, so a rebuild is identical.
+                    "SELECT * FROM call_log WHERE {filter} ORDER BY timestamp, \"_id\""
                 ))?;
                 let mut rows = statement.query(rusqlite::params_from_iter(params))?;
                 let mut collected = Vec::new();
@@ -850,17 +845,18 @@ impl Msgstore {
             return None;
         }
         let columns = self.columns_of("call_log");
-        if !columns.iter().any(|name| name == "timestamp") {
+        let has = |name: &str| columns.iter().any(|column| column == name);
+        if !has("timestamp") {
             return None;
         }
         let jid_column = ["jid_row_id", "key_remote_jid"]
             .into_iter()
-            .find(|name| columns.iter().any(|column| column == name))?
+            .find(|name| has(name))?
             .to_string();
         let find = |names: &[&str]| {
             names
                 .iter()
-                .find(|name| columns.iter().any(|column| column == *name))
+                .find(|name| has(name))
                 .map(|name| name.to_string())
         };
         Some(CallLayout {
@@ -868,7 +864,7 @@ impl Msgstore {
             duration: find(&["duration", "call_duration"]),
             video: find(&["video_call", "is_video"]),
             missed: find(&["missed_call", "is_missed"]),
-            from_me: columns.iter().any(|name| name == "from_me"),
+            from_me: has("from_me"),
         })
     }
 
@@ -1060,6 +1056,146 @@ mod tests {
     }
 
     #[test]
+    fn media_kinds_come_from_the_numeric_type_first_then_the_mime() {
+        let row = |path: &str, name: &str, mime: &str| MediaRow {
+            rel_path: path.into(),
+            name: name.into(),
+            mime: if mime.is_empty() {
+                None
+            } else {
+                Some(mime.into())
+            },
+            ..MediaRow::default()
+        };
+        let numeric = |kind: i64| media_kind(&row("x", "x", ""), Some(kind));
+        assert_eq!(numeric(1), "image");
+        assert_eq!(numeric(2), "audio");
+        assert_eq!(numeric(3), "video");
+        assert_eq!(numeric(4), "contact");
+        assert_eq!(numeric(5), "location");
+        assert_eq!(numeric(8), "document");
+        // A document whose mime says video is still a document: the phone's type wins.
+        assert_eq!(
+            media_kind(&row("Media/Documents/x.mp4", "x.mp4", "video/mp4"), Some(8)),
+            "document"
+        );
+        assert_eq!(numeric(13), "gif");
+        assert_eq!(numeric(20), "sticker");
+        assert_eq!(
+            numeric(99),
+            "document",
+            "an unknown type falls through to the mime"
+        );
+
+        assert_eq!(
+            media_kind(&row("Media/x.jpg", "", "image/jpeg"), None),
+            "image"
+        );
+        assert_eq!(
+            media_kind(&row("Media/Stickers/x.webp", "", "image/webp"), None),
+            "sticker"
+        );
+        assert_eq!(
+            media_kind(&row("Media/x.webp", "sticker-1.webp", "image/webp"), None),
+            "sticker"
+        );
+        assert_eq!(
+            media_kind(&row("Media/x.mp4", "", "video/mp4"), None),
+            "video"
+        );
+        assert_eq!(
+            media_kind(
+                &row("Media/WhatsApp Animated Gifs/x.mp4", "", "video/mp4"),
+                None
+            ),
+            "gif"
+        );
+        assert_eq!(
+            media_kind(&row("Media/x.mp4", "GIF-2026.mp4", "video/mp4"), None),
+            "gif"
+        );
+        assert_eq!(
+            media_kind(&row("Media/x.opus", "", "audio/ogg"), None),
+            "audio"
+        );
+        assert_eq!(
+            media_kind(&row("Media/x.pdf", "", "application/pdf"), None),
+            "document"
+        );
+    }
+
+    #[test]
+    fn a_shared_contact_is_a_contact_and_a_name_is_read_for_it() {
+        let (store, path) = rich_store();
+        let message = store
+            .messages(&store.chat_stats().unwrap()[0].chat)
+            .unwrap()
+            .into_iter()
+            .find(|message| message.id == 13)
+            .expect("the vcard row is there");
+        assert_eq!(message.kind, "contact");
+        assert_eq!(
+            message
+                .payload
+                .as_ref()
+                .and_then(|payload| payload.get("name")),
+            Some(&serde_json::json!("Bob"))
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_quote_and_an_edit_are_read_only_when_they_mean_something() {
+        let (store, path) = rich_store();
+        let messages = store
+            .messages(&store.chat_stats().unwrap()[0].chat)
+            .unwrap();
+        let by_id = |id: i64| messages.iter().find(|message| message.id == id).unwrap();
+
+        assert_eq!(by_id(1).quoted_id, None, "quoted_row_id 0 is not a reply");
+        assert_eq!(by_id(2).quoted_id, Some(1));
+        assert!(!by_id(1).edited, "edit_version 0 is not an edit");
+        assert!(by_id(3).edited);
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A database with the modern join, a vcard, a quote, an edit and a call without values.
+    fn rich_store() -> (Msgstore, std::path::PathBuf) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        // Cargo runs these tests as threads: the pid alone is the same for all of them.
+        let path = std::env::temp_dir().join(format!(
+            "wexport-rich-{}-{}.db",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_file(&path);
+        let con = Connection::open(&path).unwrap();
+        con.execute_batch(
+            "CREATE TABLE jid (_id INTEGER PRIMARY KEY, raw_string TEXT);
+             CREATE TABLE chat (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, subject TEXT);
+             CREATE TABLE message (_id INTEGER PRIMARY KEY, chat_row_id INTEGER, timestamp INTEGER,
+                 from_me INTEGER, data TEXT, quoted_row_id INTEGER, edit_version INTEGER DEFAULT 0,
+                 sender_jid_row_id INTEGER);
+             CREATE TABLE message_vcard (message_row_id INTEGER PRIMARY KEY, display_name TEXT);
+             CREATE TABLE call_log (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, timestamp INTEGER,
+                 duration INTEGER, video_call INTEGER, missed_call INTEGER, from_me INTEGER);
+             INSERT INTO jid VALUES (1, '120363@g.us'), (2, '393331234567@s.whatsapp.net');
+             INSERT INTO chat VALUES (1, 1, 'Family');
+             INSERT INTO message VALUES
+                 (1, 1, 1000, 0, 'first', 0, 0, 2),
+                 (2, 1, 2000, 0, 'reply', 1, 0, 2),
+                 (3, 1, 3000, 0, 'edited', NULL, 2, 2),
+                 (13, 1, 4000, 0, NULL, NULL, 0, 2);
+             INSERT INTO message_vcard VALUES (13, 'Bob');
+             INSERT INTO call_log VALUES (1, 1, 5000, NULL, NULL, NULL, NULL);",
+        )
+        .unwrap();
+        drop(con);
+        (Msgstore::open(&path).unwrap(), path)
+    }
+
+    #[test]
     fn a_group_author_is_read_from_the_jid_row_when_there_is_no_remote_resource() {
         let path = std::env::temp_dir().join(format!("wexport-author-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
@@ -1115,6 +1251,181 @@ mod tests {
             ]
         );
         assert!(messages[3].payload.is_some());
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod range_and_contacts {
+    use super::*;
+
+    fn scratch(name: &str) -> (std::path::PathBuf, Connection) {
+        let path = std::env::temp_dir().join(format!(
+            "wexport-{name}-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|value| value.subsec_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_file(&path);
+        let con = Connection::open(&path).unwrap();
+        (path, con)
+    }
+
+    #[test]
+    fn a_chat_whose_only_event_is_a_call_has_that_call_as_its_range() {
+        let (path, con) = scratch("call-range");
+        con.execute_batch(
+            "CREATE TABLE jid (_id INTEGER PRIMARY KEY, raw_string TEXT);
+             CREATE TABLE chat (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, subject TEXT);
+             CREATE TABLE message (_id INTEGER PRIMARY KEY, chat_row_id INTEGER, timestamp INTEGER);
+             CREATE TABLE call_log (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, timestamp INTEGER,
+                 duration INTEGER, video_call INTEGER, missed_call INTEGER, from_me INTEGER);
+             INSERT INTO jid VALUES (1, '393331234567@s.whatsapp.net');
+             INSERT INTO chat VALUES (1, 1, 'Dad');
+             INSERT INTO call_log VALUES (1, 1, 5000, NULL, NULL, NULL, 1);",
+        )
+        .unwrap();
+        drop(con);
+        let store = Msgstore::open(&path).unwrap();
+        let stats = store.chat_stats().unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].messages, 0);
+        assert_eq!(stats[0].last_ts, 5000);
+        assert_eq!(stats[0].first_ts, 5000, "the call is the whole range");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_call_with_empty_columns_still_renders() {
+        let (path, con) = scratch("call-empty");
+        con.execute_batch(
+            "CREATE TABLE jid (_id INTEGER PRIMARY KEY, raw_string TEXT);
+             CREATE TABLE chat (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, subject TEXT);
+             CREATE TABLE message (_id INTEGER PRIMARY KEY, chat_row_id INTEGER, timestamp INTEGER);
+             CREATE TABLE call_log (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, timestamp INTEGER,
+                 duration INTEGER, video_call INTEGER, missed_call INTEGER, from_me INTEGER);
+             INSERT INTO jid VALUES (1, '393331234567@s.whatsapp.net');
+             INSERT INTO chat VALUES (1, 1, 'Dad');
+             INSERT INTO call_log VALUES (1, 1, 5000, NULL, NULL, NULL, NULL);",
+        )
+        .unwrap();
+        drop(con);
+        let store = Msgstore::open(&path).unwrap();
+        let stats = store.chat_stats().unwrap();
+        let messages = store.messages(&stats[0].chat).unwrap();
+        let call = messages.first().expect("the call is a message");
+        let payload = call.payload.as_ref().unwrap();
+        assert_eq!(payload["duration_s"], 0);
+        assert_eq!(payload["video"], false);
+        assert_eq!(payload["missed"], false);
+        assert!(!call.from_me, "a NULL from_me is not a call the user made");
+        assert_eq!(call.id, -1, "call ids are negative so they never collide");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn contacts_name_the_chats_and_the_column_travels() {
+        let (path, con) = scratch("contacts");
+        con.execute_batch(
+            "CREATE TABLE jid (_id INTEGER PRIMARY KEY, raw_string TEXT);
+             CREATE TABLE chat (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, subject TEXT);
+             CREATE TABLE message (_id INTEGER PRIMARY KEY, chat_row_id INTEGER, timestamp INTEGER);
+             INSERT INTO jid VALUES (1, '393331234567@s.whatsapp.net');
+             INSERT INTO chat VALUES (1, 1, NULL);",
+        )
+        .unwrap();
+        drop(con);
+
+        let wa = path.with_file_name("wa.db");
+        let _ = std::fs::remove_file(&wa);
+        let contacts = Connection::open(&wa).unwrap();
+        contacts
+            .execute_batch(
+                "CREATE TABLE wa_contacts (jid TEXT, wa_name TEXT);
+                 INSERT INTO wa_contacts VALUES ('393331234567@s.whatsapp.net', 'Alice');",
+            )
+            .unwrap();
+        drop(contacts);
+
+        let mut store = Msgstore::open(&path).unwrap();
+        assert_eq!(store.chat_stats().unwrap()[0].chat.name, "393331234567");
+        store.apply_contacts(&wa);
+        assert_eq!(
+            store.chat_stats().unwrap()[0].chat.name,
+            "Alice",
+            "wa_name is the fallback column"
+        );
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(wa);
+    }
+
+    #[test]
+    fn contacts_without_a_jid_column_change_nothing() {
+        let (path, con) = scratch("contacts-no-jid");
+        con.execute_batch(
+            "CREATE TABLE jid (_id INTEGER PRIMARY KEY, raw_string TEXT);
+             CREATE TABLE chat (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, subject TEXT);
+             CREATE TABLE message (_id INTEGER PRIMARY KEY, chat_row_id INTEGER, timestamp INTEGER);
+             INSERT INTO jid VALUES (1, '393331234567@s.whatsapp.net');
+             INSERT INTO chat VALUES (1, 1, NULL);",
+        )
+        .unwrap();
+        drop(con);
+
+        let wa = path.with_file_name("wa-no-jid.db");
+        let _ = std::fs::remove_file(&wa);
+        let contacts = Connection::open(&wa).unwrap();
+        contacts
+            .execute_batch(
+                "CREATE TABLE wa_contacts (raw_string TEXT, wa_name TEXT);
+                 INSERT INTO wa_contacts VALUES ('393331234567@s.whatsapp.net', 'Alice');",
+            )
+            .unwrap();
+        drop(contacts);
+
+        let mut store = Msgstore::open(&path).unwrap();
+        store.apply_contacts(&wa);
+        assert_eq!(store.chat_stats().unwrap()[0].chat.name, "393331234567");
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(wa);
+    }
+
+    #[test]
+    fn a_row_written_in_the_c_us_form_belongs_to_the_same_person() {
+        let (path, con) = scratch("c-us");
+        con.execute_batch(
+            "CREATE TABLE message (_id INTEGER PRIMARY KEY, key_remote_jid TEXT, timestamp INTEGER,
+                 from_me INTEGER, data TEXT, media_wa_type INTEGER);
+             CREATE TABLE call_log (_id INTEGER PRIMARY KEY, key_remote_jid TEXT, timestamp INTEGER,
+                 duration INTEGER, video_call INTEGER, missed_call INTEGER, from_me INTEGER);
+             INSERT INTO message VALUES
+                 (1, '393331234567@s.whatsapp.net', 1000, 0, 'hello', 0),
+                 (2, '393331234567@c.us', 2000, 0, 'the old form', 0);
+             INSERT INTO call_log VALUES (1, '393331234567@c.us', 9000, 5, 0, 1, 1);",
+        )
+        .unwrap();
+        drop(con);
+
+        let store = Msgstore::open(&path).unwrap();
+        let chat = store
+            .chat_stats()
+            .unwrap()
+            .into_iter()
+            .find(|stat| stat.chat.jid == "393331234567@s.whatsapp.net")
+            .expect("the chat is listed")
+            .chat;
+        let messages = store.messages(&chat).unwrap();
+        assert_eq!(
+            messages.iter().filter(|m| m.kind != "call").count(),
+            2,
+            "both jid forms are this person's messages"
+        );
+        assert!(
+            messages.iter().any(|m| m.kind == "call"),
+            "the call stored in the other form is this chat's too"
+        );
         let _ = std::fs::remove_file(path);
     }
 }

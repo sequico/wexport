@@ -35,6 +35,11 @@ for file in src/crypt15.rs src/keys.rs src/media.rs src/chunks.rs src/msgstore.r
     src/discover.rs src/archive.rs src/error.rs; do
     set -- "$@" --file "$file"
 done
+# Two mutants have no observable effect, so no test can kill them: the media batch size only decides
+# how often buffered records are written (the archive is byte-identical either way), and a call id is
+# negative while a message id is positive, so the two tuples are never equal.
+set -- "$@" --exclude-re 'replace >= with < in build_chat'
+set -- "$@" --exclude-re 'replace < with <= in Msgstore::each_message'
 cargo mutants "$@"
 
 echo "== fuzzing"

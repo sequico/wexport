@@ -471,6 +471,17 @@ impl Workspace {
             .unwrap_or(0);
         let path = std::env::temp_dir().join(format!("wexport-{}-{stamp}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
+        // The decrypted database lives here for the length of the build: 0700, so no other user on
+        // the machine can read it.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(&path)?;
+        }
+        #[cfg(not(unix))]
         std::fs::create_dir_all(&path)?;
         Ok(Workspace { path })
     }
@@ -795,6 +806,19 @@ mod tests {
         // The adapter falls back to the number as a name, which is not a name at all.
         let anonymous = stat("393331234567", 1, 0);
         assert_eq!(label_of(&anonymous), "393331234567@s.whatsapp.net");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_workspace_is_readable_by_its_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let workspace = Workspace::new().unwrap();
+        let mode = std::fs::metadata(&workspace.path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700, "the decrypted backup is not for other users");
     }
 
     #[test]

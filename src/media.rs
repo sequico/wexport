@@ -131,9 +131,9 @@ pub fn place(source: &Path, archive_root: &Path, link: bool) -> Result<Placed> {
 pub fn derive(kind: &str, source: &Path, archive_root: &Path, sha: &str) -> Result<Derived> {
     match kind {
         "image" => image_derivative(source, archive_root, sha),
-        "sticker" => Ok(Derived::default()),
         "video" | "gif" => video_derivative(source, archive_root, sha),
         "audio" => audio_derivative(source, archive_root, sha),
+        // Stickers, contacts, documents and locations are shown as they are.
         _ => Ok(Derived::default()),
     }
 }
@@ -145,6 +145,9 @@ fn image_derivative(source: &Path, archive_root: &Path, sha: &str) -> Result<Der
     run_ffmpeg(&[
         "-i".into(),
         source.display().to_string(),
+        // One frame: an animated WebP would otherwise become an animated "thumbnail" of any size.
+        "-frames:v".into(),
+        "1".into(),
         "-vf".into(),
         "scale='min(320,iw)':-2".into(),
         "-y".into(),
@@ -232,7 +235,6 @@ fn audio_derivative(source: &Path, archive_root: &Path, sha: &str) -> Result<Der
     let peaks = peaks_of(&pcm);
     Ok(Derived {
         peaks: Some(peaks),
-        thumb: None,
         ..Derived::default()
     })
 }
@@ -381,6 +383,143 @@ mod tests {
                 .count(),
             1,
             "one file per content"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod fixture_tests {
+    use super::*;
+    use std::os::unix::fs::MetadataExt;
+
+    fn media(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/synthetic/phone/Media")
+            .join(name)
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("wexport-derive-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_sticker_needs_nothing_derived() {
+        let derived = derive(
+            "sticker",
+            &media("WhatsApp Stickers/sticker.webp"),
+            Path::new("/nonexistent"),
+            "sha",
+        )
+        .unwrap();
+        assert!(derived.thumb.is_none());
+        assert!(derived.peaks.is_none());
+    }
+
+    #[test]
+    fn a_voice_note_gives_peaks_and_no_poster() {
+        let root = scratch("audio");
+        let derived = derive(
+            "audio",
+            &media("WhatsApp Voice Notes/PTT-20261201-WA0002.opus"),
+            &root,
+            "sha",
+        )
+        .unwrap();
+        assert_eq!(derived.peaks.as_ref().map(|peaks| peaks.len()), Some(PEAKS));
+        assert!(derived.thumb.is_none());
+        assert!(
+            std::fs::read_dir(root.join("deriv")).unwrap().count() == 0,
+            "no leftovers"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_video_gives_a_poster_and_its_duration() {
+        let root = scratch("video");
+        let derived = derive(
+            "video",
+            &media("WhatsApp Video/VID-20261201-WA0003.mp4"),
+            &root,
+            "sha",
+        )
+        .unwrap();
+        assert!(derived.thumb.is_some());
+        // The fixture is exactly one second long, in milliseconds.
+        assert_eq!(derived.duration_ms, Some(1000));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_animated_image_gives_a_readable_single_frame_thumbnail() {
+        let root = scratch("animated");
+        let source = root.join("anim.gif");
+        let status = Command::new("ffmpeg")
+            .args([
+                "-nostdin",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x64:rate=2",
+                "-frames:v",
+                "4",
+                "-y",
+            ])
+            .arg(&source)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let derived = derive("image", &source, &root, "animated").unwrap();
+        let thumb = root.join(derived.thumb.expect("an image has a thumbnail"));
+        let probe = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-count_frames",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=nb_read_frames",
+                "-of",
+                "default=nw=1:nk=1",
+            ])
+            .arg(&thumb)
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&probe.stdout).trim(),
+            "1",
+            "a multi-frame source used to write a thumbnail no browser could read"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn place_copies_without_link_and_links_when_asked() {
+        let root = scratch("place");
+        let source = root.join("photo.png");
+        std::fs::write(&source, b"some bytes").unwrap();
+        let archive = root.join("archive");
+        std::fs::create_dir_all(&archive).unwrap();
+
+        let copied = place(&source, &archive, false).unwrap();
+        let copied_meta = std::fs::metadata(archive.join(&copied.rel_path)).unwrap();
+        assert_ne!(copied_meta.ino(), std::fs::metadata(&source).unwrap().ino());
+
+        let linked = place(&source, &archive.join("other"), true).unwrap();
+        assert_eq!(
+            std::fs::metadata(archive.join("other").join(&linked.rel_path))
+                .unwrap()
+                .ino(),
+            std::fs::metadata(&source).unwrap().ino()
         );
         let _ = std::fs::remove_dir_all(root);
     }

@@ -12,7 +12,9 @@ pub fn normalize_hex(text: &str) -> Option<[u8; 32]> {
         .chars()
         .filter(|c| !c.is_whitespace() && *c != '-' && *c != ':')
         .collect();
-    if digits.len() != 64 {
+    // Anything that is not a hex digit is not the key, and a two-byte character would split the
+    // pairs below down the middle.
+    if digits.len() != 64 || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
     let mut out = [0u8; 32];
@@ -116,6 +118,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_key_that_is_not_ascii_hex_is_refused_not_a_panic() {
+        // 64 bytes, but one of them is a two-byte character at an odd offset: slicing the string
+        // without checking would split it down the middle.
+        let mut text = String::from("a");
+        text.push('è');
+        text.push_str(&"0".repeat(61));
+        assert_eq!(text.len(), 64);
+        assert_eq!(normalize_hex(&text), None);
+    }
+
+    #[test]
     fn the_fixture_key_is_accepted_in_the_shapes_a_person_types_it() {
         assert!(
             normalize_hex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
@@ -138,6 +151,7 @@ mod tests {
 
     #[test]
     fn a_failing_tesseract_is_an_error_even_when_it_prints_a_key() {
+        let _guard = path_lock();
         let root = std::env::temp_dir().join(format!("wexport-ocr-fail-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
@@ -163,6 +177,7 @@ mod tests {
 
     #[test]
     fn the_key_is_found_among_the_text_tesseract_returns() {
+        let _guard = path_lock();
         let root = std::env::temp_dir().join(format!("wexport-ocr-mixed-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
@@ -187,6 +202,12 @@ mod tests {
                 .unwrap()
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// The OCR tests change PATH, which is process-wide: cargo runs them as threads.
+    fn path_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poison| poison.into_inner())
     }
 
     fn make_executable(path: &std::path::Path) {
@@ -220,5 +241,30 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod text_tests {
+    use super::*;
+
+    #[test]
+    fn the_key_is_taken_from_one_run_and_not_from_the_hex_letters_of_a_label() {
+        let key = "0123 4567 89ab cdef 0123 4567 89ab cdef 0123 4567 89ab cdef 0123 4567 89ab cdef";
+        let expected = normalize_hex(key).unwrap();
+
+        // The label, and the 4×4 grid as WhatsApp shows it: the run may cross a line break.
+        let grid =
+            "0123 4567 89ab cdef\n0123 4567 89ab cdef\n0123 4567 89ab cdef\n0123 4567 89ab cdef";
+        assert_eq!(
+            key_among_text(&format!("backup key:\n{grid}\n")),
+            Some(expected)
+        );
+        assert_eq!(key_among_text(&format!("Your key: {key}")), Some(expected));
+
+        // 63 digits is not the key, and neither is 65.
+        let short: String = key.chars().take(key.len() - 1).collect();
+        assert_eq!(key_among_text(&short), None);
+        assert_eq!(key_among_text(&format!("{key}0")), None);
     }
 }

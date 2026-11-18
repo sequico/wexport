@@ -293,6 +293,11 @@ Decisions worth stating:
 └── deriv/…             # thumbnails, posters, waveform peaks, same content-addressed scheme
 ```
 
+The date is the last message in the chat and the slug is the chat name plus four hex digits of its
+jid. A rebuild after new messages therefore names a new folder: the build removes the previous folder
+of the same chat first, so one chat never leaves two copies behind. A chat renamed on the phone keeps
+the folder under its earlier name.
+
 The archive is opened with `file://`, which is a hostile environment and decides most of the design:
 
 | On `file://` | Available | Consequence |

@@ -138,24 +138,30 @@ fn fields(mut input: &[u8]) -> Vec<(u64, Field<'_>)> {
                 let Ok((len, used)) = read_varint(input, 0) else {
                     break;
                 };
-                let len = len as usize;
-                if used + len > input.len() {
+                // A corrupt length near 2^64 would otherwise wrap and point past the end.
+                let Ok(len) = usize::try_from(len) else {
+                    break;
+                };
+                let Some(end) = used.checked_add(len) else {
+                    break;
+                };
+                if end > input.len() {
                     break;
                 }
-                out.push((number, Field::Bytes(&input[used..used + len])));
-                input = &input[used + len..];
+                out.push((number, Field::Bytes(&input[used..end])));
+                input = &input[end..];
             }
             1 => {
-                if input.len() < 8 {
+                let Some(rest) = input.get(8..) else {
                     break;
-                }
-                input = &input[8..];
+                };
+                input = rest;
             }
             5 => {
-                if input.len() < 4 {
+                let Some(rest) = input.get(4..) else {
                     break;
-                }
-                input = &input[4..];
+                };
+                input = rest;
             }
             _ => break,
         }
@@ -394,5 +400,198 @@ mod tests {
         wrong[0] ^= 0xff;
         let mut bytes = FIXTURE.to_vec();
         assert!(decrypt_to(&mut bytes, &header, &wrong, &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn every_key_type_has_its_name() {
+        assert_eq!(key_name(0), "WA_PROVIDED");
+        assert_eq!(key_name(1), "E2EE_DEPRECATED");
+        assert_eq!(key_name(2), "E2EE_PASSWORD");
+        assert_eq!(key_name(3), "E2EE_ENCRYPTION_KEY");
+        assert_eq!(key_name(4), "E2EE_PASSKEY");
+        assert_eq!(key_name(9), "UNKNOWN");
+    }
+
+    #[test]
+    fn the_wire_types_a_header_can_carry_are_stepped_over() {
+        // A fixed64 field (wire 1) and a fixed32 one (wire 5), then the real e2ee field: a parser
+        // that does not know their sizes would read the IV from the wrong offset.
+        let mut proto = Vec::new();
+        proto.push(0x09); // field 1, wire 1
+        proto.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        proto.push(0x1d); // field 3, wire 5
+        proto.extend_from_slice(&[9, 9, 9, 9]);
+        proto.extend([0x1a, 18, 0x0a, 16]);
+        proto.extend_from_slice(&[7u8; 16]);
+
+        let mut bytes = vec![proto.len() as u8];
+        bytes.extend(proto);
+        let header = parse_header(&bytes).unwrap();
+        assert_eq!(header.iv, vec![7u8; 16]);
+        assert!(header.is_crypt15());
+    }
+
+    #[test]
+    fn a_field_length_that_wraps_the_counter_is_refused_not_a_panic() {
+        // Field 3 (bytes) with a length of 2^64-1: ten 0xff bytes. A plain `used + len` wraps round
+        // to a small number and the slice that follows panics on a corrupt backup.
+        let mut proto = vec![0x1a];
+        proto.extend_from_slice(&[0xff; 9]);
+        proto.push(0x7f);
+        proto.extend_from_slice(&[0u8; 16]);
+        let mut bytes = vec![proto.len() as u8];
+        bytes.extend(proto);
+        let header = parse_header(&bytes).unwrap();
+        assert!(
+            header.iv.is_empty(),
+            "the field is dropped, the parse carries on"
+        );
+    }
+
+    #[test]
+    fn a_field_that_claims_more_bytes_than_it_has_stops_the_parse() {
+        // Field 3 (bytes) declares 40 bytes with 3 present, and a valid IV follows the lie.
+        let mut proto = vec![0x1a, 40, 1, 2, 3];
+        proto.extend([0x1a, 18, 0x0a, 16]);
+        proto.extend_from_slice(&[7u8; 16]);
+        let mut bytes = vec![proto.len() as u8];
+        bytes.extend(proto);
+
+        let header = parse_header(&bytes).unwrap();
+        assert!(
+            header.iv.is_empty(),
+            "the parser trusts the length, not the bytes"
+        );
+        assert!(!header.is_crypt15());
+    }
+
+    #[test]
+    fn a_body_shorter_than_a_tag_is_refused_before_decrypting() {
+        let bytes = header_bytes(&[7u8; 16], "2.26.34.7", 3);
+        let header = parse_header(&bytes).unwrap();
+        let mut short = bytes.clone();
+        short.extend_from_slice(&[0u8; 31]);
+        let error = decrypt_to(&mut short, &header, &root(), &mut Vec::new()).unwrap_err();
+        assert!(error.message.contains("truncated"));
+    }
+
+    #[test]
+    fn the_largest_database_inside_a_zip_is_the_one_returned() {
+        use std::io::{Cursor, Write};
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("wa.db", options).unwrap();
+        writer.write_all(b"small").unwrap();
+        writer.start_file("msgstore.db", options).unwrap();
+        writer.write_all(b"the bigger database").unwrap();
+        let archive = writer.finish().unwrap().into_inner();
+
+        let plain = largest_database(&archive).unwrap();
+        assert_eq!(plain, b"the bigger database");
+    }
+
+    #[test]
+    fn a_zip_without_a_database_is_an_error() {
+        use std::io::Cursor;
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("notes.txt", options).unwrap();
+        let archive = writer.finish().unwrap().into_inner();
+        assert!(largest_database(&archive).is_err());
+    }
+
+    #[test]
+    fn a_field_larger_than_a_hundred_and_twenty_seven_bytes_is_read_correctly() {
+        // Its length takes two varint bytes, which is where "used + len" and "used * len" differ.
+        let mut proto = vec![0x0a, 0xc8, 0x01]; // field 1, 200 bytes, two-byte length
+        proto.extend(std::iter::repeat_n(0u8, 200));
+        proto.extend([0x1a, 18, 0x0a, 16]);
+        proto.extend_from_slice(&[7u8; 16]);
+        let mut bytes = varint(proto.len());
+        bytes.extend(proto);
+        let header = parse_header(&bytes).unwrap();
+        assert_eq!(header.iv, vec![7u8; 16]);
+    }
+
+    fn varint(mut value: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let byte = (value & 0x7f) as u8;
+            value >>= 7;
+            if value == 0 {
+                out.push(byte);
+                return out;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+
+    #[test]
+    fn exactly_a_tag_of_body_is_not_called_truncated() {
+        let bytes = header_bytes(&[7u8; 16], "2.26.34.7", 3);
+        let header = parse_header(&bytes).unwrap();
+        let mut exact = bytes.clone();
+        exact.extend_from_slice(&[0u8; 32]);
+        let error = decrypt_to(&mut exact, &header, &root(), &mut Vec::new()).unwrap_err();
+        assert!(
+            !error.message.contains("truncated"),
+            "the boundary itself is not truncation: {}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn two_databases_of_the_same_size_keep_the_first() {
+        use std::io::{Cursor, Write};
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("first.db", options).unwrap();
+        writer.write_all(b"aaaa").unwrap();
+        writer.start_file("second.db", options).unwrap();
+        writer.write_all(b"bbbb").unwrap();
+        let archive = writer.finish().unwrap().into_inner();
+        assert_eq!(largest_database(&archive).unwrap(), b"aaaa");
+    }
+
+    #[test]
+    fn a_whole_backup_can_be_built_and_read_back() {
+        // Encrypt a ZIP payload the way WhatsApp does, then read it: this covers the multi-file
+        // layout (no MD5 tail) from header to payload.
+        use aes_gcm::aead::AeadInPlace;
+        use std::io::{Cursor, Write};
+
+        let mut zipped = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        zipped.start_file("msgstore.db", options).unwrap();
+        zipped.write_all(b"SQLite format 3\0 first").unwrap();
+        zipped.start_file("wa.db", options).unwrap();
+        zipped.write_all(b"smaller").unwrap();
+        let zipped = zipped.finish().unwrap().into_inner();
+
+        let compressed = {
+            use flate2::write::ZlibEncoder;
+            use flate2::Compression;
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&zipped).unwrap();
+            encoder.finish().unwrap()
+        };
+
+        let mut message = compressed;
+        let cipher = Cipher::new_from_slice(&derive_key(&root())).unwrap();
+        let iv = [9u8; 16];
+        let nonce = aes_gcm::Nonce::<U16>::from_slice(&iv);
+        let tag = cipher
+            .encrypt_in_place_detached(nonce, &[], &mut message)
+            .unwrap();
+        message.extend_from_slice(&tag);
+
+        let mut file = header_bytes(&iv, "2.26.34.7", 3);
+        file.extend_from_slice(&message);
+
+        let header = parse_header(&file).unwrap();
+        let mut plain = Vec::new();
+        decrypt_to(&mut file, &header, &root(), &mut plain).unwrap();
+        assert!(plain.starts_with(b"SQLite format 3\0"));
+        assert_eq!(plain, b"SQLite format 3\0 first");
     }
 }

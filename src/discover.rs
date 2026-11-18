@@ -212,33 +212,38 @@ fn find_databases(root: &Path) -> Option<PathBuf> {
         }
     }
 
-    // The walk skips the trees that cannot hold a backup and stops at the first folder that does.
-    let mut queue = vec![root.to_path_buf()];
-    while let Some(folder) = queue.pop() {
+    // The walk skips the trees that cannot hold a backup and takes the shallowest folder that does,
+    // in name order, so two copies of the same tree always pick the same one.
+    let mut queue = std::collections::VecDeque::from([root.to_path_buf()]);
+    while let Some(folder) = queue.pop_front() {
         if folder.as_path() != root && looks_like(&folder) {
             return Some(folder);
         }
         let Ok(entries) = std::fs::read_dir(&folder) else {
             continue;
         };
-        for entry in entries.filter_map(|entry| entry.ok()) {
-            let path = entry.path();
-            let skip = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| {
-                    name == "node_modules"
-                        || name == ".git"
-                        // The media tree holds tens of thousands of files and no backup.
-                        || name == "Media"
-                })
-                .unwrap_or(false);
-            if path.is_dir() && !skip {
-                queue.push(path);
-            }
-        }
+        let mut children: Vec<PathBuf> = entries
+            .filter_map(|entry| entry.ok())
+            // file_type does not follow a link: a symlink loop cannot trap the walk.
+            .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+            .map(|entry| entry.path())
+            .filter(|path| !skipped(path))
+            .collect();
+        children.sort();
+        queue.extend(children);
     }
     None
+}
+
+/// Trees a copied phone folder can carry that never hold a backup.
+fn skipped(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            // The media tree holds tens of thousands of files and nothing to open.
+            name == "node_modules" || name == ".git" || name == "Media"
+        })
+        .unwrap_or(false)
 }
 
 fn name_is(path: &Path, wanted: &str) -> bool {
@@ -355,5 +360,147 @@ mod tests {
         let inputs = discover(&root).unwrap();
         assert_eq!(inputs.database, nested.join("msgstore.db.crypt15"));
         let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+
+    fn root(name: &str) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("wexport-discover-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn write(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"backup").unwrap();
+    }
+
+    #[test]
+    fn the_named_full_backup_wins_over_a_newer_rolling_copy() {
+        let root = root("rolling");
+        let databases = root.join("Databases");
+        write(&databases.join("msgstore-2026-01-01.1.db.crypt15"));
+        write(&databases.join("msgstore.db.crypt15"));
+
+        let inputs = discover(&root).unwrap();
+        assert_eq!(inputs.database.file_name().unwrap(), "msgstore.db.crypt15");
+        assert!(
+            inputs.incrementals.is_empty(),
+            "a rolling copy is not a delta"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn only_increment_names_are_replayed() {
+        let root = root("deltas");
+        let databases = root.join("Databases");
+        write(&databases.join("msgstore.db.crypt15"));
+        write(&databases.join("msgstore-increment-2026-12-03.db.crypt15"));
+        write(&databases.join("msgstore-2026-12-04.1.db.crypt15"));
+
+        let inputs = discover(&root).unwrap();
+        assert_eq!(inputs.incrementals.len(), 1);
+        assert!(inputs.incrementals[0]
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("msgstore-increment"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_folder_named_databases_is_found_by_its_contents() {
+        let parent = root("named");
+        let databases = parent.join("Databases");
+        write(&databases.join("msgstore.db.crypt15"));
+
+        let inputs = discover(&databases).unwrap();
+        assert_eq!(inputs.database, databases.join("msgstore.db.crypt15"));
+        let _ = std::fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn a_path_that_is_not_a_folder_says_so() {
+        let error = discover(Path::new("/wexport-no-such-folder")).unwrap_err();
+        assert!(error.message.contains("not a folder"));
+    }
+
+    #[test]
+    fn a_folder_of_unrelated_files_is_not_a_backup_folder() {
+        let root = root("unrelated");
+        write(&root.join("Databases/notes.txt"));
+        let error = discover(&root).unwrap_err();
+        assert!(error.message.contains("no Databases/ folder"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_folder_called_databases_without_a_backup_inside_is_not_one() {
+        let parent = root("named-empty");
+        let databases = parent.join("Databases");
+        write(&databases.join("notes.txt"));
+        assert_eq!(
+            find_databases(&databases),
+            None,
+            "the name is a hint, not proof"
+        );
+        assert_eq!(find_databases(&parent), None);
+        let _ = std::fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn a_file_named_after_a_backup_but_with_another_suffix_is_not_a_backup() {
+        let root = root("decoy-name");
+        write(&root.join("copy/msgstore.db.backup"));
+        write(&root.join("copy/chat.crypt15"));
+        assert_eq!(find_databases(&root), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_walk_skips_the_trees_that_never_hold_a_backup() {
+        for skipped in ["node_modules", ".git", "Media"] {
+            let root = root(&format!("skip-{skipped}"));
+            write(&root.join(skipped).join("msgstore.db.crypt15"));
+            assert_eq!(find_databases(&root), None, "{skipped} must not be walked");
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn a_backup_a_few_folders_down_is_found() {
+        let root = root("deep");
+        write(&root.join("com.whatsapp/WhatsApp/Databases/msgstore.db.crypt15"));
+        assert_eq!(
+            find_databases(&root),
+            Some(root.join("com.whatsapp/WhatsApp/Databases"))
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn two_copies_of_a_backup_always_pick_the_shallower_one() {
+        let root = root("copies");
+        write(&root.join("b/c/Databases/msgstore.db.crypt15"));
+        write(&root.join("a/Databases/msgstore.db.crypt15"));
+        assert_eq!(find_databases(&root), Some(root.join("a/Databases")));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_link_to_a_backup_folder_is_not_followed() {
+        let outside = root("linked-target");
+        write(&outside.join("Databases/msgstore.db.crypt15"));
+        let root = root("linked");
+        std::os::unix::fs::symlink(&outside, root.join("elsewhere")).unwrap();
+        assert_eq!(find_databases(&root), None);
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
     }
 }

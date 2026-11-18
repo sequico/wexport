@@ -1029,6 +1029,7 @@ dependencies = [
  "flate2",
  "hmac",
  "jiff",
+ "libc",
  "md-5",
  "proptest",
  "rusqlite",

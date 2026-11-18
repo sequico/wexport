@@ -349,3 +349,87 @@ fn the_family_chunk_is_the_committed_golden_file() {
     let _ = std::fs::remove_dir_all(out);
     let _ = std::fs::remove_file(database);
 }
+
+#[test]
+fn a_rebuild_after_new_messages_leaves_one_folder() {
+    let (store, path) = decrypted();
+    let mut stat = store.chat_stats().unwrap().remove(0);
+    let root = scratch("rebuild");
+    let out = root.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let clock = rome();
+    let context = archive::BuildContext {
+        out_root: &out,
+        clock: &clock,
+        app_version: "2.26.34.7",
+        copy_root: &fixture(),
+        media_root: None,
+        jobs: 2,
+    };
+    let first = archive::build_chat(&store, &stat, &context, "first").unwrap();
+    stat.last_ts += 86_400_000;
+    let second = archive::build_chat(&store, &stat, &context, "later").unwrap();
+
+    assert_ne!(
+        first.archive, second.archive,
+        "the new date names a new folder"
+    );
+    assert_eq!(
+        std::fs::read_dir(&out).unwrap().count(),
+        1,
+        "the older copy of the same chat is gone"
+    );
+    assert!(second.archive.is_dir());
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn a_chat_longer_than_a_batch_is_counted_from_end_to_end() {
+    // 300 messages is more than one media batch (256) and one month: the summary, the manifest and
+    // the chunk must all agree with the source.
+    let root = scratch("batch");
+    let path = root.join("msgstore.db");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE message (_id INTEGER PRIMARY KEY, key_remote_jid TEXT, timestamp INTEGER,
+                 from_me INTEGER, data TEXT);
+             WITH RECURSIVE counter(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM counter WHERE n < 300)
+             INSERT INTO message
+             SELECT n, '393331234567@s.whatsapp.net', 1765000000000 + n * 60000, n % 2, 'message ' || n
+             FROM counter;",
+        )
+        .unwrap();
+    drop(connection);
+
+    let store = Msgstore::open(&path).unwrap();
+    let stat = store.chat_stats().unwrap().remove(0);
+    let out = root.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let clock = rome();
+    let context = archive::BuildContext {
+        out_root: &out,
+        clock: &clock,
+        app_version: "2.26.34.7",
+        copy_root: &root,
+        media_root: None,
+        jobs: 2,
+    };
+    let summary = archive::build_chat(&store, &stat, &context, "batch").unwrap();
+
+    assert_eq!(summary.messages, 300);
+    assert_eq!(summary.first_ts, 1765000000000 + 60_000);
+    assert_eq!(summary.last_ts, 1765000000000 + 300 * 60_000);
+
+    let manifest = std::fs::read_to_string(summary.archive.join("data/manifest.js")).unwrap();
+    assert!(manifest.contains("\"messages\":300"), "{manifest}");
+    let chunks = std::fs::read_dir(summary.archive.join("data"))
+        .unwrap()
+        .count();
+    assert!(chunks >= 2, "the manifest and at least one chunk");
+
+    let whole = std::fs::read_dir(&out).unwrap().count();
+    assert_eq!(whole, 1, "one folder for one chat");
+    let _ = std::fs::remove_dir_all(root);
+}

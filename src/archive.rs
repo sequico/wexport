@@ -98,6 +98,23 @@ pub fn build_chat(
     let clock = context.clock;
     let chat = &stat.chat;
     let archive = context.out_root.join(archive_name(chat, stat, clock));
+    // The name carries the date of the last message, so a rebuild after new messages lands in a new
+    // folder: the previous copy of this same chat is removed, or the user keeps two of everything.
+    // A renamed chat has a new name in the folder and keeps its old copy.
+    let previous = format!("-{}", slug(chat));
+    if let Ok(entries) = std::fs::read_dir(context.out_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let same_chat = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.ends_with(&previous))
+                .unwrap_or(false);
+            if same_chat && path != archive && path.is_dir() {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        }
+    }
     std::fs::create_dir_all(&archive)?;
     // No stale chunk from a previous run: a month that no longer exists in the chat must not stay
     // loadable behind the viewer's back.
@@ -549,7 +566,12 @@ fn tree_bytes(root: &Path) -> u64 {
 }
 
 fn tzdata_version() -> String {
-    std::fs::read_to_string("/usr/share/zoneinfo/tzdata.zi")
+    read_version(Path::new("/usr/share/zoneinfo/tzdata.zi"))
+}
+
+/// First line of a tzdata release file ("tzdata2026a"); empty when the file is not there.
+fn read_version(path: &Path) -> String {
+    std::fs::read_to_string(path)
         .ok()
         .and_then(|text| text.lines().next().map(|line| line.trim().to_string()))
         .unwrap_or_default()
@@ -588,4 +610,189 @@ fn escape_html(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::msgstore::{Chat, Media};
+
+    fn utc() -> Clock {
+        Clock {
+            tz: jiff::tz::TimeZone::UTC,
+            name: "UTC".into(),
+        }
+    }
+
+    fn stat(name: &str, last_ts: i64) -> ChatStat {
+        ChatStat {
+            chat: Chat {
+                jid: format!("{name}@s.whatsapp.net"),
+                name: name.into(),
+                is_group: false,
+            },
+            messages: 1,
+            first_ts: last_ts,
+            last_ts,
+            media_count: 0,
+            media_bytes: 0,
+        }
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("wexport-archive-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn an_unknown_time_renders_as_an_empty_stamp() {
+        assert_eq!(stamp(&utc(), 0), "");
+        assert_eq!(stamp(&utc(), -5), "");
+        assert_eq!(stamp(&utc(), 1000), "1970-01-01 00:00:01 +00:00");
+    }
+
+    #[test]
+    fn an_archive_without_a_timestamp_is_dated_zero() {
+        let name = archive_name(&stat("Alice", 0).chat, &stat("Alice", 0), &utc());
+        assert!(name.starts_with("0000-00-00-"));
+    }
+
+    #[test]
+    fn the_size_of_a_tree_is_the_sum_of_its_files() {
+        let root = scratch("bytes");
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        std::fs::write(root.join("a"), b"123").unwrap();
+        std::fs::write(root.join("data/b"), b"12345").unwrap();
+        assert_eq!(tree_bytes(&root), 8);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_index_lists_the_archives_that_have_messages() {
+        let root = scratch("index");
+        let mut built = Summary {
+            archive: root.join("2026-01-01-alice-0001"),
+            name: "Alice".into(),
+            messages: 3,
+            media: 0,
+            missing: 0,
+            failures: Vec::new(),
+            failure_count: 0,
+            bytes: 0,
+            first_ts: 0,
+            last_ts: 0,
+            people: 0,
+            empty: false,
+        };
+        let mut empty = built.clone();
+        empty.name = "Ghost".into();
+        empty.archive = root.join("2026-01-01-ghost-0002");
+        empty.messages = 0;
+        empty.empty = true;
+
+        let page = write_index(&root, &[built.clone(), empty]).unwrap();
+        let html = std::fs::read_to_string(page).unwrap();
+        assert!(html.contains("Alice"));
+        assert!(!html.contains("Ghost"), "an empty chat is not in the index");
+
+        built.name = "Bob & <Co>".into();
+        let page = write_index(&root, &[built]).unwrap();
+        let html = std::fs::read_to_string(page).unwrap();
+        assert!(html.contains("Bob &amp; &lt;Co&gt;"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_tzdata_version_is_the_first_line_of_the_release_file() {
+        let root = scratch("tz");
+        let file = root.join("tzdata.zi");
+        std::fs::write(&file, "tzdata2026a\n# rest\n").unwrap();
+        assert_eq!(read_version(&file), "tzdata2026a");
+        assert_eq!(read_version(&root.join("missing")), "");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_build_reports_every_failure_but_keeps_twenty_samples() {
+        let root = scratch("failures");
+        // A file that is not an image where an image should be: deriving the thumbnail fails, which
+        // is what a batch does with a media file the phone left half-copied.
+        std::fs::create_dir_all(root.join("Media")).unwrap();
+        std::fs::write(root.join("Media/broken.jpg"), b"not an image").unwrap();
+        let archive = root.join("archive");
+        let data = archive.join("data");
+        let mut writer = chunks::Writer::new(&data, chunks::MAX_RECORDS).unwrap();
+        let clock = utc();
+        let context = BuildContext {
+            out_root: &root,
+            clock: &clock,
+            app_version: "2.26.34.7",
+            copy_root: &root,
+            media_root: None,
+            jobs: 1,
+        };
+        let bar = Arc::new(Mutex::new(Bar::new("", 2)));
+
+        // Twenty samples are the whole report, however many files fail.
+        for already in [19, 20] {
+            let mut summary = Summary {
+                archive: archive.clone(),
+                name: String::new(),
+                messages: 0,
+                media: 0,
+                missing: 0,
+                failures: vec!["sample".to_string(); already],
+                failure_count: 0,
+                bytes: 0,
+                first_ts: 0,
+                last_ts: 0,
+                people: 0,
+                empty: false,
+            };
+            let mut batch: Vec<Message> = (0..2)
+                .map(|id| Message {
+                    id,
+                    ts: 1_000 + id,
+                    from_me: false,
+                    kind: "document".into(),
+                    text: String::new(),
+                    sender: None,
+                    quoted_id: None,
+                    edited: false,
+                    revoked: false,
+                    status: None,
+                    payload: None,
+                    media: Some(Media {
+                        rel_path: "Media/broken.jpg".into(),
+                        kind: "image".into(),
+                        mime: None,
+                        bytes: None,
+                        width: None,
+                        height: None,
+                        duration_ms: None,
+                    }),
+                    reactions: Vec::new(),
+                })
+                .collect();
+
+            flush(
+                &mut batch,
+                &mut writer,
+                &mut summary,
+                &mut std::collections::HashSet::new(),
+                &mut std::collections::HashSet::new(),
+                &context,
+                &bar,
+            )
+            .unwrap();
+
+            assert_eq!(summary.failure_count, 2);
+            assert_eq!(summary.failures.len(), 20, "samples stop at twenty");
+            assert_eq!(summary.messages, 2);
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
