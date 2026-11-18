@@ -123,7 +123,9 @@ pub fn discover(path: &Path) -> Result<Inputs> {
     })
 }
 
-fn expand(path: &Path) -> PathBuf {
+/// `~/x` as the user's home plus `x`: a quoted tilde reaches us unexpanded, and a folder literally
+/// named `~` in the current directory is never what was meant.
+pub fn expand(path: &Path) -> PathBuf {
     if let Ok(stripped) = path.strip_prefix("~") {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
@@ -262,6 +264,18 @@ mod tests {
         let error = require_binaries(&["wexport-no-such-binary"]).unwrap_err();
         assert_eq!(error.code, crate::error::EXIT_DEPENDENCY);
         assert!(error.message.contains("sudo apt install ffmpeg"));
+    }
+
+    #[test]
+    fn a_quoted_tilde_expands_to_the_home_folder() {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .expect("a home folder is set in the environment running the tests");
+        assert_eq!(
+            expand(Path::new("~/archives")),
+            Path::new(&home).join("archives")
+        );
+        assert_eq!(expand(Path::new("/tmp/plain")), Path::new("/tmp/plain"));
     }
 
     #[test]

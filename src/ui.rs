@@ -48,7 +48,7 @@ pub fn run(args: &[String]) -> Result<i32> {
 
     let clock = Clock::system();
     let out_root = match &options.out {
-        Some(path) => path.clone(),
+        Some(path) => discover::expand(path),
         None => inputs.root.join(OUTPUT_DIR),
     };
 
