@@ -11,6 +11,13 @@ if ! command -v cargo >/dev/null 2>&1 && [ -x "$HOME/.cargo/bin/cargo" ]; then
     export PATH
 fi
 
+for tool in cargo-nextest cargo-deny; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "missing $tool: cargo install --locked $tool" >&2
+        exit 1
+    fi
+done
+
 echo "== format"
 cargo fmt --check
 

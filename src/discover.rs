@@ -324,7 +324,7 @@ mod tests {
             ]
         );
 
-        let mut dates = vec![
+        let mut dates = [
             Path::new("msgstore-increment-2026-12-10.db.crypt15"),
             Path::new("msgstore-increment-2026-12-03.db.crypt15"),
         ];
