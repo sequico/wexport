@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status: v0.1.0 implemented. This document remains the **specification** — what the product must be;
+Status: v1.0.0 implemented. This document remains the **specification** — what the product must be;
 `README.md` says what is done and what is still open. Android only, `crypt15` backups, 64-digit key,
 media folder copied by the user.
 
