@@ -28,7 +28,7 @@ pub fn run(args: &[String]) -> Result<i32> {
     let options = parse(args)?;
     let folder = options.folder.clone().unwrap_or_else(|| PathBuf::from("."));
 
-    archive::require_binaries(&["ffmpeg", "ffprobe"])?;
+    discover::require_binaries(&["ffmpeg", "ffprobe"])?;
     let inputs = discover::discover(&folder)?;
     let database = std::fs::read(&inputs.database)?;
     let header = crypt15::parse_header(&database)?;
@@ -129,6 +129,7 @@ pub fn run(args: &[String]) -> Result<i32> {
         let summary = archive::build_chat(&store, stat, &context, &label)?;
         if summary.empty {
             println!("  {}: skipped, no messages", summary.name);
+            summaries.push(summary);
             continue;
         }
         println!(
@@ -155,9 +156,15 @@ pub fn run(args: &[String]) -> Result<i32> {
         open_if_desktop(&index);
     }
     let failures: usize = summaries.iter().map(|summary| summary.failure_count).sum();
+    let skipped = summaries.iter().filter(|summary| summary.empty).count();
+    let suffix = if skipped > 0 {
+        format!(", {skipped} empty chat(s) skipped")
+    } else {
+        String::new()
+    };
     println!(
-        "\ndone: {} archive(s) in {}",
-        summaries.len(),
+        "\ndone: {} archive(s) in {}{suffix}",
+        summaries.len() - skipped,
         out_root.display()
     );
     if failures > 0 {
@@ -165,6 +172,21 @@ pub fn run(args: &[String]) -> Result<i32> {
         return Ok(EXIT_INCOMPLETE);
     }
     Ok(0)
+}
+
+fn human_bytes(count: u64) -> String {
+    let mut size = count as f64;
+    for unit in ["B", "kB", "MB", "GB"] {
+        if size < 1024.0 || unit == "GB" {
+            return if unit == "B" {
+                format!("{size:.0} {unit}")
+            } else {
+                format!("{size:.1} {unit}")
+            };
+        }
+        size /= 1024.0;
+    }
+    format!("{size:.1} GB")
 }
 
 fn app_version(header: &crypt15::Header) -> String {
@@ -191,6 +213,11 @@ fn require_openable(header: &crypt15::Header, path: &Path) -> Result<()> {
     if header.key_type == "E2EE_PASSWORD" {
         return Err(Error::wrong_type(format!(
             "{name} was made with a password, not the 64-digit key.\nThe password only asks WhatsApp for the key, so this file cannot be opened offline.\nRe-enable end-to-end encrypted backup choosing the 64-digit key and make a new backup."
+        )));
+    }
+    if header.key_type == "E2EE_PASSKEY" {
+        return Err(Error::wrong_type(format!(
+            "{name} was made with a passkey, not the 64-digit key.\nThere is no offline way to open it: re-enable end-to-end encrypted backup with the\n64-digit key and make a new backup."
         )));
     }
     Err(Error::wrong_type(format!(
@@ -268,7 +295,7 @@ fn show_chats(stats: &[ChatStat], clock: &Clock) {
             stamp,
             stat.messages,
             stat.media_count,
-            archive::human_bytes(stat.media_bytes.max(0) as u64),
+            human_bytes(stat.media_bytes.max(0) as u64),
             stat.chat.name,
             stat.chat.jid
         );
@@ -279,7 +306,7 @@ fn show_chats(stats: &[ChatStat], clock: &Clock) {
         "\n{} chat(s), {} message(s), {} of media",
         stats.len(),
         messages,
-        archive::human_bytes(bytes.max(0) as u64)
+        human_bytes(bytes.max(0) as u64)
     );
 }
 

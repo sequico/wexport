@@ -66,9 +66,10 @@ fn read_from_image(path: &Path) -> Result<[u8; 32]> {
         .arg("stdout")
         .output()
         .map_err(|_| {
-            Error::dependency(
-                "tesseract not found on PATH, needed to read the key from a screenshot.\n  Debian/Ubuntu   sudo apt install tesseract-ocr\n  Fedora/RHEL     sudo dnf install tesseract\n  Arch            sudo pacman -S tesseract\n  Windows         winget install UB-Mannheim.TesseractOCR\nOr type the 64 hex digits instead of passing an image.",
-            )
+            Error::dependency(format!(
+                "tesseract not found on PATH, needed to read the key from a screenshot.\n{}\nOr type the 64 hex digits instead of passing an image.",
+                crate::error::install_hints("tesseract")
+            ))
         })?;
     if !output.status.success() {
         return Err(Error::key(format!(

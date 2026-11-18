@@ -78,3 +78,30 @@ impl From<serde_json::Error> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// The install command for the platforms the project supports, one line each.
+pub fn install_hints(name: &str) -> String {
+    let (debian, fedora, arch, windows) = if name == "tesseract" {
+        (
+            "sudo apt install tesseract-ocr",
+            "sudo dnf install tesseract",
+            "sudo pacman -S tesseract",
+            "winget install UB-Mannheim.TesseractOCR",
+        )
+    } else {
+        (
+            "sudo apt install ffmpeg",
+            "sudo dnf install ffmpeg",
+            "sudo pacman -S ffmpeg",
+            "winget install Gyan.FFmpeg",
+        )
+    };
+    format!("  Debian/Ubuntu   {debian}\n  Fedora/RHEL     {fedora}\n  Arch            {arch}\n  Windows         {windows}")
+}
+
+pub fn missing_binary(name: &str) -> Error {
+    Error::dependency(format!(
+        "{name} not found on PATH.\n{}\nThen re-run the same command.",
+        install_hints(name)
+    ))
+}

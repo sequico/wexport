@@ -14,6 +14,21 @@ pub struct Inputs {
     pub ignored: Vec<PathBuf>,
 }
 
+/// Abort with the install command when an external binary is missing (plan §2).
+pub fn require_binaries(names: &[&str]) -> Result<()> {
+    for name in names {
+        let found = std::process::Command::new(name)
+            .arg("-version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        if !found {
+            return Err(crate::error::missing_binary(name));
+        }
+    }
+    Ok(())
+}
+
 pub fn discover(path: &Path) -> Result<Inputs> {
     let expanded = expand(path);
     let root = if expanded.is_file() {
@@ -110,7 +125,10 @@ pub fn discover(path: &Path) -> Result<Inputs> {
 
 fn expand(path: &Path) -> PathBuf {
     if let Ok(stripped) = path.strip_prefix("~") {
-        if let Ok(home) = std::env::var("HOME") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok();
+        if let Some(home) = home {
             return PathBuf::from(home).join(stripped);
         }
     }
@@ -231,5 +249,12 @@ mod tests {
             Path::new("/tmp/msgstore.db.crypt15"),
             "msgstore-increment"
         ));
+    }
+
+    #[test]
+    fn a_missing_binary_is_a_dependency_failure() {
+        let error = require_binaries(&["wexport-no-such-binary"]).unwrap_err();
+        assert_eq!(error.code, crate::error::EXIT_DEPENDENCY);
+        assert!(error.message.contains("sudo apt install ffmpeg"));
     }
 }

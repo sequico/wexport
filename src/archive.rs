@@ -9,7 +9,7 @@ use chrono_tz::Tz;
 use serde_json::{json, Map, Value};
 
 use crate::chunks::{self, Record};
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::media;
 use crate::msgstore::{Chat, ChatStat, Message, Msgstore};
 use crate::progress::Bar;
@@ -180,8 +180,8 @@ pub fn build_chat(
         "media": summary.media,
         "missing": summary.missing,
         "people": summary.people + if chat.is_group { 1 } else { 0 },
-        "first": stamp(&clock, summary.first_ts),
-        "last": stamp(&clock, summary.last_ts),
+        "first": stamp(clock, summary.first_ts),
+        "last": stamp(clock, summary.last_ts),
     });
     // No stale chunk from a previous run: a month that no longer exists in the chat must not stay
     // loadable behind the viewer's back.
@@ -535,36 +535,4 @@ fn escape_html(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-}
-
-pub fn human_bytes(count: u64) -> String {
-    let mut size = count as f64;
-    for unit in ["B", "kB", "MB", "GB"] {
-        if size < 1024.0 || unit == "GB" {
-            return if unit == "B" {
-                format!("{size:.0} {unit}")
-            } else {
-                format!("{size:.1} {unit}")
-            };
-        }
-        size /= 1024.0;
-    }
-    format!("{size:.1} GB")
-}
-
-pub fn require_binaries(names: &[&str]) -> Result<()> {
-    for name in names {
-        let found = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(format!("command -v {name}"))
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false);
-        if !found {
-            return Err(Error::dependency(format!(
-                "{name} not found on PATH.\n  Debian/Ubuntu   sudo apt install ffmpeg\n  Fedora/RHEL     sudo dnf install ffmpeg\n  Arch            sudo pacman -S ffmpeg\n  Windows         winget install Gyan.FFmpeg\nThen re-run the same command."
-            )));
-        }
-    }
-    Ok(())
 }
