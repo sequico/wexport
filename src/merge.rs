@@ -45,7 +45,10 @@ pub fn apply(base: &Path, increments: &[PathBuf], key: &[u8; 32], workspace: &Pa
 }
 
 fn replay(connection: &rusqlite::Connection, delta: &Path) -> Result<()> {
+    // ATTACH cannot run inside a transaction, so it brackets one: the deltas are large and one
+    // commit at the end is the difference between seconds and minutes.
     connection.execute("ATTACH DATABASE ?1 AS inc", [delta.display().to_string()])?;
+    let transaction = connection.unchecked_transaction()?;
     for table in MERGED_TABLES {
         if !has_table(connection, "inc", table)? {
             continue;
@@ -62,11 +65,10 @@ fn replay(connection: &rusqlite::Connection, delta: &Path) -> Result<()> {
                 delta.display()
             )));
         }
-        connection.execute(
-            &format!("INSERT OR REPLACE INTO main.\"{table}\" SELECT * FROM inc.\"{table}\""),
-            [],
-        )?;
+        let query = format!("INSERT OR REPLACE INTO main.\"{table}\" SELECT * FROM inc.\"{table}\"");
+        transaction.execute(&query, [])?;
     }
+    transaction.commit()?;
     connection.execute("DETACH DATABASE inc", [])?;
     Ok(())
 }

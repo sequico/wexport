@@ -9,7 +9,7 @@ use chrono_tz::Tz;
 use serde_json::{json, Map, Value};
 
 use crate::chunks::{self, Record};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::media;
 use crate::msgstore::{Chat, ChatStat, Message, Msgstore};
 use crate::progress::Bar;
@@ -219,6 +219,7 @@ fn prepare_media(
     let workers = jobs.clamp(1, 8).min(with_media.len());
     let chunk_size = with_media.len().div_ceil(workers);
     let mut collected: HashMap<i64, Prepared> = HashMap::new();
+    let mut worker_failed = false;
 
     std::thread::scope(|scope| {
         let mut handles = Vec::new();
@@ -237,11 +238,18 @@ fn prepare_media(
             }));
         }
         for handle in handles {
-            if let Ok(results) = handle.join() {
-                collected.extend(results);
+            match handle.join() {
+                Ok(results) => collected.extend(results),
+                // A panicking worker would otherwise drop its files without a word.
+                Err(_) => worker_failed = true,
             }
         }
     });
+    if worker_failed {
+        return Err(Error::input(
+            "a media worker stopped unexpectedly; nothing was written for this chat",
+        ));
+    }
     Ok(collected)
 }
 
