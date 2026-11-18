@@ -49,10 +49,17 @@ pub fn discover(path: &Path) -> Result<Inputs> {
 
     let crypt15 = files_matching(&databases, ".crypt15");
     let crypt14 = files_matching(&databases, ".crypt14");
+    let crypt12 = files_matching(&databases, ".crypt12");
     if crypt15.is_empty() {
         if !crypt14.is_empty() {
             return Err(Error::wrong_type(format!(
                 "only crypt14 backups in {} — end-to-end encryption is off, or the backup was never redone after enabling it.\nTurn on end-to-end encrypted backup with the 64-digit key, run a full backup, copy the folder again.",
+                databases.display()
+            )));
+        }
+        if !crypt12.is_empty() {
+            return Err(Error::wrong_type(format!(
+                "only crypt12 backups in {} — that chain needs a password and no end-to-end key.\nTurn on end-to-end encrypted backup with the 64-digit key, run a full backup, copy the folder again.",
                 databases.display()
             )));
         }
@@ -220,7 +227,12 @@ fn find_databases(root: &Path) -> Option<PathBuf> {
             let skip = path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .map(|name| name == "node_modules" || name == ".git")
+                .map(|name| {
+                    name == "node_modules"
+                        || name == ".git"
+                        // The media tree holds tens of thousands of files and no backup.
+                        || name == "Media"
+                })
                 .unwrap_or(false);
             if path.is_dir() && !skip {
                 queue.push((path, depth + 1));
@@ -276,6 +288,19 @@ mod tests {
             Path::new(&home).join("archives")
         );
         assert_eq!(expand(Path::new("/tmp/plain")), Path::new("/tmp/plain"));
+    }
+
+    #[test]
+    fn a_crypt12_folder_says_what_it_is() {
+        let root = std::env::temp_dir().join(format!("wexport-crypt12-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let databases = root.join("Databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        std::fs::write(databases.join("msgstore.db.crypt12"), b"old chain").unwrap();
+        let error = discover(&root).unwrap_err();
+        assert_eq!(error.code, crate::error::EXIT_TYPE);
+        assert!(error.message.contains("crypt12"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
