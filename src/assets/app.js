@@ -443,6 +443,21 @@
     hits.hidden = false;
   }
 
+  function jumpToEdge(last) {
+    // Home and End mean the first and last message of the whole chat, not the edge of the window
+    // currently loaded: the unloaded ones do not exist in the DOM yet.
+    if (last) {
+      end = total;
+      start = Math.max(0, total - LIMIT);
+    } else {
+      start = 0;
+      end = Math.min(total, LIMIT);
+    }
+    render("none").then(function () {
+      timeline.scrollTop = last ? timeline.scrollHeight : 0;
+    });
+  }
+
   function jumpTo(index) {
     start = Math.max(0, index - 15);
     end = Math.min(total, start + LIMIT);
@@ -499,10 +514,12 @@
       timeline.scrollTop += 90;
     } else if (event.key === "k") {
       timeline.scrollTop -= 90;
-    } else if (event.key === "G") {
-      timeline.scrollTop = timeline.scrollHeight;
-    } else if (event.key === "g") {
-      timeline.scrollTop = 0;
+    } else if (event.key === "End" || event.key === "G") {
+      event.preventDefault();
+      jumpToEdge(true);
+    } else if (event.key === "Home" || event.key === "g") {
+      event.preventDefault();
+      jumpToEdge(false);
     }
   });
 

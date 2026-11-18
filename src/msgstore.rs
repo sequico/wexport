@@ -470,44 +470,6 @@ impl Msgstore {
         }
     }
 
-    pub fn chats(&self) -> Vec<Chat> {
-        if !self.chats.is_empty() {
-            let mut out: Vec<Chat> = self.chats.values().cloned().collect();
-            out.sort_by_key(|chat| chat.name.to_lowercase());
-            return out;
-        }
-        let Some(column) = &self.c_chat_jid else {
-            return Vec::new();
-        };
-        let mut statement = match self
-            .con
-            .prepare(&format!("SELECT DISTINCT \"{column}\" FROM message"))
-        {
-            Ok(statement) => statement,
-            Err(_) => return Vec::new(),
-        };
-        let Ok(rows) = statement.query_map([], |row| row.get::<_, Option<String>>(0)) else {
-            return Vec::new();
-        };
-        let mut seen: BTreeMap<String, Chat> = BTreeMap::new();
-        for raw in rows.flatten().flatten() {
-            let jid = raw.trim().to_string();
-            if jid.is_empty() {
-                continue;
-            }
-            let name = jid.split('@').next().unwrap_or("").to_string();
-            seen.insert(
-                jid.clone(),
-                Chat {
-                    is_group: jid.ends_with("@g.us"),
-                    jid,
-                    name,
-                },
-            );
-        }
-        seen.into_values().collect()
-    }
-
     pub fn chat_stats(&self) -> Result<Vec<ChatStat>> {
         if let (Some(column), false) = (&self.c_chat_row, self.chats.is_empty()) {
             let grouping = format!("m.\"{column}\"");
