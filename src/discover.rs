@@ -338,14 +338,20 @@ mod tests {
 
     #[test]
     fn a_crypt12_folder_says_what_it_is() {
-        let root = std::env::temp_dir().join(format!("wexport-crypt12-{}", std::process::id()));
+        // The folder name carries neither chain: the message quotes the path, and a name with
+        // "crypt12" in it would make the assertion below true for any message at all.
+        let root = std::env::temp_dir().join(format!("wexport-oldchain-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let databases = root.join("Databases");
         std::fs::create_dir_all(&databases).unwrap();
         std::fs::write(databases.join("msgstore.db.crypt12"), b"old chain").unwrap();
         let error = discover(&root).unwrap_err();
         assert_eq!(error.code, crate::error::EXIT_TYPE);
-        assert!(error.message.contains("crypt12"));
+        assert!(
+            error.message.starts_with("only crypt12 backups"),
+            "{}",
+            error.message
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

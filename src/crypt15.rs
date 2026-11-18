@@ -180,19 +180,23 @@ fn message_bytes(input: &[u8], wanted: u64) -> Option<Vec<u8>> {
     None
 }
 
-fn read_varint(input: &[u8], mut offset: usize) -> Result<(u64, usize)> {
+fn read_varint(input: &[u8], offset: usize) -> Result<(u64, usize)> {
+    let tail = input
+        .get(offset..)
+        .ok_or_else(|| Error::input("file ended inside the header length"))?;
     let mut value = 0u64;
-    for shift in (0..=63).step_by(7) {
-        let byte = *input
-            .get(offset)
-            .ok_or_else(|| Error::input("file ended inside the header length"))?;
-        offset += 1;
-        value |= ((byte & 0x7f) as u64) << shift;
+    // Ten groups of seven bits are the whole u64; a longer run is not a length this file can carry.
+    for (index, byte) in tail.iter().take(10).enumerate() {
+        value |= u64::from(byte & 0x7f) << (index * 7);
         if byte & 0x80 == 0 {
-            return Ok((value, offset));
+            return Ok((value, offset + index + 1));
         }
     }
-    Err(Error::input("header length varint is too long"))
+    Err(if tail.len() < 10 {
+        Error::input("file ended inside the header length")
+    } else {
+        Error::input("header length varint is too long")
+    })
 }
 
 /// Decrypt a crypt15 file in place and write its payload into `dest`.
