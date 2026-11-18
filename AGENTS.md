@@ -32,5 +32,6 @@ A reader who has never seen an earlier version must not learn from the artifact 
 
 ## The gate
 
-The list is in the README, "Verification before a push". It runs once, whole tree, before a push
-or a release — never after every change.
+The gate is `scripts/gate.sh` (a push, about twenty seconds) and `scripts/gate-release.sh` (a
+release, adding mutation testing, fuzzing, ThreadSanitizer and the `--locked` build). They run once,
+whole tree, before a push or a release — never after every change.

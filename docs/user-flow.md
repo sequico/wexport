@@ -58,8 +58,8 @@ Place it wherever you like, for example `~/whatsapp/phone-copy`. Three checks be
 - `Media/` is not empty and contains subfolders like `WhatsApp Images`, `WhatsApp Voice Notes`;
 - the total size looks like your real archive (gigabytes, not megabytes).
 
-If `Databases/` holds only `msgstore.db.crypt14`, end-to-end encryption is not enabled (or the
-backup was never redone after enabling it): go back to step 1 and 2. wexport cannot open it.
+If `Databases/` holds only `msgstore.db.crypt14` or `.crypt12`, end-to-end encryption is not enabled
+(or the backup was never redone after enabling it): go back to step 1 and 2. wexport cannot open it.
 
 ## 4. Run wexport
 
@@ -67,8 +67,8 @@ backup was never redone after enabling it): go back to step 1 and 2. wexport can
 wexport ~/whatsapp/phone-copy
 wexport ~/whatsapp/phone-copy -l
 wexport ~/whatsapp/phone-copy -b 2
-wexport ~/whatsapp/phone-copy -l 10 size        # the ten heaviest, without building
-xdg-open ~/whatsapp/phone-copy/output/index.html     # or Explorer / Finder
+wexport ~/whatsapp/phone-copy -l 10 size             # the ten heaviest, without building
+xdg-open ~/whatsapp/phone-copy/output/index.html      # or Explorer / Finder
 ```
 
 Point it at the folder you copied and it does the rest: finds the backup wherever the copy put it
@@ -98,11 +98,12 @@ same message appears when it is missing; typing the 64 digits avoids it.
 | Message | Meaning | What to do |
 |---|---|---|
 | `only crypt14 backups in …` | E2EE was off when the backup was made | enable E2EE with the 64-digit key, force a full backup, copy again |
+| `only crypt12 backups in …` | that chain needs a password and has no end-to-end key | force a full backup with E2EE on, copy again |
 | `was made with a password` / `with a passkey` | the key is on WhatsApp's servers | re-enable E2EE with the 64-digit key and make a new backup; old backups stay closed |
 | `the key does not match this backup` | wrong key, or a new key was generated after this backup | use the key from the screenshot; if the key was regenerated, use a backup made after that |
 | `ffmpeg not found` / `tesseract not found` | a dependency is missing; wexport refuses to run rather than produce a half-broken archive | run the install command printed in the message, then the same command again |
 | `media missing` in the build summary | the file is not in the copied `Media/` (deleted on the phone, or never downloaded) | nothing to do; the archive shows a placeholder |
-| contact names show as numbers | `Backups/wa.db` was not copied | copy it and rebuild |
+| contact names show as the jid | `Backups/wa.db` was not copied, so no name is known | copy it and rebuild |
 
 ## 6. Afterwards
 
