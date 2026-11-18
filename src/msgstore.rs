@@ -985,7 +985,7 @@ fn jid_key(jid: &str) -> String {
         .to_string()
 }
 
-/// Newest event first: the order the picker shows and "the ten most recent" counts on.
+/// Newest event first: the order the list shows, and the order the chat codes are assigned in.
 fn newest_first(mut stats: Vec<ChatStat>) -> Vec<ChatStat> {
     stats.sort_by_key(|stat| std::cmp::Reverse(stat.last_ts));
     stats

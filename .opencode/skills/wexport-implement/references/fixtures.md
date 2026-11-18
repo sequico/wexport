@@ -45,8 +45,8 @@ the version the product uses:
 Commit the tiny real files (a 1x1 PNG, a 120-byte WebP sticker, a fraction-of-a-second Opus voice
 note, a minimal MP4). A few KB in git buys tests that need no external binary.
 
-`build.py` is a test tool, not part of the product: it is the only Python left in the repository, it
-runs only when the fixture is regenerated, and the crate never calls it. Image derivatives are
+`build.py` is a test tool, not part of the product: it runs only when the fixture is regenerated, and
+the crate never calls it. Image derivatives are
 produced with `ffmpeg`, which the product requires anyway, so the only external tools a test run needs
 are the same two the product needs. Unit tests that must not depend on a binary work on bytes (the
 waveform peaks from raw PCM, chunk splitting, escaping), and one integration test runs the real
@@ -55,8 +55,7 @@ waveform peaks from raw PCM, chunk splitting, escaping), and one integration tes
 ## Golden files
 
 `tests/fixtures/golden/` holds the chunk of one fixture chat, built under a fixed zone
-(`Europe/Rome`), so the record format is pinned byte for byte. It is the replacement for the parity
-run against the second implementation that used to live in this repository.
+(`Europe/Rome`), so the record format is pinned byte for byte.
 
 To regenerate after a change that is *meant* to alter the format: delete the golden file, run
 `cargo test --test fixture`, and the test writes the new file and fails once. Read the diff before

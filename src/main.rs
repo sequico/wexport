@@ -1,4 +1,4 @@
-//! The binary: one command, a numbered picker, archives that open by double-clicking.
+//! The binary: one command, a list of chats with a code each, archives that open by double-clicking.
 
 use std::process::ExitCode;
 

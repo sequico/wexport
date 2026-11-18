@@ -77,8 +77,8 @@ the diff is what judges a unit.
 
 - Add a dependency to avoid writing thirty lines. The crates already in `Cargo.toml` are the budget;
   anything else needs the owner.
-- Reintroduce `fetch`, ES modules, Web Workers or `localStorage` in the viewer because they feel
-  convenient. They are exactly what `file://` blocks (§6).
+- Add `fetch`, ES modules, Web Workers or `localStorage` to the viewer because they feel convenient.
+  They are exactly what `file://` blocks (§6).
 - Recompute in the viewer anything the build already froze (timestamps, dimensions, mime, paths).
 - Put a chat list, an index or a link to another chat inside a chat archive.
 - Probe WhatsApp's version string to decide a schema shape when the schema itself answers.

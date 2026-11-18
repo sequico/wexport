@@ -25,3 +25,6 @@
 # Mutation testing output
 mutants.out/
 mutants.out.*/
+
+# Python bytecode from the fixture generator
+__pycache__/

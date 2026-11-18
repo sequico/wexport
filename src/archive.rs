@@ -467,7 +467,7 @@ fn slug(chat: &Chat) -> String {
         .join("-");
     let base: String = base.chars().take(40).collect();
     // sha1, four hex digits: the folder name is what a person recognises on disk, and it is part of
-    // the archive contract, so it stays what the first implementation produced.
+    // the archive contract.
     let mut digest = sha1::Sha1::new();
     use sha1::Digest;
     digest.update(chat.jid.as_bytes());

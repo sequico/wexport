@@ -2,9 +2,7 @@
 //!
 //! These are the acceptance checks: the archive a build produces must have the folder names, the
 //! record shape and the frozen timestamps the plan describes, and a rebuild must be byte-identical.
-//!
-//! The names and the chunk bytes were originally compared against a second implementation of the same
-//! product; that implementation is gone, and the expectation now lives here as the golden values.
+//! The golden chunk is the record format written down, so a change to it shows up as a diff.
 
 use std::path::{Path, PathBuf};
 
@@ -55,10 +53,11 @@ fn rome() -> archive::Clock {
 fn build(out: &Path) {
     let args = vec![
         fixture().display().to_string(),
-        "--key".into(),
+        "-k".into(),
         KEY.into(),
-        "--yes".into(),
-        "--out".into(),
+        "-b".into(),
+        "all".into(),
+        "-o".into(),
         out.display().to_string(),
     ];
     assert_eq!(ui::run(&args).expect("build runs"), 0);
@@ -219,9 +218,9 @@ fn the_listing_finds_every_chat() {
     let mut buffer: Vec<u8> = Vec::new();
     let args = vec![
         fixture().display().to_string(),
-        "--key".into(),
+        "-k".into(),
         KEY.into(),
-        "--list".into(),
+        "-l".into(),
     ];
     assert_eq!(ui::run(&args).expect("list runs"), 0);
     buffer.clear();
@@ -253,16 +252,15 @@ fn a_media_file_that_was_not_copied_is_counted_as_missing() {
 }
 
 #[test]
-fn the_selection_beats_yes_and_a_comma_is_a_separator() {
+fn the_selection_takes_codes_and_skips_the_empty_chat() {
     let out = scratch("selection");
     let args = vec![
         fixture().display().to_string(),
-        "--key".into(),
+        "-k".into(),
         KEY.into(),
-        "--chat".into(),
+        "-b".into(),
         "2,3".into(),
-        "--yes".into(),
-        "--out".into(),
+        "-o".into(),
         out.display().to_string(),
     ];
     assert_eq!(ui::run(&args).expect("selection runs"), 0);
@@ -270,26 +268,26 @@ fn the_selection_beats_yes_and_a_comma_is_a_separator() {
         .iter()
         .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
         .collect();
-    // Row 2 is Family, row 3 is the empty chat: one archive, and not the one row 1 would give.
+    // Code 2 is Family, code 3 is the empty chat: one archive, and not the one code 1 would give.
     assert_eq!(names, ["2026-12-02-family-9fd6"]);
     let _ = std::fs::remove_dir_all(&out);
 }
 
 #[test]
-fn a_chat_selection_that_matches_nothing_is_an_error() {
+fn a_code_out_of_range_is_an_error() {
     let out = scratch("nosuch");
     let args = vec![
         fixture().display().to_string(),
-        "--key".into(),
+        "-k".into(),
         KEY.into(),
-        "--chat".into(),
-        "no-such-chat".into(),
-        "--out".into(),
+        "-b".into(),
+        "99".into(),
+        "-o".into(),
         out.display().to_string(),
     ];
-    let error = ui::run(&args).expect_err("an unmatched selection stops the run");
+    let error = ui::run(&args).expect_err("a code past the end stops the run");
     assert_eq!(error.code, wexport::error::EXIT_INPUT);
-    assert!(error.message.contains("no chat matches"));
+    assert!(error.message.contains("not in this backup"));
     let _ = std::fs::remove_dir_all(out);
 }
 

@@ -74,7 +74,7 @@ Stage contracts:
 ### CLI surface
 
 ```
-wexport [folder] [--key <hex|png|keyfile>] [--chat <n|name>]... [--list] [--yes] [--out <dir>]
+wexport [FOLDER] [-k KEY] [-l [N] [ORDER]] [-r] [-b CODES] [-o DIR]
 ```
 
 One command, one argument. It finds the backup wherever the copy put it (`Databases/`, `WhatsApp/`,
@@ -83,14 +83,15 @@ looks for the key beside the backup (`key.png`, `key.txt`, `encrypted_backup.key
 for it once. Then it prints the chats numbered, by newest event first:
 
 ```
-  #  last event                     msgs  media      size  chat        jid
-  1  2026-12-02 12:00:00 +01:00        7      1     100 B  Alice       393331234567@s.whatsapp.net
-  2  2026-12-02 11:04:00 +01:00        9      6    7.1 kB  Family      120363000000000001@g.us
+  #  last event                     msgs  media      size  chat
+  1  2026-12-02 12:00:00 +01:00        7      1     100 B  Alice
+  2  2026-12-02 11:04:00 +01:00        9      6    7.1 kB  Family
 ```
 
-and asks `which?` — row numbers, part of a name, `all`, or an empty answer for the ten most recent.
-`--chat` answers the same question without a terminal, `--yes` builds everything, `--list` only looks.
-Archives go to `<folder>/archives` unless `--out` says otherwise, and `<out>/index.html` is always
+The code in the first column is what `-b` takes. `-l` lists and exits (it is also the default),
+`-r` reverses that order, `-b` builds by the codes the list shows (`-b all` builds everything), and
+`-l N ORDER` cuts it (by recency, size or name).
+Archives go to `<folder>/output` unless `-o` says otherwise, and `<out>/index.html` is always
 written: it stays outside every chat folder, because a chat archive must never reveal what else exists.
 
 Media that the user did not copy is **not** an error: it is the normal state of a partial archive,
@@ -152,7 +153,7 @@ wexport/
 │   ├── chunks.rs                # records → classic-script chunks, escaping
 │   ├── archive.rs               # one folder per chat, manifest, README, index, prune
 │   ├── progress.rs              # the one-line media progress bar
-│   ├── ui.rs                    # flags, the numbered picker, the run
+│   ├── ui.rs                    # flags, the chat codes, the run
 │   └── assets/                  # the viewer: index.html, app.js, app.css (classic scripts)
 └── tests/
     ├── fixture.rs               # end-to-end runs on the committed fixture
@@ -337,8 +338,8 @@ Each milestone ends with something runnable and a stated acceptance test.
 `Cargo.toml`, the CLI in `src/ui.rs`, `src/error.rs`, `src/keys.rs`, `src/discover.rs`, header parsing in
 `src/crypt15.rs`, and the synthetic `crypt15` fixture generator in `tests/fixtures/synthetic/`
 (M0 cannot be tested without one).
-**Acceptance:** `wexport <dir> --list` on the synthetic fixture and on a real backup lists the chats
-with format-aware discovery, and `--key` verification either opens the backup or names the problem. On
+**Acceptance:** `wexport <dir> -l` on the synthetic fixture and on a real backup lists the chats
+with format-aware discovery, and `-k` verification either opens the backup or names the problem. On
 `crypt14`, on a password backup and on a passkey backup it exits `3` with a message that names the case
 and the way out. On a screenshot key it either reads it or says the digits must be typed. The header
 parser is pinned by a fixture test, and the key derivation by a test against the value the reference
@@ -440,8 +441,8 @@ bytes, and leaves the optional re-encoded track for the day a browser forces the
 | Users lose the 64-digit key | their local backups become unreadable too | screenshot step is mandatory in the flow, with an explicit confirmation |
 | Huge `Media/` (tens of GB) | slow builds, disk pressure | no transcoding, hardlink when possible, per-file streaming, progress bar |
 | Opus in OGG on Safari | voice notes do not play | not expected: OGG/Opus plays in Chrome, Firefox and Edge; if Safari needs it, fill `media.alt` with an M4A |
-| Screenshot-key OCR depends on `tesseract` being installed | `--key key.png` fails on a clean machine | exit `5` naming the binary and the install command; typed digits always work |
-| Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `--chat` builds only what is wanted |
+| Screenshot-key OCR depends on `tesseract` being installed | `-k key.png` fails on a clean machine | exit `5` naming the binary and the install command; typed digits always work |
+| Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `-c` builds only what is wanted |
 | Poll options and votes are not decoded (a poll renders as its question text) | a poll loses its choices | decode the add-on payload when a real backup with polls is available; the add-on row is already read for reactions |
 | A single static binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first run fails on a clean machine | exit `5` at startup, naming the missing binary and the install command for that platform (§2); bundling deferred (§12) |
 | The archive is a folder, not one file | sending it means zipping; a chat with video is large | the folder is the unit, and the user flow says zip it; media are duplicated per chat on purpose so a folder stands alone |

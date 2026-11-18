@@ -11,18 +11,20 @@ use crate::keys;
 use crate::merge;
 use crate::msgstore::{ChatStat, Msgstore};
 
-const OUTPUT_DIR: &str = "archives";
-const DEFAULT_RECENT: usize = 10;
+const OUTPUT_DIR: &str = "output";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[derive(Debug)]
 struct Options {
     folder: Option<PathBuf>,
     key: Option<String>,
-    chats: Vec<String>,
+    chats: Vec<usize>,
+    all: bool,
     list: bool,
-    yes: bool,
     out: Option<PathBuf>,
     sort: Sort,
+    reverse: bool,
+    limit: Option<usize>,
 }
 
 /// The order of the listing, and of the build that follows it.
@@ -46,7 +48,7 @@ impl Sort {
     }
 }
 
-fn sort_stats(stats: &mut [ChatStat], sort: Sort) {
+fn sort_stats(stats: &mut [ChatStat], sort: Sort, reverse: bool) {
     match sort {
         Sort::Recent => {
             stats.sort_by_key(|stat| std::cmp::Reverse(stat.last_ts));
@@ -67,6 +69,9 @@ fn sort_stats(stats: &mut [ChatStat], sort: Sort) {
                     .cmp(&right.chat.name.to_lowercase())
             });
         }
+    }
+    if reverse {
+        stats.reverse();
     }
 }
 
@@ -137,22 +142,29 @@ pub fn run(args: &[String]) -> Result<i32> {
         }
     }
 
-    let mut stats = store.chat_stats()?;
+    let stats = store.chat_stats()?;
     if stats.is_empty() {
         return Err(Error::input("this backup holds no chat"));
     }
-    sort_stats(&mut stats, options.sort);
-
-    if options.list || (options.chats.is_empty() && !options.yes) {
-        show_chats(&stats, &clock);
+    // The codes are this list's identity: assigned once, in the default order, and never moved.
+    let numbers = numbered(&stats);
+    let selected = if options.all {
+        stats.clone()
     } else {
-        println!("\n{} chat(s) in the backup; --list shows them", stats.len());
+        resolve(&options, &stats)?
+    };
+
+    let mut display = stats;
+    sort_stats(&mut display, options.sort, options.reverse);
+    if let Some(limit) = options.limit {
+        display.truncate(limit);
     }
-    if options.list {
+    show_chats(&display, &clock, &numbers);
+
+    if selected.is_empty() {
         return Ok(0);
     }
-
-    let chosen = choose(&stats, &options)?;
+    let chosen = selected;
     std::fs::create_dir_all(&out_root)?;
     let jobs = std::thread::available_parallelism()
         .map(|value| value.get())
@@ -174,8 +186,9 @@ pub fn run(args: &[String]) -> Result<i32> {
         media_root: inputs.media.as_deref(),
         jobs,
     };
-    for (position, stat) in chosen.iter().enumerate() {
-        let label = format!("{}. {}", position + 1, stat.chat.name);
+    for stat in chosen.iter() {
+        let number = numbers.get(&stat.chat.jid).copied().unwrap_or(0);
+        let label = format!("{number}. {}", stat.chat.name);
         let summary = archive::build_chat(&store, stat, &context, &label)?;
         if summary.empty {
             println!("  {}: skipped, no messages", summary.name);
@@ -305,7 +318,7 @@ fn key_beside(inputs: &discover::Inputs) -> Option<String> {
 fn ask_for_key() -> Result<String> {
     if !std::io::stdin().is_terminal() {
         return Err(Error::key(
-            "no key found and no terminal to ask on.\nPass --key with the 64 hex digits, a screenshot, or encrypted_backup.key.",
+            "no key found and no terminal to ask on.\nPass -k with the 64 hex digits, a screenshot, or encrypted_backup.key.",
         ));
     }
     println!("\nkey: the 64 hex digits, or the path of the screenshot / encrypted_backup.key");
@@ -322,32 +335,60 @@ fn ask_for_key() -> Result<String> {
     Ok(line)
 }
 
-fn show_chats(stats: &[ChatStat], clock: &Clock) {
-    let width = stats
+/// The code of every chat in this list: 1..N in the default order, independent of any listing.
+fn numbered(stats: &[ChatStat]) -> std::collections::HashMap<String, usize> {
+    stats
         .iter()
-        .map(|stat| stat.chat.name.chars().count())
+        .enumerate()
+        .map(|(index, stat)| (stat.chat.jid.clone(), index + 1))
+        .collect()
+}
+
+/// The chats named by `-b`, looked up by code.
+fn resolve(options: &Options, stats: &[ChatStat]) -> Result<Vec<ChatStat>> {
+    let mut chosen = Vec::with_capacity(options.chats.len());
+    for number in &options.chats {
+        let stat = stats.get(number - 1).ok_or_else(|| {
+            Error::input(format!(
+                "chat {number} is not in this backup: -l shows the codes 1..{}",
+                stats.len()
+            ))
+        })?;
+        chosen.push(stat.clone());
+    }
+    Ok(chosen)
+}
+
+fn show_chats(
+    stats: &[ChatStat],
+    clock: &Clock,
+    numbers: &std::collections::HashMap<String, usize>,
+) {
+    let labels: Vec<&str> = stats.iter().map(label_of).collect();
+    let width = labels
+        .iter()
+        .map(|label| label.chars().count())
         .max()
         .unwrap_or(8);
     println!();
     println!(
-        "{:>3}  {:<27} {:>7} {:>6} {:>9}  {:<width$}  jid",
+        "{:>3}  {:<27} {:>7} {:>6} {:>9}  {:<width$}",
         "#", "last event", "msgs", "media", "size", "chat"
     );
-    for (index, stat) in stats.iter().enumerate() {
+    for (stat, label) in stats.iter().zip(&labels) {
         let stamp = if stat.last_ts > 0 {
             clock.local(stat.last_ts)
         } else {
             "—".to_string()
         };
         println!(
-            "{:>3}  {:<27} {:>7} {:>6} {:>9}  {:<width$}  {}",
-            index + 1,
+            "{:>3}  {:<27} {:>7} {:>6} {:>9}  {:<width$}",
+            numbers.get(&stat.chat.jid).copied().unwrap_or(0),
             stamp,
             stat.messages,
             stat.media_count,
             human_bytes(stat.media_bytes.max(0) as u64),
-            stat.chat.name,
-            stat.chat.jid
+            label
         );
     }
     let messages: i64 = stats.iter().map(|stat| stat.messages).sum();
@@ -360,106 +401,14 @@ fn show_chats(stats: &[ChatStat], clock: &Clock) {
     );
 }
 
-fn choose<'a>(stats: &'a [ChatStat], options: &Options) -> Result<Vec<&'a ChatStat>> {
-    // An explicit selection is the selection: --yes only means "do not ask".
-    if !options.chats.is_empty() {
-        let matched = match_rows(stats, &options.chats);
-        if matched.is_empty() {
-            // A typo in a script must not end with "0 archives" and exit 0.
-            return Err(Error::input(format!(
-                "no chat matches {}: --list shows the numbers and names",
-                options.chats.join(", ")
-            )));
-        }
-        return Ok(matched);
+/// The name when the backup knows one, otherwise the full jid: it says who and what kind of chat.
+fn label_of(stat: &ChatStat) -> &str {
+    let user = stat.chat.jid.split('@').next().unwrap_or("");
+    if stat.chat.name == user {
+        &stat.chat.jid
+    } else {
+        &stat.chat.name
     }
-    if options.yes {
-        return Ok(stats.iter().collect());
-    }
-    if !std::io::stdin().is_terminal() {
-        return Err(Error::input(
-            "no terminal to ask which chats to build.\nPass --chat <number|name> or --yes (or --list to only look).",
-        ));
-    }
-    let recent: Vec<&ChatStat> = stats.iter().take(DEFAULT_RECENT).collect();
-    let default = recent
-        .iter()
-        .map(|stat| format!("{}", row_of(stats, stat)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    loop {
-        println!(
-            "which? numbers or part of a name [the {} most recent: {}]",
-            recent.len(),
-            default
-        );
-        print!("> ");
-        let _ = std::io::stdout().flush();
-        let mut line = String::new();
-        std::io::stdin().lock().read_line(&mut line)?;
-        let tokens: Vec<String> = line
-            .split(|character: char| character == ',' || character.is_whitespace())
-            .filter(|token| !token.is_empty())
-            .map(|token| token.to_string())
-            .collect();
-        if tokens.is_empty() {
-            return Ok(recent);
-        }
-        let matches = match_rows(stats, &tokens);
-        if !matches.is_empty() {
-            return Ok(matches);
-        }
-        println!("  nothing matched: try a number from the list, part of a name, or 'all'");
-    }
-}
-
-fn row_of(stats: &[ChatStat], stat: &ChatStat) -> usize {
-    stats
-        .iter()
-        .position(|candidate| candidate.chat.jid == stat.chat.jid)
-        .unwrap_or(0)
-        + 1
-}
-
-fn match_rows<'a>(stats: &'a [ChatStat], tokens: &[String]) -> Vec<&'a ChatStat> {
-    let mut selected: Vec<usize> = Vec::new();
-    for token in tokens {
-        let lowered = token.to_lowercase();
-        if matches!(lowered.as_str(), "all" | "tutte" | "*") {
-            return stats.iter().collect();
-        }
-        if let Ok(index) = lowered.parse::<usize>() {
-            if index >= 1 && index <= stats.len() && !selected.contains(&(index - 1)) {
-                selected.push(index - 1);
-            }
-            continue;
-        }
-        let needle = fold(&lowered);
-        for (index, stat) in stats.iter().enumerate() {
-            if (fold(&stat.chat.name).contains(&needle) || fold(&stat.chat.jid).contains(&needle))
-                && !selected.contains(&index)
-            {
-                selected.push(index);
-            }
-        }
-    }
-    selected.sort_unstable();
-    selected.into_iter().map(|index| &stats[index]).collect()
-}
-
-fn fold(text: &str) -> String {
-    text.chars()
-        .map(|character| match character {
-            'à' | 'á' | 'â' | 'ä' | 'ã' | 'å' => 'a',
-            'è' | 'é' | 'ê' | 'ë' => 'e',
-            'ì' | 'í' | 'î' | 'ï' => 'i',
-            'ò' | 'ó' | 'ô' | 'ö' | 'õ' => 'o',
-            'ù' | 'ú' | 'û' | 'ü' => 'u',
-            'ç' => 'c',
-            other => other,
-        })
-        .flat_map(|character| character.to_lowercase())
-        .collect()
 }
 
 fn decrypt_contacts(contacts: &Path, key: &[u8; 32], workspace: &Workspace) -> Result<PathBuf> {
@@ -514,14 +463,33 @@ impl Drop for Workspace {
     }
 }
 
-/// `--chat 1,2 family` means the three tokens, as the help text promises.
-fn push_chats(chats: &mut Vec<String>, value: &str) {
-    for token in value
-        .split(|character: char| character == ',' || character.is_whitespace())
-        .filter(|token| !token.is_empty())
-    {
-        chats.push(token.to_string());
+/// `-b 1,2` or `-b all`: only codes, because a code is what identifies a chat in this list.
+fn set_selection(options: &mut Options, value: &str) -> Result<()> {
+    for token in value.split(',').filter(|token| !token.is_empty()) {
+        if token == "all" {
+            options.all = true;
+            continue;
+        }
+        match token.parse::<usize>() {
+            Ok(number) if number > 0 => options.chats.push(number),
+            _ => {
+                return Err(Error::input(format!(
+                    "-b takes chat codes or all, not {token}: -l shows the codes"
+                )))
+            }
+        }
     }
+    if options.all && !options.chats.is_empty() {
+        return Err(Error::input(
+            "-b all is the whole list: drop the codes, or drop all",
+        ));
+    }
+    if !options.all && options.chats.is_empty() {
+        return Err(Error::input(
+            "-b takes at least one code, or all: -l shows the codes",
+        ));
+    }
+    Ok(())
 }
 
 fn parse(args: &[String]) -> Result<Options> {
@@ -529,77 +497,115 @@ fn parse(args: &[String]) -> Result<Options> {
         folder: None,
         key: None,
         chats: Vec::new(),
+        all: false,
         list: false,
-        yes: false,
         out: None,
         sort: Sort::Recent,
+        reverse: false,
+        limit: None,
     };
     let mut index = 0;
     while index < args.len() {
-        let argument = &args[index];
+        let argument = args[index].clone();
+        if !argument.starts_with('-') || argument == "-" {
+            set_folder(&mut options, &argument)?;
+            index += 1;
+            continue;
+        }
+
         match argument.as_str() {
-            "-h" | "--help" => {
+            "-h" => {
                 print!("{}", help());
                 std::process::exit(0);
             }
-            "--version" => {
+            "-v" => {
                 println!("wexport {VERSION}");
                 std::process::exit(0);
             }
-            "--list" => options.list = true,
-            "--yes" => options.yes = true,
-            "--key" | "--chat" | "--out" | "--sort" => {
-                let value = args
-                    .get(index + 1)
-                    .ok_or_else(|| Error::input(format!("{argument} needs a value")))?;
+            "-r" => options.reverse = true,
+            "-l" => {
+                options.list = true;
+                // Up to two values, recognised by their shape, in either order.
+                for _ in 0..2 {
+                    let Some(next) = args.get(index + 1) else {
+                        break;
+                    };
+                    if options.limit.is_none()
+                        && !next.is_empty()
+                        && next.chars().all(|c| c.is_ascii_digit())
+                    {
+                        options.limit = Some(count_of(next)?);
+                        index += 1;
+                        continue;
+                    }
+                    if let Ok(order) = Sort::parse(next) {
+                        options.sort = order;
+                        index += 1;
+                        continue;
+                    }
+                    break;
+                }
+            }
+            "-k" | "-b" | "-o" => {
+                let value = args.get(index + 1).cloned().ok_or_else(|| {
+                    Error::input(format!("{argument} takes a value: -h shows them"))
+                })?;
+                index += 1;
                 match argument.as_str() {
-                    "--key" => options.key = Some(value.clone()),
-                    "--chat" => push_chats(&mut options.chats, value),
-                    "--sort" => options.sort = Sort::parse(value)?,
+                    "-k" => options.key = Some(value),
+                    "-b" => set_selection(&mut options, &value)?,
                     _ => options.out = Some(PathBuf::from(value)),
                 }
-                index += 1;
             }
-            other if other.starts_with("--key=") => {
-                options.key = Some(other["--key=".len()..].to_string())
-            }
-            other if other.starts_with("--chat=") => {
-                push_chats(&mut options.chats, &other["--chat=".len()..])
-            }
-            other if other.starts_with("--out=") => {
-                options.out = Some(PathBuf::from(&other["--out=".len()..]))
-            }
-            other if other.starts_with("--sort=") => {
-                options.sort = Sort::parse(&other["--sort=".len()..])?
-            }
-            other if other.starts_with('-') => {
+            other if other.starts_with('-') && other.len() > 2 => {
                 return Err(Error::input(format!(
-                    "unknown option {other}: see wexport --help"
-                )))
+                    "{other}: one flag per word, like -l 10 size"
+                )));
             }
             other => {
-                if matches!(other, "check" | "build" | "serve" | "list") {
-                    return Err(Error::input(format!(
-                        "'{other}' is not a command any more: point wexport at the folder instead.\n  wexport <folder>              (asks which chats)\n  wexport <folder> --list       (only lists)\n  wexport <folder> --chat 2     (builds one)"
-                    )));
-                }
-                if options.folder.is_some() {
-                    return Err(Error::input(format!(
-                        "one folder at a time, please: {other}"
-                    )));
-                }
-                options.folder = Some(PathBuf::from(other));
+                return Err(Error::input(format!(
+                    "{other} is not a flag: -h shows them"
+                )));
             }
         }
         index += 1;
     }
+
+    if options.list && (options.all || !options.chats.is_empty()) {
+        return Err(Error::input(
+            "-l only lists and exits: drop -b, or build without -l",
+        ));
+    }
+    if options.out.is_some() && !options.all && options.chats.is_empty() {
+        return Err(Error::input(
+            "-o says where the archives go: give -b as well",
+        ));
+    }
     Ok(options)
 }
 
-fn help() -> String {
-    format!(
-        "usage: wexport [FOLDER] [options]\n\nTurn an Android WhatsApp crypt15 backup into self-contained archives that open by\ndouble-clicking index.html: no server, no wexport and no network on the reading\nmachine. Point it at the folder you copied; it does the rest.\n\noptions:\n  -h, --help            show this help and exit\n  --version             show the version and exit\n  --key HEX|IMAGE|FILE  the 64 hex digits, a screenshot, or encrypted_backup.key;\n                        without it the key is looked up beside the backup (key.png,\n                        key.txt, encrypted_backup.key) and otherwise asked once\n  --chat N|NAME          build these chats without asking: row numbers or part of a\n                        name, comma-separated and repeatable; 'all' for every chat\n  --list                only print the numbered chat list and exit\n  --sort recent|size|name\n                        order the list (and the build that follows it): most recent event\n                        (default), total media size from largest, or name\n  --yes                 build every chat without asking\n  --out DIR             where the archives go (default: <input>/{OUTPUT_DIR})\n\nexit codes:\n  0  success\n  1  unreadable input, or a question that could not be asked without a terminal\n  2  unusable key: not a key, or the key does not open this backup\n  3  wrong backup type: crypt14, password-based or passkey-based backup\n  4  build incomplete: some media could not be processed, the archive is usable\n  5  missing external dependency: ffmpeg, ffprobe, or tesseract for a screenshot key\n\nrequirements: ffmpeg and ffprobe on PATH; tesseract only for a screenshot key.\n\nexamples:\n  wexport ~/Downloads/a\n  wexport ~/Downloads/a --list\n  wexport ~/Downloads/a --list --sort size\n  wexport ~/Downloads/a --chat 2\n  wexport ~/Downloads/a --chat family --chat 3 --yes\n"
-    )
+/// A positive count; zero would list nothing and is a typo rather than an instruction.
+fn count_of(value: &str) -> Result<usize> {
+    match value.parse::<usize>() {
+        Ok(count) if count > 0 => Ok(count),
+        _ => Err(Error::input(format!(
+            "-l needs a positive count, not {value}"
+        ))),
+    }
+}
+
+fn set_folder(options: &mut Options, argument: &str) -> Result<()> {
+    if options.folder.is_some() {
+        return Err(Error::input(format!(
+            "one folder at a time, please: {argument}"
+        )));
+    }
+    options.folder = Some(PathBuf::from(argument));
+    Ok(())
+}
+
+fn help() -> &'static str {
+    "usage: wexport [FOLDER] [flags]\n\nTurn an Android WhatsApp crypt15 backup into self-contained archives that open by\ndouble-clicking index.html: no server, no wexport and no network on the reading\nmachine. Point it at the folder you copied; without -b it lists the chats.\n\nflags:\n  -h          show this help and exit\n  -v          show the version and exit\n  -k KEY      the 64 hex digits, a screenshot of them, or encrypted_backup.key;\n              without it the key is looked up beside the backup (key.png, key.txt,\n              encrypted_backup.key) and otherwise asked once\n  -l [N] [ORDER]\n              list and exit: N rows, ordered by recent (default), size or name,\n              in either order after the flag\n  -r          reverse the listing order\n  -b CODES    build these chats, by code from the list; comma-separated, or all\n  -o DIR      where the archives go (default: <input>/output), with -b\n\nThe codes belong to that list: 1..N in the default order, and they do not move\nwhen -l orders or cuts the list. A different backup numbers its chats anew.\nOne flag per word: -l 10 size, not -ls.\n\nexit codes:\n  0  success\n  1  unreadable input, or a question that could not be asked without a terminal\n  2  unusable key: not a key, or the key does not open this backup\n  3  wrong backup type: crypt14, password-based or passkey-based backup\n  4  build incomplete: some media could not be processed, the archive is usable\n  5  missing external dependency: ffmpeg, ffprobe, or tesseract for a screenshot key\n\nrequirements: ffmpeg and ffprobe on PATH; tesseract only for a screenshot key.\n\nexamples:\n  wexport ~/Downloads/a\n  wexport ~/Downloads/a -l\n  wexport ~/Downloads/a -l 10 size\n  wexport ~/Downloads/a -l 5 recent -r\n  wexport ~/Downloads/a -b 3,42\n  wexport ~/Downloads/a -b all\n  wexport ~/Downloads/a -b 1,2 -o /media/backup\n"
 }
 
 #[cfg(test)]
@@ -634,19 +640,103 @@ mod tests {
             stat("gamma", 200, 50),
         ];
 
-        sort_stats(&mut stats, Sort::Size);
+        sort_stats(&mut stats, Sort::Size, false);
         assert_eq!(names(&stats), ["alpha", "gamma", "beta"]);
 
-        sort_stats(&mut stats, Sort::Name);
+        sort_stats(&mut stats, Sort::Name, false);
         assert_eq!(names(&stats), ["alpha", "beta", "gamma"]);
 
-        sort_stats(&mut stats, Sort::Recent);
+        sort_stats(&mut stats, Sort::Recent, false);
         assert_eq!(names(&stats), ["beta", "gamma", "alpha"]);
+
+        sort_stats(&mut stats, Sort::Size, true);
+        assert_eq!(names(&stats), ["beta", "gamma", "alpha"], "reversed");
     }
 
     #[test]
     fn an_unknown_sort_is_refused_by_name() {
         let error = Sort::parse("biggest").unwrap_err();
         assert!(error.message.contains("recent, size or name"));
+    }
+
+    fn args(text: &str) -> Vec<String> {
+        text.split_whitespace()
+            .map(|part| part.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_list_reads_a_count_and_an_order_in_either_order() {
+        let parsed = parse(&args("-l 10 size")).unwrap();
+        assert_eq!(parsed.limit, Some(10));
+        assert!(matches!(parsed.sort, Sort::Size));
+
+        let parsed = parse(&args("-l size 10")).unwrap();
+        assert_eq!(parsed.limit, Some(10));
+        assert!(matches!(parsed.sort, Sort::Size));
+
+        let parsed = parse(&args("-l name")).unwrap();
+        assert_eq!(parsed.limit, None);
+        assert!(matches!(parsed.sort, Sort::Name));
+
+        let parsed = parse(&args("-l")).unwrap();
+        assert!(parsed.list);
+        assert_eq!(parsed.limit, None);
+    }
+
+    #[test]
+    fn reverse_needs_nothing_else() {
+        assert!(parse(&args("-r")).unwrap().reverse);
+        assert!(parse(&args("-l 5 -r")).unwrap().reverse);
+    }
+
+    #[test]
+    fn building_takes_codes_or_all() {
+        let parsed = parse(&args("-b 3,42")).unwrap();
+        assert_eq!(parsed.chats, [3, 42]);
+
+        assert!(parse(&args("-b all")).unwrap().all);
+
+        let error = parse(&args("-b family")).unwrap_err();
+        assert!(error.message.contains("codes"));
+
+        let error = parse(&args("-b all,3")).unwrap_err();
+        assert!(error.message.contains("-b all"));
+
+        let error = parse(&args("-b")).unwrap_err();
+        assert!(error.message.contains("takes a value"));
+    }
+
+    #[test]
+    fn listing_and_building_do_not_mix() {
+        let error = parse(&args("-l -b 2")).unwrap_err();
+        assert!(error.message.contains("-l only lists"));
+    }
+
+    #[test]
+    fn an_output_folder_needs_a_build() {
+        let error = parse(&args("-o /tmp/x")).unwrap_err();
+        assert!(error.message.contains("give -b"));
+
+        assert!(parse(&args("-b all -o /tmp/x")).unwrap().out.is_some());
+    }
+
+    #[test]
+    fn a_count_is_positive() {
+        let error = parse(&args("-l 0")).unwrap_err();
+        assert!(error.message.contains("positive count"));
+    }
+
+    #[test]
+    fn one_flag_per_word() {
+        let error = parse(&args("-ls size")).unwrap_err();
+        assert!(error.message.contains("one flag per word"));
+    }
+
+    #[test]
+    fn an_unknown_flag_names_itself() {
+        let error = parse(&args("-x")).unwrap_err();
+        assert!(error.message.contains("-x"));
+        assert!(error.message.contains("-h"));
     }
 }

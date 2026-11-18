@@ -2,6 +2,14 @@
 
 Project law for this repository. The global rules still apply; where these are stricter, these win.
 
+## No history in the artifacts
+
+wexport is unreleased. Code, `-h`, command output, README, docs and comments describe **what is**,
+never what was: no "no longer supported", no "previously", no "the old flag", no "was renamed", no
+"the first implementation", no change log in prose. The history is `git log` and nothing else.
+
+A reader who has never seen an earlier version must not learn from the artifact that one existed.
+
 ## Dependencies
 
 - **Always the latest published version.** Before adding or touching a dependency, look up what is

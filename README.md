@@ -27,25 +27,24 @@ cargo build --release
 ./target/release/wexport ~/whatsapp/phone-copy
 ```
 
-It finds the backup, asks for the key if it cannot find `key.png`/`key.txt` beside it, prints the
-chats numbered by most recent event, and asks which to build:
+It finds the backup, asks for the key when it cannot find `key.png`/`key.txt` beside it, and lists the
+chats with a code each:
 
 ```
-  #  last event                     msgs  media      size  chat        jid
-  1  2026-12-02 12:00:00 +01:00        7      1     100 B  Alice       393331234567@s.whatsapp.net
-  2  2026-12-02 11:04:00 +01:00        9      6    7.1 kB  Family      120363000000000001@g.us
-
-which? numbers or part of a name [the 10 most recent: 1, 2]:
+  #  last event                     msgs  media      size  chat
+  1  2026-12-02 12:00:00 +01:00        7      1     100 B  Alice
+  2  2026-12-02 11:04:00 +01:00        9      6    7.1 kB  Family
 ```
 
-Archives land in `<folder>/archives/`, one folder per chat, plus an `index.html`; the media part runs
-behind a progress bar. For scripts the same thing without questions:
+The code is what `-b` takes. Archives land in `<folder>/output/`, one folder per chat, plus an
+`index.html`; the media part runs behind a progress bar:
 
 ```sh
-wexport ~/whatsapp/phone-copy --list            # only the list
-wexport ~/whatsapp/phone-copy --chat 2          # one chat
-wexport ~/whatsapp/phone-copy --chat family --yes
-wexport ~/whatsapp/phone-copy --yes             # everything
+wexport ~/whatsapp/phone-copy                   # the list, recent first
+wexport ~/whatsapp/phone-copy -l 10 size        # the ten heaviest
+wexport ~/whatsapp/phone-copy -b 2              # one chat, by its code
+wexport ~/whatsapp/phone-copy -b 2,5
+wexport ~/whatsapp/phone-copy -b all            # everything
 ```
 
 `wexport -h` prints the flags, the exit codes, the requirements and worked examples.
@@ -82,7 +81,7 @@ that built it.
 | `src/media.rs` | content-addressed placement, thumbnails, posters, waveform peaks |
 | `src/chunks.rs` | month chunks as classic scripts, escaping, splitting |
 | `src/archive.rs` | one folder per chat, manifest, README, index page, prune |
-| `src/ui.rs` | flags, the numbered picker, the run |
+| `src/ui.rs` | flags, the chat codes, the run |
 | `src/progress.rs` | the one-line progress bar |
 | `src/assets/` | the viewer |
 

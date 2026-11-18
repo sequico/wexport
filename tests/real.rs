@@ -18,9 +18,9 @@ fn a_real_backup_lists_its_chats() {
         return; // no backup supplied: nothing to prove here
     };
     let key = std::env::var("WEXPORT_REAL_KEY").ok();
-    let mut args = vec![folder, "--list".to_string()];
+    let mut args = vec![folder, "-l".to_string()];
     if let Some(key) = key {
-        args.push("--key".to_string());
+        args.push("-k".to_string());
         args.push(key);
     }
     let code = ui::run(&args).expect("a real backup lists without failing");

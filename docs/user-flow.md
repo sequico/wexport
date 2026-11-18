@@ -65,25 +65,25 @@ backup was never redone after enabling it): go back to step 1 and 2. wexport can
 
 ```
 wexport ~/whatsapp/phone-copy
-wexport ~/whatsapp/phone-copy --list
-wexport ~/whatsapp/phone-copy --chat 2
-xdg-open ~/whatsapp/phone-copy/archives/index.html     # or Explorer / Finder
+wexport ~/whatsapp/phone-copy -l
+wexport ~/whatsapp/phone-copy -b 2
+wexport ~/whatsapp/phone-copy -l 10 size        # the ten heaviest, without building
+xdg-open ~/whatsapp/phone-copy/output/index.html     # or Explorer / Finder
 ```
 
 Point it at the folder you copied and it does the rest: finds the backup wherever the copy put it
 (`Databases/`, `Chats/`, `Android/media/com.whatsapp/WhatsApp`, or the file itself), looks for the key
-beside it, verifies it, lists the chats numbered by most recent event, and asks which to build —
-numbers, part of a name, `all`, or an empty answer for the ten most recent. `--chat` and `--yes`
-answer that question for scripts, `--list` only looks.
+beside it, and lists the chats with a code each, most recent first. You build with `-b` and the codes
+you read; `-l N ORDER` orders and cuts the list, `-r` reverses it.
 
-With many conversations `--list` shows them all and you pick by number; there is nothing else to
+With many conversations `-l` shows them all and you pick the codes; there is nothing else to
 tune.
 
-`build` writes one folder per chat plus an optional index at `~/whatsapp/sites/index.html`. After that,
+`-b` writes one folder per chat plus an index at `<folder>/output/index.html`. After that,
 wexport is not needed any more: the folder opens by double-click.
 
-The key can be given three ways: the screenshot (`--key key.png`), the 64 digits copied from it
-(`--key 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`--key encrypted_backup.key`).
+The key can be given three ways: the screenshot (`-k key.png`), the 64 digits copied from it
+(`-k 0123…`), or the `encrypted_backup.key` file if the phone was rooted (`-k encrypted_backup.key`).
 
 You run the release binary (on Linux and Windows there is one file per platform, nothing else to
 install) and that is the whole setup.
