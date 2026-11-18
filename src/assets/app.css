@@ -88,6 +88,14 @@ body {
   overflow-y: auto;
   overflow-anchor: none;
   padding: 1rem clamp(.5rem, 4vw, 4rem) 4rem;
+  outline: none;
+}
+
+#hits button:focus-visible,
+#timeline:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 #rows { max-width: 62rem; margin: 0 auto; }
