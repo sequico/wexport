@@ -102,6 +102,38 @@ encrypts with is a fixed test constant.
 The unit test that matters most pins the key derivation to the value the reference implementation
 computes: a silent change there would make every archive wrong in a way no fixture catches.
 
+## Verification before a push
+
+Warnings are errors here: `Cargo.toml` denies rustc, rustdoc and clippy warnings, and the library
+denies `unwrap`/`panic` outside tests. On top of that, one pass over the whole tree:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets
+cargo nextest run                     # or cargo test
+cargo deny check                      # licences, advisories, sources, duplicates
+cargo audit
+cargo check --target x86_64-pc-windows-gnu
+cargo check --target aarch64-unknown-linux-musl
+cargo mutants --file src/chunks.rs --file src/keys.rs --file src/media.rs --file src/crypt15.rs
+cargo +nightly fuzz run parse_header -- -max_total_time=60
+cargo +nightly fuzz run decrypt      -- -max_total_time=60
+cargo +nightly fuzz run normalize_hex -- -max_total_time=30
+RUSTFLAGS="-Zsanitizer=thread" cargo +nightly test -Zbuild-std \
+  --target x86_64-unknown-linux-gnu --test fixture
+```
+
+- **Mutation testing** answers the question a coverage number does not: do the tests fail when the
+  code changes? Survivors are untested logic, and the list is expected to be empty.
+- **Fuzzing** covers the parsers that read a file the user was told to copy: the header
+  (length-prefixed protobuf), the whole decrypt path, and the typed key.
+- **ThreadSanitizer** covers the media workers, which is where the two race conditions of this
+  history lived.
+- **Cross-target checks** keep the "Linux and Windows" claim honest; `cargo check` is enough there,
+  because a missing linker is not a code defect.
+- The dependency gate is `deny.toml`: permissive licences only (compatible with GPL-3.0-or-later),
+  no yanked or advisory-flagged crate, no wildcard versions, no unknown source.
+
 ## Documentation
 
 - [Implementation plan](docs/implementation-plan.md) — the specification: pipeline, data model,
