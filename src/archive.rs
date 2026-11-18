@@ -44,6 +44,19 @@ impl Clock {
         }
     }
 
+    /// The zone the user named with `-t`, so an archive is not tied to the machine that built it.
+    pub fn named(name: &str) -> Result<Self> {
+        let tz = jiff::tz::TimeZone::get(name).map_err(|_| {
+            Error::input(format!(
+                "unknown time zone {name}: use a name like Europe/Rome\nOn a machine with a zone table, `ls /usr/share/zoneinfo` lists the names."
+            ))
+        })?;
+        Ok(Clock {
+            tz,
+            name: name.to_string(),
+        })
+    }
+
     /// The wall clock with its explicit offset, rendered once and never recomputed by a viewer.
     pub fn local(&self, epoch_ms: i64) -> String {
         let moment =
@@ -645,6 +658,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn a_named_zone_renders_its_own_offset() {
+        let clock = Clock::named("Europe/Rome").unwrap();
+        assert_eq!(clock.name, "Europe/Rome");
+        // The fixture's first December message: 09:00Z is 10:00 in Rome in winter.
+        assert_eq!(clock.local(1_796_115_600_000), "2026-12-01 10:00:00 +01:00");
+
+        let error = Clock::named("Nowhere/Nothing")
+            .err()
+            .expect("an unknown zone is not a zone");
+        assert!(
+            error.message.contains("unknown time zone"),
+            "{}",
+            error.message
+        );
     }
 
     #[test]

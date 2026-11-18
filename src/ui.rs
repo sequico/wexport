@@ -22,6 +22,7 @@ struct Options {
     all: bool,
     list: bool,
     out: Option<PathBuf>,
+    zone: Option<String>,
     sort: Sort,
     reverse: bool,
     limit: Option<usize>,
@@ -97,7 +98,10 @@ pub fn run(args: &[String]) -> Result<i32> {
     };
     let key = keys::load(&key_spec)?;
 
-    let clock = Clock::system();
+    let clock = match &options.zone {
+        Some(name) => Clock::named(name)?,
+        None => Clock::system(),
+    };
     let out_root = match &options.out {
         Some(path) => discover::expand(path),
         None => inputs.root.join(OUTPUT_DIR),
@@ -537,6 +541,7 @@ fn parse(args: &[String]) -> Result<Options> {
         sort: Sort::Recent,
         reverse: false,
         limit: None,
+        zone: None,
     };
     let mut index = 0;
     while index < args.len() {
@@ -580,7 +585,7 @@ fn parse(args: &[String]) -> Result<Options> {
                     break;
                 }
             }
-            "-k" | "-b" | "-o" => {
+            "-k" | "-b" | "-o" | "-t" => {
                 let value = args.get(index + 1).cloned().ok_or_else(|| {
                     Error::input(format!("{argument} takes a value: -h shows them"))
                 })?;
@@ -588,6 +593,7 @@ fn parse(args: &[String]) -> Result<Options> {
                 match argument.as_str() {
                     "-k" => options.key = Some(value),
                     "-b" => set_selection(&mut options, &value)?,
+                    "-t" => options.zone = Some(value),
                     _ => options.out = Some(PathBuf::from(value)),
                 }
             }
@@ -644,7 +650,7 @@ fn set_folder(options: &mut Options, argument: &str) -> Result<()> {
 }
 
 fn help() -> &'static str {
-    "usage: wexport [FOLDER] [flags]\n\nTurn an Android WhatsApp crypt15 backup into self-contained archives that open by\ndouble-clicking index.html: no server, no wexport and no network on the reading\nmachine. Point it at the folder you copied; without -b it lists the chats.\n\nOnly a backup protected by the 64-digit encryption key can be opened: with a\npassword or a passkey the key stays on WhatsApp's servers and the file on the\nphone cannot be read offline. iPhone backups are a different format.\n\nflags:\n  -h          show this help and exit\n  -v          show the version and exit\n  -k KEY      the 64 hex digits, a screenshot of them, or encrypted_backup.key;\n              without it the key is looked up beside the backup (key.png, key.txt,\n              encrypted_backup.key) and otherwise asked once\n  -l [N] [ORDER]\n              list and exit: N rows, ordered by recent (default), size or name,\n              in either order after the flag\n  -r          reverse the listing order\n  -b CODES    build these chats, by code from the list; comma-separated, or all\n  -o DIR      where the archives go (default: <input>/output), with -b\n\nThe codes belong to that list: 1..N in the default order, and they do not move\nwhen -l orders or cuts the list. A different backup numbers its chats anew.\nOne flag per word: -l 10 size, not -ls.\n\nexit codes:\n  0  success\n  1  unreadable input, or a question that could not be asked without a terminal\n  2  unusable key: not a key, or the key does not open this backup\n  3  wrong backup type: crypt14, password-based or passkey-based backup\n  4  build incomplete: some media could not be processed, the archive is usable\n  5  missing external dependency: ffmpeg, ffprobe, or tesseract for a screenshot key\n\nrequirements: ffmpeg and ffprobe on PATH; tesseract only for a screenshot key.\n\nexamples:\n  wexport ~/Downloads/a\n  wexport ~/Downloads/a -l\n  wexport ~/Downloads/a -l 10 size\n  wexport ~/Downloads/a -l 5 recent -r\n  wexport ~/Downloads/a -b 3,42\n  wexport ~/Downloads/a -b all\n  wexport ~/Downloads/a -b 1,2 -o /media/backup\n"
+    "usage: wexport [FOLDER] [flags]\n\nTurn an Android WhatsApp crypt15 backup into self-contained archives that open by\ndouble-clicking index.html: no server, no wexport and no network on the reading\nmachine. Point it at the folder you copied; without -b it lists the chats.\n\nOnly a backup protected by the 64-digit encryption key can be opened: with a\npassword or a passkey the key stays on WhatsApp's servers and the file on the\nphone cannot be read offline. iPhone backups are a different format.\n\nEvery time in the archive is written with its offset in the zone of this machine,\nunless -t names another one; the zone is recorded in the archive.\n\nflags:\n  -h          show this help and exit\n  -v          show the version and exit\n  -k KEY      the 64 hex digits, a screenshot of them, or encrypted_backup.key;\n              without it the key is looked up beside the backup (key.png, key.txt,\n              encrypted_backup.key) and otherwise asked once\n  -l [N] [ORDER]\n              list and exit: N rows, ordered by recent (default), size or name,\n              in either order after the flag\n  -r          reverse the listing order\n  -b CODES    build these chats, by code from the list; comma-separated, or all\n  -o DIR      where the archives go (default: <input>/output), with -b\n  -t ZONE     render every time in this zone instead of the machine's, e.g.\n              Europe/Rome; each archive records the name it was rendered in\n\nThe codes belong to that list: 1..N in the default order, and they do not move\nwhen -l orders or cuts the list. A different backup numbers its chats anew.\nOne flag per word: -l 10 size, not -ls.\n\nexit codes:\n  0  success\n  1  unreadable input, or a question that could not be asked without a terminal\n  2  unusable key: not a key, or the key does not open this backup\n  3  wrong backup type: crypt14, password-based or passkey-based backup\n  4  build incomplete: some media could not be processed, the archive is usable\n  5  missing external dependency: ffmpeg, ffprobe, or tesseract for a screenshot key\n\nrequirements: ffmpeg and ffprobe on PATH; tesseract only for a screenshot key.\n\nexamples:\n  wexport ~/Downloads/a\n  wexport ~/Downloads/a -l\n  wexport ~/Downloads/a -l 10 size\n  wexport ~/Downloads/a -l 5 recent -r\n  wexport ~/Downloads/a -b 3,42\n  wexport ~/Downloads/a -b all\n  wexport ~/Downloads/a -b all -t Europe/Rome\n  wexport ~/Downloads/a -b 1,2 -o /media/backup\n"
 }
 
 #[cfg(test)]
@@ -819,6 +825,14 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o700, "the decrypted backup is not for other users");
+    }
+
+    #[test]
+    fn the_time_zone_is_a_value_the_run_passes_on() {
+        let options = parse(&args("-t Europe/Rome")).unwrap();
+        assert_eq!(options.zone.as_deref(), Some("Europe/Rome"));
+        let error = parse(&args("-t")).unwrap_err();
+        assert!(error.message.contains("takes a value"), "{}", error.message);
     }
 
     #[test]

@@ -149,6 +149,7 @@ wexport reads the current directory. Inside it, the backup is found wherever the
 | `-r` | — | reverse the listing order, so the oldest or the largest comes first |
 | `-b CODES` | chat codes, comma-separated, or `all` | build those chats; the codes are the ones the list printed |
 | `-o DIR` | a folder | where the archives go, instead of `<FOLDER>/output`; needs `-b` |
+| `-t ZONE` | a zone name, `Europe/Rome` | render every time in that zone instead of the machine's; the name is written into each archive |
 
 Four rules decide most mistakes:
 
@@ -169,6 +170,7 @@ Four rules decide most mistakes:
 | `wexport ~/whatsapp/phone-copy -b 2` | build the chat with code 2 |
 | `wexport ~/whatsapp/phone-copy -b 3,42` | build two chats |
 | `wexport ~/whatsapp/phone-copy -b all -o /media/backup` | build everything, somewhere else |
+| `wexport ~/whatsapp/phone-copy -b 2 -t Europe/Rome` | build one chat with Rome's clock, whatever this machine's zone is |
 | `wexport ~/whatsapp/phone-copy -k key.png -b all` | the key from a screenshot, everything |
 
 The exit code is what a script reads:
@@ -202,7 +204,9 @@ one chat means zipping that one folder, which is why a folder with video can be 
 
 Every message shows its full date and time with the UTC offset — `2026-11-17 14:32:05 +01:00` — with a
 day separator above it, so the archive still says exactly when something was said in ten years. Those
-strings are written at build time and never recomputed by the browser.
+strings are written at build time and never recomputed by the browser. The zone is the one of the
+machine that runs the build, or the one `-t ZONE` names; either way the archive records which it was,
+so a rebuild stays comparable.
 
 Keep the key and the chat folders together but separately stored: the folders need no key at all to be
 read, and the key without the backup opens nothing.

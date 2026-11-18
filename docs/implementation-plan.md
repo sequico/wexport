@@ -74,7 +74,7 @@ Stage contracts:
 ### CLI surface
 
 ```
-wexport [FOLDER] [-k KEY] [-l [N] [ORDER]] [-r] [-b CODES] [-o DIR]
+wexport [FOLDER] [-k KEY] [-l [N] [ORDER]] [-r] [-b CODES] [-o DIR] [-t ZONE]
 ```
 
 One command, one argument. It finds the backup wherever the copy put it (`Databases/`, `WhatsApp/`,
@@ -93,6 +93,8 @@ The code in the first column is what `-b` takes. `-l` lists and exits (it is als
 `-l N ORDER` cuts it (by recency, size or name).
 Archives go to `<folder>/output` unless `-o` says otherwise, and `<out>/index.html` is always
 written: it stays outside every chat folder, because a chat archive must never reveal what else exists.
+Every rendered time uses this machine's zone unless `-t ZONE` names one (`Europe/Rome`), and the
+manifest records the name either way.
 
 Media that the user did not copy is **not** an error: it is the normal state of a partial archive,
 reported in the build summary and visible in the archive as a placeholder. Only a derivative that was
@@ -246,9 +248,9 @@ Decisions worth stating:
   recomputes a local time from `t`: timezone rules change, sometimes retroactively, and an archive
   opened in ten years must show the hour it actually happened, not the hour a future tzdata would
   derive.
-- The manifest records the timezone name the strings were rendered in (the machine's zone, e.g.
-  `Europe/Rome`) and the tzdata version used, so a later rebuild is comparable and a reader knows what
-  the offsets refer to.
+- The manifest records the timezone name the strings were rendered in — the machine's zone, e.g.
+  `Europe/Rome`, or the one `-t ZONE` names — and the tzdata version used, so a later rebuild is
+  comparable and a reader knows what the offsets refer to.
 - Displayed time is always the full date and time with its offset, plus a day separator carrying the
   full date and weekday; the tooltip adds the epoch and the UTC form. No "today", no "yesterday", no
   locale-dependent formatting, no rewriting of history when the OS locale changes.

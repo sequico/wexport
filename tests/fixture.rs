@@ -64,6 +64,8 @@ fn build(out: &Path) {
         KEY.into(),
         "-b".into(),
         "all".into(),
+        "-t".into(),
+        "Europe/Rome".into(),
         "-o".into(),
         out.display().to_string(),
     ];
@@ -146,21 +148,11 @@ fn timestamps_are_frozen_strings_with_offsets() {
     let manifest = std::fs::read_to_string(folder.join("manifest.js")).unwrap();
     let chunk = std::fs::read_to_string(folder.join("2026-12.js")).unwrap();
 
-    // The archive records the zone it was built in, so the assertion follows that zone instead of
-    // the one this machine happens to have: 09:00Z is 10:00 in Rome, and the string carries it.
-    let zone = manifest
-        .split("\"tz\":\"")
-        .nth(1)
-        .and_then(|rest| rest.split('"').next())
-        .expect("the manifest names the time zone");
-    let clock = archive::Clock {
-        tz: jiff::tz::TimeZone::get(zone).expect("a zone name the manifest wrote"),
-        name: zone.to_string(),
-    };
-    let stamp = clock.local(1_796_115_600_000); // 2026-12-01T09:00:00Z, the first December message
+    // The build names its zone, and 09:00Z is 10:00 in Rome: the string is frozen with the offset.
+    assert!(manifest.contains("\"tz\":\"Europe/Rome\""), "{manifest}");
     assert!(
-        chunk.contains(&format!("\"s\":\"{stamp}\"")),
-        "the chunk carries {stamp}: {chunk}"
+        chunk.contains("\"s\":\"2026-12-01 10:00:00 +01:00\""),
+        "{chunk}"
     );
     let _ = std::fs::remove_dir_all(&out);
 }
