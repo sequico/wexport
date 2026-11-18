@@ -524,7 +524,7 @@ impl Msgstore {
                     media_bytes,
                 });
             }
-            return Ok(out);
+            return Ok(newest_first(out));
         }
 
         let Some(column) = &self.c_chat_jid else {
@@ -556,7 +556,7 @@ impl Msgstore {
                 media_bytes,
             });
         }
-        Ok(out)
+        Ok(newest_first(out))
     }
 
     /// Message count and time range per chat, grouped by whichever column identifies a chat.
@@ -895,6 +895,12 @@ fn jid_key(jid: &str) -> String {
         .next()
         .unwrap_or("")
         .to_string()
+}
+
+/// Newest event first: the order the picker shows and "the ten most recent" counts on.
+fn newest_first(mut stats: Vec<ChatStat>) -> Vec<ChatStat> {
+    stats.sort_by_key(|stat| std::cmp::Reverse(stat.last_ts));
+    stats
 }
 
 fn media_kind(row: &MediaRow, wa_type: Option<i64>) -> String {

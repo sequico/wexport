@@ -87,11 +87,10 @@ pub fn run(args: &[String]) -> Result<i32> {
         }
     }
 
-    let mut stats = store.chat_stats()?;
+    let stats = store.chat_stats()?;
     if stats.is_empty() {
         return Err(Error::input("this backup holds no chat"));
     }
-    stats.sort_by_key(|stat| std::cmp::Reverse(stat.last_ts));
 
     if options.list || (options.chats.is_empty() && !options.yes) {
         show_chats(&stats, &clock);

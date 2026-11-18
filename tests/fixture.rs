@@ -8,12 +8,39 @@
 
 use std::path::{Path, PathBuf};
 
-use wexport::ui;
+use wexport::{archive, crypt15, keys, msgstore::Msgstore, ui};
 
 const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/synthetic/phone")
+}
+
+/// The fixture's database, decrypted and named from `wa.db`, for the tests below the command line.
+fn decrypted() -> (Msgstore, PathBuf) {
+    let bytes = std::fs::read(fixture().join("Databases/msgstore.db.crypt15")).unwrap();
+    let header = crypt15::parse_header(&bytes).unwrap();
+    let key = keys::load(KEY).unwrap();
+    let path = std::env::temp_dir().join(format!("wexport-it-{}-store.db", std::process::id()));
+    std::fs::write(&path, crypt15::decrypt(&bytes, &header, &key).unwrap()).unwrap();
+    let mut store = Msgstore::open(&path).unwrap();
+    let contacts = fixture().join("Backups/wa.db.crypt15");
+    if let Ok(bytes) = std::fs::read(&contacts) {
+        let header = crypt15::parse_header(&bytes).unwrap();
+        let contacts_path = path.with_file_name("wexport-it-contacts.db");
+        std::fs::write(&contacts_path, crypt15::decrypt(&bytes, &header, &key).unwrap()).unwrap();
+        store.apply_contacts(&contacts_path);
+        let _ = std::fs::remove_file(contacts_path);
+    }
+    (store, path)
+}
+
+/// A fixed zone, so the golden chunk does not depend on the machine running the test.
+fn rome() -> archive::Clock {
+    archive::Clock {
+        tz: chrono_tz::Europe::Rome,
+        name: "Europe/Rome".into(),
+    }
 }
 
 fn build(out: &Path) {
@@ -189,4 +216,49 @@ fn the_listing_finds_every_chat() {
     ];
     assert_eq!(ui::run(&args).expect("list runs"), 0);
     buffer.clear();
+}
+
+#[test]
+fn the_listing_puts_the_newest_conversation_first() {
+    let (store, database) = decrypted();
+    let stats = store.chat_stats().unwrap();
+    let names: Vec<&str> = stats.iter().map(|stat| stat.chat.name.as_str()).collect();
+    assert_eq!(names, ["Alice", "Family", "Empty chat"]);
+    let _ = std::fs::remove_file(database);
+}
+
+#[test]
+fn the_family_chunk_is_the_committed_golden_file() {
+    let (store, database) = decrypted();
+    let stats = store.chat_stats().unwrap();
+    let family = stats.iter().find(|stat| stat.chat.name == "Family").unwrap();
+    let out = scratch("golden");
+    let root = fixture();
+    let media = root.join("Media");
+    let clock = rome();
+    let context = archive::BuildContext {
+        out_root: &out,
+        clock: &clock,
+        app_version: "2.26.34.7",
+        copy_root: &root,
+        media_root: Some(&media),
+        jobs: 2,
+    };
+    let built = archive::build_chat(&store, family, &context, "Family").unwrap();
+    let chunk = built.archive.join("data/2026-12.js");
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/golden/family-2026-12.js");
+    if let Ok(expected) = std::fs::read(&golden) {
+        assert_eq!(
+            String::from_utf8_lossy(&std::fs::read(&chunk).unwrap()),
+            String::from_utf8_lossy(&expected),
+            "the record format changed: review the diff and regenerate {}",
+            golden.display()
+        );
+    } else {
+        std::fs::create_dir_all(golden.parent().unwrap()).unwrap();
+        std::fs::copy(&chunk, &golden).unwrap();
+        panic!("golden written to {}: review it and commit it", golden.display());
+    }
+    let _ = std::fs::remove_dir_all(out);
+    let _ = std::fs::remove_file(database);
 }
