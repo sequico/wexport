@@ -79,6 +79,9 @@ pub struct Msgstore {
     c_text: Option<String>,
     c_status: Option<String>,
     c_remote: Option<String>,
+    c_sender_row: Option<String>,
+    c_sender_text: Option<String>,
+    jid_raw: Option<String>,
     c_quoted: Option<String>,
     c_edit: Option<String>,
     c_lat: Option<String>,
@@ -127,6 +130,9 @@ impl Msgstore {
             c_text: None,
             c_status: None,
             c_remote: None,
+            c_sender_row: None,
+            c_sender_text: None,
+            jid_raw: None,
             c_quoted: None,
             c_edit: None,
             c_lat: None,
@@ -161,6 +167,10 @@ impl Msgstore {
         store.c_text = store.pick("message", &["text_data", "data"]);
         store.c_status = store.pick("message", &["status"]);
         store.c_remote = store.pick("message", &["remote_resource"]);
+        // Modern group messages carry the author as a jid row, not as a text field.
+        store.c_sender_row = store.pick("message", &["sender_jid_row_id"]);
+        store.c_sender_text = store.pick("message", &["sender_jid"]);
+        store.jid_raw = store.pick("jid", &["raw_string", "user"]);
         store.c_quoted = store.pick("message", &["quoted_row_id"]);
         store.c_edit = store.pick("message", &["edit_version"]);
         store.c_lat = store.pick("message", &["latitude"]);
@@ -657,6 +667,10 @@ impl Msgstore {
             Some(column) => format!("m.\"{column}\" AS {name}"),
             None => format!("{default} AS {name}"),
         };
+        let sender_row = match (&self.c_sender_row, &self.jid_raw) {
+            (Some(_), Some(raw)) => format!("s.\"{raw}\""),
+            _ => "NULL".into(),
+        };
         let select = [
             format!("m.\"{}\" AS id", self.c_id),
             format!("m.\"{}\" AS ts", self.c_ts),
@@ -669,10 +683,16 @@ impl Msgstore {
             alias("lat", &self.c_lat, "NULL"),
             alias("lon", &self.c_lon, "NULL"),
             alias("wa_type", &self.c_wa_type, "NULL"),
+            format!("{sender_row} AS sender_row"),
+            alias("sender_text", &self.c_sender_text, "NULL"),
         ];
+        let join = match (&self.c_sender_row, &self.jid_raw) {
+            (Some(row), Some(_)) => format!(" LEFT JOIN jid s ON s.\"_id\" = m.\"{row}\""),
+            _ => String::new(),
+        };
         let (where_sql, params) = self.chat_filter(chat);
         let sql = format!(
-            "SELECT {} FROM message m WHERE {where_sql} ORDER BY m.\"{}\", m.\"{}\"",
+            "SELECT {} FROM message m{join} WHERE {where_sql} ORDER BY m.\"{}\", m.\"{}\"",
             select.join(", "),
             self.c_ts,
             self.c_id
@@ -749,6 +769,9 @@ impl Msgstore {
         let lat: Option<f64> = row.get(8)?;
         let lon: Option<f64> = row.get(9)?;
         let wa_type: Option<i64> = row.get(10)?;
+        let sender_row: Option<String> = row.get(11)?;
+        let sender_text: Option<String> = row.get(12)?;
+        let author = remote.or(sender_row).or(sender_text);
 
         let media = self.media_of(id, wa_type);
         let caption = self
@@ -767,7 +790,7 @@ impl Msgstore {
             sender: if from_me {
                 None
             } else {
-                remote.as_deref().map(|value| self.person_name(value))
+                author.as_deref().map(|value| self.person_name(value))
             },
             quoted_id: quoted,
             edited,
@@ -1039,6 +1062,33 @@ mod tests {
         .unwrap();
         drop(con);
         (Msgstore::open(&path).unwrap(), path)
+    }
+
+    #[test]
+    fn a_group_author_is_read_from_the_jid_row_when_there_is_no_remote_resource() {
+        let path = std::env::temp_dir().join(format!("wexport-author-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let con = Connection::open(&path).unwrap();
+        con.execute_batch(
+            "CREATE TABLE jid (_id INTEGER PRIMARY KEY, raw_string TEXT);
+             CREATE TABLE chat (_id INTEGER PRIMARY KEY, jid_row_id INTEGER, subject TEXT);
+             CREATE TABLE message (_id INTEGER PRIMARY KEY, chat_row_id INTEGER, timestamp INTEGER,
+                 from_me INTEGER, data TEXT, sender_jid_row_id INTEGER);
+             INSERT INTO jid VALUES (1, '120363@g.us'), (2, '393331234567@s.whatsapp.net');
+             INSERT INTO chat VALUES (1, 1, 'Family');
+             INSERT INTO message VALUES (1, 1, 1000, 0, 'ciao', 2);",
+        )
+        .unwrap();
+        drop(con);
+        let store = Msgstore::open(&path).unwrap();
+        let stats = store.chat_stats().unwrap();
+        let messages = store.messages(&stats[0].chat).unwrap();
+        assert_eq!(
+            messages[0].sender.as_deref(),
+            Some("393331234567"),
+            "a group message names its author by the jid row"
+        );
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
