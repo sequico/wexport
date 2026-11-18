@@ -2,7 +2,7 @@
 name = "wexport"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.89"
 license = "GPL-3.0-or-later"
 description = "Android WhatsApp crypt15 backup to self-contained offline chat archives"
 repository = "https://github.com/sequico/wexport"

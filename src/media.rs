@@ -239,8 +239,10 @@ fn audio_derivative(source: &Path, archive_root: &Path, sha: &str) -> Result<Der
 
 fn peaks_of(pcm: &[u8]) -> Vec<u8> {
     let samples: Vec<i16> = pcm
-        .chunks_exact(2)
-        .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| i16::from_le_bytes(*pair))
         .collect();
     if samples.len() < PEAKS {
         return vec![0; PEAKS];

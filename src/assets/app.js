@@ -452,8 +452,15 @@
     });
   }
 
+  function zoneOffset() {
+    // The archive's own offset, taken from a frozen stamp: the date box gives a calendar day, and
+    // comparing it to UTC midnight would land on the previous evening east of Greenwich.
+    var match = /([+-]\d{2}:\d{2})\s*$/.exec(manifest.first || manifest.last || "");
+    return match ? match[1] : "+00:00";
+  }
+
   function jumpToDate(value) {
-    var target = new Date(value + "T00:00:00Z").getTime();
+    var target = Date.parse(value + "T00:00:00" + zoneOffset());
     for (var index = 0; index < chunks.length; index++) {
       if (chunks[index].l >= target) {
         var chosen = index;  // captured explicitly: the callback runs after this function returns
