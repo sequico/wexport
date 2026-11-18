@@ -75,7 +75,7 @@ root. The listing names them as ignored instead of silently skipping them.
 
 | Backup type | Key material | Without root |
 |---|---|---|
-| `crypt15`, 64-digit key | `/data/data/com.whatsapp/files/encrypted_backup.key` — the root key is the last 32 bytes (64 hex digits) | the key must have been recorded by the user; `wa-crypt-tools` reads it from a screenshot (OCR) or from the typed digits |
+| `crypt15`, 64-digit key | `/data/data/com.whatsapp/files/encrypted_backup.key` — the root key is the last 32 bytes (64 hex digits) | the key must have been recorded by the user; wexport reads it from a screenshot (tesseract) or from the typed digits |
 | `crypt15`, password | the password is **not** the key; the key is fetched from the HSM after OPAQUE login and cached in the same file | not recoverable |
 | `crypt15`, passkey | key wrapped by the passkey | not recoverable |
 | `crypt14` / `crypt12` | `/data/data/com.whatsapp/files/key` (Java-serialised: AES key + IV + salt) | not recoverable |
@@ -93,21 +93,20 @@ Consequences for wexport:
 
 ## 4. The database
 
-`msgstore.db` is plain SQLite once decrypted. Tables wexport reads:
+`msgstore.db` is plain SQLite once decrypted. Tables wexport reads, or replays from an incremental:
 
 | Table | Use |
 |---|---|
-| `message` | one row per message: timestamp, `from_me`, sender JID, `text_data`, type, `key_id`, status |
+| `message` | one row per message: timestamp, `from_me`, `sender_jid_row_id` (a `jid` row), `text_data`, type, status, `quoted_row_id`, `edit_version` |
 | `message_media` | media rows: `file_path`, mime, size, dimensions, duration, caption |
 | `message_add_on` + `message_add_on_reaction` | reactions and other add-ons attached to a message |
-| `message_edit` | edit history |
-| `message_quoted` | reply context |
+| `message_system` | the system notices WhatsApp writes into a conversation |
+| `message_vcard` | shared contacts |
 | `message_revoked` | deleted-by-sender messages, still present |
 | `call_log` | voice/video call rows, rendered as timeline entries |
-| `chat` | conversations, group flag, last message, archived state |
-| `jid` | phone number / `@lid` mapping |
-| `group_participant_user` | group membership over time |
-| `receipt_user` | per-recipient delivered/read/played timestamps |
+| `chat` | conversations, group flag, subject |
+| `jid` | phone number / `@lid` mapping, and the sender of a group message |
+| `receipt_user`, `group_participant_user` | replayed from incrementals; the archive does not show them |
 
 Cautions:
 
