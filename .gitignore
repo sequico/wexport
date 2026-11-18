@@ -21,3 +21,7 @@
 
 # Automation artefacts
 .playwright-mcp/
+
+# Mutation testing output
+mutants.out/
+mutants.out.*/
