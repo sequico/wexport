@@ -33,3 +33,23 @@ jobs:
         run: rustup target add x86_64-pc-windows-gnu
       - name: gate
         run: ./scripts/gate.sh
+
+  release:
+    name: release binaries
+    # Every push to main proves the release artifacts build: one binary per platform, never one.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Windows target and linker
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+          rustup target add x86_64-pc-windows-gnu
+      - name: artifacts
+        run: ./scripts/release.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error

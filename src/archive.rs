@@ -22,26 +22,20 @@ pub struct Clock {
 }
 
 impl Clock {
+    /// The zone this machine is set to. jiff reads it the way each platform keeps it (the `TZ`
+    /// variable, `/etc/localtime`, the Windows registry) and falls back to UTC, so a Windows build
+    /// renders local time too.
     pub fn system() -> Self {
-        if let Ok(name) = std::fs::read_to_string("/etc/timezone") {
-            let name = name.trim().to_string();
-            if let Ok(tz) = jiff::tz::TimeZone::get(&name) {
-                return Clock { tz, name };
-            }
-        }
-        if let Ok(target) = std::fs::canonicalize("/etc/localtime") {
-            let text = target.display().to_string();
-            if let Some((_, zone)) = text.split_once("zoneinfo/") {
-                if let Ok(tz) = jiff::tz::TimeZone::get(zone) {
-                    let name = zone.to_string();
-                    return Clock { tz, name };
-                }
-            }
-        }
-        Clock {
-            tz: jiff::tz::TimeZone::UTC,
-            name: "UTC".into(),
-        }
+        let tz = jiff::tz::TimeZone::system();
+        // An IANA name when the zone has one; otherwise the `TZ` value (a POSIX rule) or the offset.
+        // Whatever comes out is what the archive records, so a reader knows what the strings mean.
+        let name = tz.iana_name().map(str::to_string).unwrap_or_else(|| {
+            std::env::var("TZ")
+                .ok()
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| tz.to_offset(jiff::Timestamp::now()).to_string())
+        });
+        Clock { tz, name }
     }
 
     /// The zone the user named with `-t`, so an archive is not tied to the machine that built it.

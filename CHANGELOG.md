@@ -6,7 +6,7 @@ One line per release. The detailed history is `git log`.
 
 - First release: `crypt15` backups (full and incrementals) into one self-contained folder per chat,
   with a `file://` viewer, frozen timestamps with explicit offsets, content-addressed media and
-  thumbnails, and a single static binary.
+  thumbnails, and one binary per platform (Linux x86-64, Windows x86-64).
 - The command lists the chats with a code each; `-b` builds by code, `-l` orders and cuts the list,
   `-o` chooses where the archives go, `-t ZONE` renders every time in a named zone instead of the
   machine's and records the name.

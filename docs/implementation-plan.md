@@ -398,6 +398,25 @@ it was compiled on.
 
 ---
 
+### Release procedure
+
+A release always ships **both** platforms, and nothing is built by hand:
+
+```sh
+./scripts/gate-release.sh     # the push gate, plus mutations, fuzzing, ThreadSanitizer, both builds
+./scripts/release.sh          # dist/: the two binaries, each with its .sha256
+git tag -a v<version> -m "wexport <version>" && git push origin v<version>
+gh release create v<version> dist/* --title "wexport <version>" --notes-file <notes.md>
+```
+
+`scripts/release.sh` refuses to run without the Windows target and linker, builds `--release --locked`
+for both platforms, checks that each file is what it claims (`ELF 64-bit`, `PE32+ executable`) and that
+the Linux binary reports the version in `Cargo.toml`, then writes `dist/wexport-linux-x86_64`,
+`dist/wexport-linux-x86_64.sha256`, `dist/wexport-windows-x86_64.exe` and its `.sha256`. The version
+comes from `Cargo.toml`; `CHANGELOG.md` loses its `Unreleased` heading in the same change.
+
+The Windows binary is built and inspected here but not executed: it runs on a Windows machine.
+
 ## 8. Testing strategy
 
 - **Unit**: pure functions — key parsing, header parsing, path resolution, payload decoding, chunk
@@ -505,8 +524,9 @@ No decision is open.
 - **Transcoding**: off and not exposed (§5); the record has room for an alternative track.
 - **Polls and other add-on payloads**: a poll currently renders as its question text. Decode the
   add-on row when a real backup with polls is available.
-- **Cross-compiled release builds** for Linux (musl) and Windows from one runner, with the interface
-  test run under Wine; until then, a release is a build per platform.
+- **The Windows binary is not executed here**: it is built and checked with `cargo check`, and its
+  linker output is inspected, but the interface under Wine and a Defender pass are for a Windows
+  machine.
 
 ---
 

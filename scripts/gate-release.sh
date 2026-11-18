@@ -24,6 +24,10 @@ done
 echo "== release build"
 cargo build --release --locked
 
+echo "== release build (windows)"
+# The other half of the release: the linker output is inspected by hand, the binary is not run here.
+cargo build --release --locked --target x86_64-pc-windows-gnu
+
 echo "== mutations"
 # One job per core (capped): 625 mutants at four seconds each is forty minutes in series.
 jobs=$(nproc 2>/dev/null || echo 2)
@@ -43,9 +47,11 @@ set -- "$@" --exclude-re 'replace < with <= in Msgstore::each_message'
 cargo mutants "$@"
 
 echo "== fuzzing"
+# The fuzz crate builds under target/, which mutation testing never copies: in fuzz/target it made
+# every one of the four mutant copies 700 MB and filled /tmp.
 for target in parse_header decrypt normalize_hex; do
     echo "-- $target"
-    cargo +nightly fuzz run "$target" -- -max_total_time=60
+    CARGO_TARGET_DIR="$PWD/target/fuzz" cargo +nightly fuzz run "$target" -- -max_total_time=60
 done
 
 echo "== thread sanitizer"

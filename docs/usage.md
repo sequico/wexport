@@ -1,7 +1,8 @@
 # Using wexport
 
-What the person with the phone does, in order. Android on the phone. The release ships a Linux x86-64
-binary; the same source builds on macOS and on Windows, and needs `ffmpeg` there too.
+What the person with the phone does, in order. Android on the phone. The release ships two binaries,
+`wexport-linux-x86_64` and `wexport-windows-x86_64.exe`; the same source builds on macOS too. All of
+them need `ffmpeg` on the `PATH`.
 
 **wexport opens one kind of file: an Android WhatsApp backup protected by the 64-digit encryption
 key.** Not by a password, not by a passkey, and never an iPhone backup. If your backup is protected
@@ -21,8 +22,10 @@ first four steps happen on the phone and are the same whatever computer you use.
 
 Time: 20–40 minutes, most of it waiting for the backup and for the file copy.
 Needed: the phone, a USB cable, a computer with enough free disk (the copied backup plus the archives
-can be tens of gigabytes), and this binary. `ffmpeg` and `ffprobe` must be on the computer's `PATH`;
-`tesseract` only if you hand wexport a screenshot of the key instead of its digits.
+can be tens of gigabytes), and the binary for that computer —
+[`wexport-linux-x86_64` or `wexport-windows-x86_64.exe` from the releases](https://github.com/sequico/wexport/releases).
+`ffmpeg` and `ffprobe` must be on the computer's `PATH`; `tesseract` only if you hand wexport a
+screenshot of the key instead of its digits.
 
 ---
 

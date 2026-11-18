@@ -22,6 +22,9 @@
 # Automation artefacts
 .playwright-mcp/
 
+# Release artifacts: built by scripts/release.sh, uploaded to the release, never committed
+/dist/
+
 # Mutation testing output
 mutants.out/
 mutants.out.*/
