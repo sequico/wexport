@@ -306,8 +306,9 @@ The archive is opened with `file://`, which is a hostile environment and decides
 
 - **Data in chunks**: one classic script per month, newest first, each calling
   `WEX.chunk("2026-11", [...])`. Strings are escaped for `<` so message text can never close a
-  `<script>` tag. Opening a chat parses the newest chunk only; scrolling loads the previous one by
-  injecting a `<script>` element — the one loading mechanism `file://` allows.
+  `<script>` tag. Opening a chat parses the chunks the last screen needs — usually the newest one or
+  two — and scrolling loads the previous one by injecting a `<script>` element — the one loading
+  mechanism `file://` allows.
 - **Virtualised timeline**: only the messages in and around the viewport exist in the DOM
   (target: ≤ 250 nodes regardless of chat length). This is the requirement that decides the
   architecture, so it is built first, not retrofitted.
