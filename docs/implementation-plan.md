@@ -139,7 +139,7 @@ wexport/
 │   ├── implementation-plan.md   # this file
 │   ├── android-backup-formats.md
 │   ├── usage.md
-│   ├── plan-2.0.md              # the graphical application and its packaging
+│   ├── plan-2.0.md              # iPhone backups for 2.0, and the GUI as later work
 │   └── figures/                 # the phone screens usage.md shows
 ├── .github/
 │   ├── workflows/gate.yml       # the push gate on every pull request and push to main
@@ -523,9 +523,9 @@ No decision is open.
 
 ## 12. Later, deliberately not now
 
-- **The graphical application and portable packaging for macOS and Windows**: planned in
-  [`plan-2.0.md`](plan-2.0.md), which also records why an AppImage cannot be that artifact on macOS or
-  Windows.
+- **iPhone backups, then the graphical application**: [`plan-2.0.md`](plan-2.0.md) is 2.0 — iPhone
+  backups with the CLI unchanged — and records the GUI, the portable AppImage and the signed macOS
+  and Windows artifacts as later work, with the reason an AppImage cannot be the macOS or Windows one.
 - **ffmpeg/tesseract bundling**: both builds still expect them on the host and degrade with a message
   when absent. Bundling them into the release archive is a packaging change on the same binary.
 - **Transcoding**: off and not exposed (§5); the record has room for an alternative track.
