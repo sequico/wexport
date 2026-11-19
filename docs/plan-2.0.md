@@ -134,7 +134,7 @@ Copying it needs no decoder at all.
 | image thumbnail (JPEG/PNG/WebP in → 320 px) | `image` for decode, its resize, `jpeg-encoder` (or WebP lossless) for the output | ~1.0–1.5 MB |
 | video/audio duration and dimensions | an MP4 box parser and a small EBML reader, a few hundred lines; OGG for Opus | ~0.2 MB |
 | video poster | **the phone's thumbnail** (Android BLOB, iOS file); nothing when absent, the archive shows the placeholder it already has | 0 |
-| video poster when the phone stored none | `openh264` on the first keyframe — **H.264 only**, and see the patent note | ~1.5 MB |
+| video poster when the phone stored none | `openh264` on the first keyframe — **H.264 only** (decided, §9) | ~1.5 MB |
 | voice-note waveform | `opus` (libopus, BSD, royalty-free) + an OGG demuxer | ~0.6 MB |
 
 **Total: roughly 2–4 MB per platform** — a figure to be measured at M5, not a promise — with no
@@ -148,8 +148,9 @@ subprocess and no `ffmpeg` build. Two details decide whether it stays that small
   `rusqlite`'s bundled SQLite.
 
 **What changes in behaviour, stated plainly**
-- Posters come from the phone: smaller and softer than the 480 px we generate today, and absent for a
-  video whose thumbnail was never written (older media, some forwarded videos).
+- Posters come from the phone when it stored one: smaller and softer than the 480 px we generate
+  today. When it stored none (older media, some forwarded videos), the first frame is decoded with
+  `openh264`, so a video gets a poster either way.
 - **A media file that is not in the copy can still show its thumbnail.** Android keeps
   `message_thumbnail` and iOS keeps the thumbnail file even for media the phone later deleted or never
   downloaded, so the archive shows the picture with the "not copied" mark the record already carries
@@ -163,15 +164,12 @@ subprocess and no `ffmpeg` build. Two details decide whether it stays that small
   the chunk records and the golden chunk stay identical. The byte-identical rebuild test keeps its
   meaning, and 1.0 archives remain readable.
 
-**The one decision that is not technical, with the dates it depends on.** H.264's patent position is
-expiring, not eternal: most AVC patents have lapsed, the remaining ones run until about 2027 in the
-United States and 2030 for a single Brazilian patent, while Via LA still licenses the pool and still
-charges for it. Cisco's OpenH264 binaries are distributed with those royalties paid **for the binaries
-Cisco ships**; compiling the code into our own binary is our own distribution, and today that is a small
-and shrinking exposure rather than a large one. The decision is therefore made at M5 with the current
-facts, not frozen now: the cheap answer stays the same — ship the phone's thumbnails only and leave
-`openh264` out — and it is chosen for size and simplicity, not for fear of a royalty. It is recorded as
-an open decision (§9).
+**`openh264` is in.** A video always gets a poster: the phone's thumbnail when that exists, the first
+frame decoded with `openh264` when it does not. The licensing note is recorded here so nobody has to
+rediscover it — most AVC patents have lapsed, what remains runs to about 2027 in the United States and
+2030 for a single Brazilian patent, and Cisco's royalty payment covers Cisco's own prebuilt binaries,
+not a decoder compiled into ours. That is a small exposure, the tool is GPL-3.0-or-later and free, and
+the decision is taken: decode H.264.
 
 **What else changes in the repository at M5**, because the specification currently says the opposite of
 this plan: `docs/implementation-plan.md` §2 and §5 state that `ffmpeg` and `ffprobe` are required and
@@ -241,7 +239,7 @@ Rules that decide the awkward cases:
 | M2 | Source detection: `Source` enum, discovery for a backup directory and a bare `ChatStorage.sqlite` | every existing test passes; a fake iOS folder is recognised, a real Android one still builds |
 | M3 | `src/ios.rs`: chats, messages, senders, the 2001 epoch | unit tests cover every field and a renamed column |
 | M4 | iPhone media: paths in the app group, `ZTHUMBNAILLOCALPATH` posters, missing files | the iOS fixture builds an archive that passes the viewer contract |
-| M5 | **Media without `ffmpeg`**: image path, container metadata, phone thumbnails on Android, `libopus` waveform, the startup check removed | the whole suite passes on a machine with no `ffmpeg`; the Android golden chunk is unchanged |
+| M5 | **Media without `ffmpeg`**: image path, container metadata, phone thumbnails on Android, `openh264` poster when the phone stored none, `libopus` waveform, the startup check removed | the whole suite passes on a machine with no `ffmpeg`; the Android golden chunk is unchanged; a video with and one without a stored thumbnail both get a poster |
 | M6 | **Structured reporting**: `ui.rs` emits events (`found`, `chat_list`, `progress`, `warning`, `failure`, `finished`) and the CLI prints them, with the current output pinned by tests | the CLI's text and the archives are unchanged; this is also the GUI's prerequisite (§10.1) |
 | M7 | **The five flags**: `-j`, `-q`, `-d`, `-n`, `-c`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-c` reports a damaged database and a missing media file |
 | M8 | Docs (usage page for an unencrypted iPhone backup, README box, `-h`, requirements, the flag table), `CHANGELOG.md` 2.0 entry, validation on real backups, 2.0 tag | the three-command path works on both phones, on all three platforms |
@@ -260,8 +258,8 @@ Each milestone is committed and pushed on its own; the release gate runs once, b
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| **H.264 patent licensing for `openh264`** | with most AVC patents lapsed (US ~2027, one Brazilian to 2030) the exposure is small and shrinking, but the pool still licences and we would be the distributor | decide at M5 with the current facts; preferred: phone thumbnails only, `openh264` out for size and simplicity |
-| Phone thumbnails are small or missing | softer posters, some videos without one | measured on a real backup in M5; the placeholder already exists |
+| **H.264 patent licensing for `openh264`** | most AVC patents have lapsed (US ~2027, one Brazilian to 2030); the pool still licences, and we would be the distributor | **decided: in.** The note stays in §5 so the reasoning is not lost; no further decision needed |
+| Phone thumbnails are small or missing | softer posters where they exist; the decoder covers the rest | measured on a real backup in M5; `openh264` is the fallback |
 | Container parsing is not `ffmpeg` | odd files unreadable | per-file failure, never an aborted build; fixtures for MP4, WebM, OGG |
 | `libopus` is a C library | one more vendored dependency | BSD, royalty-free, built by `cc` in the crate; alternative is no waveform |
 | No macOS runner or a broken universal build | no macOS artifact | the CI job exists from M1; `lipo -info` verified before publishing |
