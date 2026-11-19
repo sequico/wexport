@@ -23,7 +23,7 @@ tell 2.0 from 1.0 except by the version number and the fact that the tool no lon
 
 | | 1.0 (shipped) | 2.0 |
 |---|---|---|
-| Interface | CLI | CLI: the same flags plus `-j`, `-q`, `-d`, `-n`, `-c`, `-i` (§6) |
+| Interface | CLI | CLI: the same flags plus `-j`, `-q`, `-d`, `-n`, `-c` (§6) |
 | Data sources | Android `crypt15`, 64-digit key | the same, **plus** iPhone local backups |
 | Platforms | Linux x86-64, Windows x86-64 | Linux x86-64, Windows x86-64, **macOS (universal)** |
 | Media | external `ffmpeg` + `ffprobe` on `PATH` | **in-process**: image crates, `openh264`, `libopus` |
@@ -190,17 +190,15 @@ Short flags only, one letter each, one flag per word — the rule the CLI has al
 | `-d` | diagnostics | what was probed and decided: the files found, the columns recognised, each media file placed, each one missing |
 | `-n` | dry run | the same work up to the point of writing: what would be built, how many messages and media files, how many missing, the estimated bytes from the source sizes |
 | `-c` | check | the source is verified: on Android the `crypt15` header and key type first, without the key, then — with the key, which it therefore needs — `PRAGMA integrity_check` on the decrypted database and the count of media present against media referenced; on an iPhone backup everything, since there is nothing to decrypt. It warns when an incremental is older than the full backup |
-| `-i` | incremental | a selected chat is skipped when its archive already holds the same message count, media count and last event, and no chunk is missing. The blind spot is named: an **edited message** or a **renamed chat** keeps all three, so `-i` does not see it — a build without `-i` is the exact one |
 
 Rules that decide the awkward cases:
 
-- `-n` and `-i` change a build, so they need `-b`: without it they are an error, exactly like `-o`.
+- `-n` changes a build, so it needs `-b`: without it it is an error, exactly like `-o`.
 - `-c` needs no `-b`: it checks the source and exits. With `-b` it checks first and then builds.
 - `-c` on an Android backup asks for the key exactly as a build does: the header can be read without
   it, the database cannot. On an iPhone backup it asks for nothing.
 - `-j` and `-q` compose: quiet silences the human chatter, JSON still prints. `-j` and `-d` compose too.
 - `-q` and `-d` say opposite things: together they are an error rather than one silently winning.
-- `-i` never touches a chat whose archive is absent, empty or has a missing chunk: it rebuilds it.
 - Every new flag is in `-h`, in the usage page's flag table and in the examples, and the exit codes do
   not change (`-c` and `-n` return `0..5` as the same situations do today).
 
@@ -241,7 +239,7 @@ Rules that decide the awkward cases:
 | M4 | iPhone media: paths in the app group, `ZTHUMBNAILLOCALPATH` posters, missing files | the iOS fixture builds an archive that passes the viewer contract |
 | M5 | **Media without `ffmpeg`**: image path, container metadata, phone thumbnails on Android, `libopus` waveform, the startup check removed | the whole suite passes on a machine with no `ffmpeg`; the Android golden chunk is unchanged |
 | M6 | **Structured reporting**: `ui.rs` emits events (`found`, `chat_list`, `progress`, `warning`, `failure`, `finished`) and the CLI prints them, with the current output pinned by tests | the CLI's text and the archives are unchanged; this is also the GUI's prerequisite (§10.1) |
-| M7 | **The six flags**: `-j`, `-q`, `-d`, `-n`, `-c`, `-i`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-i` skips an unchanged chat and rebuilds a damaged one |
+| M7 | **The five flags**: `-j`, `-q`, `-d`, `-n`, `-c`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-c` reports a damaged database and a missing media file |
 | M8 | Docs (usage page for an unencrypted iPhone backup, README box, `-h`, requirements, the flag table), `CHANGELOG.md` 2.0 entry, validation on real backups, 2.0 tag | the three-command path works on both phones, on all three platforms |
 
 **After the tag, the shipped docs are the authority.** `-h`, `docs/usage.md` (its flag table, the
@@ -266,7 +264,6 @@ Each milestone is committed and pushed on its own; the release gate runs once, b
 | Core Data schema differs between iOS versions | the adapter reads nothing, or the wrong column | probe the schema and fail naming the columns; a fixture per layout we can obtain |
 | Media in more than one place (`Message/Media`, `Library/Media`) | missing media | resolve both, test both |
 | No iPhone among the maintainers | untested code shipped | the real-backup run is a condition of the release |
-| `-i` cannot see an edit or a rename | a stale archive that looks current | stated in `-h` and the usage page: `-i` is for "same backup, more chats"; the exact build is the one without it |
 | The one-line identity ("Android, 64-digit key") | documentation contradicts itself | changed once, in M8 |
 
 ---
