@@ -244,11 +244,28 @@ Rules that decide the awkward cases:
 | M7 | **The five flags**: `-j`, `-q`, `-d`, `-n`, `-c`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-c` reports a damaged database and a missing media file |
 | M8 | Docs (usage page for an unencrypted iPhone backup, README box, `-h`, requirements, the flag table), `CHANGELOG.md` 2.0 entry, validation on real backups, 2.0 tag | the three-command path works on both phones, on all three platforms |
 
-**After the tag, the shipped docs are the authority.** `-h`, `docs/usage.md` (its flag table, the
-"what opens" table, the iPhone steps) and `README.md` describe 2.0; this plan stops being read, the way
-the 1.0 specification stopped being the description of what happens on a command line. Nothing in this
-document is copied into the shipped docs by hand: the tables are rebuilt there from the code and the
-help output, so a drift shows as a difference, not as two prose texts to compare.
+**The documentation alignment in M8 is every file, not the ones we remember.** A document that still
+describes 1.0 after the 2.0 tag is a defect, and it is fixed in M8, not reported:
+
+- `README.md` — the three assets in the install table, the key box ("Android needs the 64-digit key; an
+  iPhone needs an unencrypted local backup"), no `ffmpeg` in the requirements, the feature list.
+- `docs/usage.md` — the flag table with `-j -q -d -n -c`, the "what opens" table with the iPhone rows,
+  the iPhone steps (unencrypted local backup, where to find it, what to copy), the requirements without
+  `ffmpeg`, the troubleshooting table for the new messages.
+- `docs/implementation-plan.md` — §2's CLI surface, §5 without the `ffmpeg` requirement, §6/§7 packaging
+  for three platforms, the repository tree with `src/ios.rs` and the new fixtures.
+- `docs/android-backup-formats.md` — renamed or split so the title does not lie: it becomes the
+  container reference for both phones, with the iOS `ChatStorage.sqlite` and `Manifest.db` layout added.
+- `CHANGELOG.md` — the 2.0 entry, one line per change a user notices.
+- `-h` — the five flags, the requirements line without `ffmpeg`, the iPhone sentence.
+- `SECURITY.md` — the scope extended to the iOS parser, the thumbnails read from the database and the
+  two C libraries (`openh264`, `libopus`), which are parsing surfaces like everything else.
+- `.opencode/skills/wexport-implement/SKILL.md` — the module map and the fixture recipe.
+- `docs/plan-2.0.md` — **absorbed and deleted at the tag**: what is worth keeping moves into the
+  specification and the usage page, the way a TODO file leaves when its steps are done.
+
+Nothing is copied by hand: after the tag the authority is the code and `-h`, and the tables in the docs
+are rebuilt from them, so a drift shows up as a difference instead of two prose texts to compare.
 
 Each milestone is committed and pushed on its own; the release gate runs once, before the 2.0 tag.
 
