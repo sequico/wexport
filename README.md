@@ -42,8 +42,11 @@ SHA-256 beside it:
 
 | Platform | Asset | First run |
 |---|---|---|
-| Linux x86-64 | `wexport-linux-x86_64` | `chmod +x wexport-linux-x86_64 && ./wexport-linux-x86_64 <folder>` |
-| Windows x86-64 | `wexport-windows-x86_64.exe` | `wexport-windows-x86_64.exe <folder>` in `cmd` or PowerShell |
+| Linux x86-64 | `wexport-<version>-linux-x86_64.tar.gz` | `tar xzf wexport-<version>-linux-x86_64.tar.gz && ./wexport ~/Downloads/whatsapp-copy` |
+| Windows x86-64 | `wexport-<version>-windows-x86_64.zip` | unzip it, then `wexport.exe C:\Users\you\Downloads\whatsapp-copy` |
+
+Each archive holds one file, the binary itself: `wexport` on Linux, `wexport.exe` on Windows. The
+SHA-256 of each archive sits beside it in the release.
 
 Nothing else is installed. `ffmpeg` and `ffprobe` must be on `PATH`; when they are not, wexport stops
 at startup with the install command for the platform (`sudo apt install ffmpeg`, `sudo dnf install

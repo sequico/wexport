@@ -409,11 +409,14 @@ git tag -a v<version> -m "wexport <version>" && git push origin v<version>
 gh release create v<version> dist/* --title "wexport <version>" --notes-file <notes.md>
 ```
 
-`scripts/release.sh` refuses to run without the Windows target and linker, builds `--release --locked`
-for both platforms, checks that each file is what it claims (`ELF 64-bit`, `PE32+ executable`) and that
-the Linux binary reports the version in `Cargo.toml`, then writes `dist/wexport-linux-x86_64`,
-`dist/wexport-linux-x86_64.sha256`, `dist/wexport-windows-x86_64.exe` and its `.sha256`. The version
-comes from `Cargo.toml`; `CHANGELOG.md` loses its `Unreleased` heading in the same change.
+`scripts/release.sh` refuses to run without the Windows target and the `tar`/`zip` tools, builds
+`--release --locked` for both platforms, checks that each file is what it claims (`ELF 64-bit`,
+`PE32+ executable`) and that the Linux binary reports the version in `Cargo.toml`, then writes
+`dist/wexport-<version>-linux-x86_64.tar.gz` (holding `wexport`) and
+`dist/wexport-<version>-windows-x86_64.zip` (holding `wexport.exe`), each with its `.sha256`. It
+extracts both archives and compares the hash of the binary inside with the one it built, so a package
+that holds the wrong file cannot be published. The version comes from `Cargo.toml`; `CHANGELOG.md`
+loses its `Unreleased` heading in the same change.
 
 The Windows binary is built and inspected here but not executed: it runs on a Windows machine.
 
