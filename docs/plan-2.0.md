@@ -163,11 +163,15 @@ subprocess and no `ffmpeg` build. Two details decide whether it stays that small
   the chunk records and the golden chunk stay identical. The byte-identical rebuild test keeps its
   meaning, and 1.0 archives remain readable.
 
-**The one decision that is not technical.** Cisco's OpenH264 binaries are distributed with the MPEG-LA
-royalty paid by Cisco; **compiling that code into our own binary makes Sequi Company the distributor of
-an H.264 decoder**, with whatever the pool still covers. The cheap answer is to ship the phone's
-thumbnails only and leave `openh264` out; the complete answer needs a licensing decision before the
-cargo is added. It is recorded as a risk and an open decision (§9).
+**The one decision that is not technical, with the dates it depends on.** H.264's patent position is
+expiring, not eternal: most AVC patents have lapsed, the remaining ones run until about 2027 in the
+United States and 2030 for a single Brazilian patent, while Via LA still licenses the pool and still
+charges for it. Cisco's OpenH264 binaries are distributed with those royalties paid **for the binaries
+Cisco ships**; compiling the code into our own binary is our own distribution, and today that is a small
+and shrinking exposure rather than a large one. The decision is therefore made at M5 with the current
+facts, not frozen now: the cheap answer stays the same — ship the phone's thumbnails only and leave
+`openh264` out — and it is chosen for size and simplicity, not for fear of a royalty. It is recorded as
+an open decision (§9).
 
 **What else changes in the repository at M5**, because the specification currently says the opposite of
 this plan: `docs/implementation-plan.md` §2 and §5 state that `ffmpeg` and `ffprobe` are required and
@@ -256,7 +260,7 @@ Each milestone is committed and pushed on its own; the release gate runs once, b
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| **H.264 patent licensing for `openh264`** | Sequi Company becomes the distributor of a decoder | decide before adding it: ship phone thumbnails only, or accept the licence |
+| **H.264 patent licensing for `openh264`** | with most AVC patents lapsed (US ~2027, one Brazilian to 2030) the exposure is small and shrinking, but the pool still licences and we would be the distributor | decide at M5 with the current facts; preferred: phone thumbnails only, `openh264` out for size and simplicity |
 | Phone thumbnails are small or missing | softer posters, some videos without one | measured on a real backup in M5; the placeholder already exists |
 | Container parsing is not `ffmpeg` | odd files unreadable | per-file failure, never an aborted build; fixtures for MP4, WebM, OGG |
 | `libopus` is a C library | one more vendored dependency | BSD, royalty-free, built by `cc` in the crate; alternative is no waveform |
