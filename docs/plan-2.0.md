@@ -53,6 +53,20 @@ to survive a quarantined file, and this path has none.
 With `ffmpeg` gone there is **no external dependency at all**: nothing to install on the machine that
 builds an archive.
 
+**How the three artifacts are assembled.** `scripts/release.sh` builds the two Linux-side binaries
+locally (the Windows one with mingw) and takes the macOS pair from the workflow run, because macOS
+cannot be cross-built. The mechanism is named here so it is not improvised on the day:
+
+```sh
+gh run download <run-id> -n dist -D dist-macos   # the macOS job uploads dist/ as the artifact "dist"
+./scripts/release.sh --stage dist-macos          # stages all three, verifies, writes the .sha256 files
+```
+
+The script checks that each archive holds the binary it claims and that the inner binary hashes match
+what was built, and **refuses to produce a release without the macOS archive**, the way it already
+refuses without the Windows one. The run it stages from must be the one on the commit being tagged
+(`gh run list --commit <sha>`), not merely a green run.
+
 ---
 
 ## 3. iPhone: what can be opened
@@ -73,6 +87,16 @@ file to a domain and a path. WhatsApp's data lives in its app group
 
 The public message becomes: *Android needs the 64-digit key; an iPhone needs a local backup that is
 not encrypted.*
+
+**How the database is read.** `ChatStorage.sqlite` lives in the backup with its `-wal` and `-shm`
+beside it, and the newest messages are in the WAL, not in the main file. The backup is extracted with
+all three files together and opened read-only, so SQLite replays the log; a build that read only the
+main file would silently lose the last days of every conversation. The fixture has a WAL too, and a
+test asserts that a message written only to it is in the archive.
+
+**Backups written before iOS 10** keep their files at `domain-relativePath` instead of a hashed
+`fileID`; 2.0 does not read that layout and says so, naming what it found, rather than producing an
+empty archive.
 
 ---
 
@@ -113,12 +137,25 @@ Copying it needs no decoder at all.
 | video poster when the phone stored none | `openh264` on the first keyframe — **H.264 only**, and see the patent note | ~1.5 MB |
 | voice-note waveform | `opus` (libopus, BSD, royalty-free) + an OGG demuxer | ~0.6 MB |
 
-**Total: roughly 2–4 MB per platform**, no subprocess, no per-platform `ffmpeg` build, no GPL
-aggregation question — and the two binaries that today must be installed are gone.
+**Total: roughly 2–4 MB per platform** — a figure to be measured at M5, not a promise — with no
+subprocess and no `ffmpeg` build. Two details decide whether it stays that small:
+
+- WebP is read with the pure-Rust `image-webp` decoder, not with `libwebp`; the archive's own
+  thumbnails are written as JPEG, so an encoder is one small dependency, not a C one.
+- `libopus` and `openh264` are C: each platform needs a C compiler for its target, which the build
+  already has (`gcc-mingw-w64` for Windows, the Xcode command-line tools on the macOS runner). It is
+  **not** an `ffmpeg` build for three platforms — it is `cc` doing what it already does for
+  `rusqlite`'s bundled SQLite.
 
 **What changes in behaviour, stated plainly**
 - Posters come from the phone: smaller and softer than the 480 px we generate today, and absent for a
   video whose thumbnail was never written (older media, some forwarded videos).
+- **A media file that is not in the copy can still show its thumbnail.** Android keeps
+  `message_thumbnail` and iOS keeps the thumbnail file even for media the phone later deleted or never
+  downloaded, so the archive shows the picture with the "not copied" mark the record already carries
+  (`mi`), instead of an empty placeholder. With no file there is no source hash to name it by, so such
+  a thumbnail is named by the SHA-256 of its own bytes — the same content-addressed rule, applied to
+  the only content there is. One test pins it.
 - A file `ffmpeg` would have salvaged (a broken container, an exotic codec) now fails: the existing
   per-file failure path reports it and the archive continues.
 - WebP output disappears in favour of JPEG unless the `image` encoder is used; the viewer shows either.
@@ -132,6 +169,14 @@ an H.264 decoder**, with whatever the pool still covers. The cheap answer is to 
 thumbnails only and leave `openh264` out; the complete answer needs a licensing decision before the
 cargo is added. It is recorded as a risk and an open decision (§9).
 
+**What else changes in the repository at M5**, because the specification currently says the opposite of
+this plan: `docs/implementation-plan.md` §2 and §5 state that `ffmpeg` and `ffprobe` are required and
+that the startup gate refuses to run without them. M5 amends those paragraphs, the README's
+requirements, the `-h` requirements line, and deletes `discover::require_binaries`; the only optional
+external tool left is `tesseract`, for a screenshot key, and it is already checked where the image is
+read. Until M5 lands, the 1.0 statement is the true one — no document is edited ahead of the code that
+makes it true.
+
 ---
 
 ## 6. New flags
@@ -144,13 +189,15 @@ Short flags only, one letter each, one flag per word — the rule the CLI has al
 | `-q` | quiet | nothing on success; errors still reach stderr and the exit code still carries the result |
 | `-d` | diagnostics | what was probed and decided: the files found, the columns recognised, each media file placed, each one missing |
 | `-n` | dry run | the same work up to the point of writing: what would be built, how many messages and media files, how many missing, the estimated bytes from the source sizes |
-| `-c` | check | the source is verified and nothing is built: the `crypt15` header and key type, `PRAGMA integrity_check` on the decrypted database, media present against media referenced, and a warning when an incremental is older than the full backup |
-| `-i` | incremental | a selected chat is skipped when its archive already holds the same message count and the same last event, and no chunk is missing |
+| `-c` | check | the source is verified: on Android the `crypt15` header and key type first, without the key, then — with the key, which it therefore needs — `PRAGMA integrity_check` on the decrypted database and the count of media present against media referenced; on an iPhone backup everything, since there is nothing to decrypt. It warns when an incremental is older than the full backup |
+| `-i` | incremental | a selected chat is skipped when its archive already holds the same message count, media count and last event, and no chunk is missing. The blind spot is named: an **edited message** or a **renamed chat** keeps all three, so `-i` does not see it — a build without `-i` is the exact one |
 
 Rules that decide the awkward cases:
 
 - `-n` and `-i` change a build, so they need `-b`: without it they are an error, exactly like `-o`.
 - `-c` needs no `-b`: it checks the source and exits. With `-b` it checks first and then builds.
+- `-c` on an Android backup asks for the key exactly as a build does: the header can be read without
+  it, the database cannot. On an iPhone backup it asks for nothing.
 - `-j` and `-q` compose: quiet silences the human chatter, JSON still prints. `-j` and `-d` compose too.
 - `-q` and `-d` say opposite things: together they are an error rather than one silently winning.
 - `-i` never touches a chat whose archive is absent, empty or has a missing chunk: it rebuilds it.
@@ -174,7 +221,13 @@ Rules that decide the awkward cases:
   fixture; on macOS also `lipo -info` and `codesign -dv`. Plus the point of the whole change: the
   build runs on a machine with **no `ffmpeg` on `PATH`**, asserted in CI by removing it before the
   test run.
-- The gates do not change: `scripts/gate.sh` on a push, `scripts/gate-release.sh` before a tag.
+- **The gate runs on macOS too**, not only the artifact check: the same `scripts/gate.sh` on the
+  `macos-14` runner, at least on every push to `main`. The suite has filesystem assumptions that APFS
+  treats differently — `temp_dir()` resolves through `/private`, names are compared case-insensitively,
+  and the media tests read inodes — so a green Ubuntu tree is not evidence for a green Mac one. A
+  failure there is fixed in the code, not excluded from the run.
+- The gates do not change: `scripts/gate.sh` on a push, `scripts/gate-release.sh` before a tag, with
+  the macOS leg added to both.
 
 ---
 
@@ -187,8 +240,15 @@ Rules that decide the awkward cases:
 | M3 | `src/ios.rs`: chats, messages, senders, the 2001 epoch | unit tests cover every field and a renamed column |
 | M4 | iPhone media: paths in the app group, `ZTHUMBNAILLOCALPATH` posters, missing files | the iOS fixture builds an archive that passes the viewer contract |
 | M5 | **Media without `ffmpeg`**: image path, container metadata, phone thumbnails on Android, `libopus` waveform, the startup check removed | the whole suite passes on a machine with no `ffmpeg`; the Android golden chunk is unchanged |
-| M6 | **The six flags**: `-j`, `-q`, `-d`, `-n`, `-c`, `-i`, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-i` skips an unchanged chat and rebuilds a damaged one |
-| M7 | Docs (usage page for an unencrypted iPhone backup, README box, `-h`, requirements, the flag table), validation on real backups, 2.0 tag | the three-command path works on both phones, on all three platforms |
+| M6 | **Structured reporting**: `ui.rs` emits events (`found`, `chat_list`, `progress`, `warning`, `failure`, `finished`) and the CLI prints them, with the current output pinned by tests | the CLI's text and the archives are unchanged; this is also the GUI's prerequisite (§10.1) |
+| M7 | **The six flags**: `-j`, `-q`, `-d`, `-n`, `-c`, `-i`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-i` skips an unchanged chat and rebuilds a damaged one |
+| M8 | Docs (usage page for an unencrypted iPhone backup, README box, `-h`, requirements, the flag table), `CHANGELOG.md` 2.0 entry, validation on real backups, 2.0 tag | the three-command path works on both phones, on all three platforms |
+
+**After the tag, the shipped docs are the authority.** `-h`, `docs/usage.md` (its flag table, the
+"what opens" table, the iPhone steps) and `README.md` describe 2.0; this plan stops being read, the way
+the 1.0 specification stopped being the description of what happens on a command line. Nothing in this
+document is copied into the shipped docs by hand: the tables are rebuilt there from the code and the
+help output, so a drift shows as a difference, not as two prose texts to compare.
 
 Each milestone is committed and pushed on its own; the release gate runs once, before the 2.0 tag.
 
@@ -206,7 +266,8 @@ Each milestone is committed and pushed on its own; the release gate runs once, b
 | Core Data schema differs between iOS versions | the adapter reads nothing, or the wrong column | probe the schema and fail naming the columns; a fixture per layout we can obtain |
 | Media in more than one place (`Message/Media`, `Library/Media`) | missing media | resolve both, test both |
 | No iPhone among the maintainers | untested code shipped | the real-backup run is a condition of the release |
-| The one-line identity ("Android, 64-digit key") | documentation contradicts itself | changed once, in M6 |
+| `-i` cannot see an edit or a rename | a stale archive that looks current | stated in `-h` and the usage page: `-i` is for "same backup, more chats"; the exact build is the one without it |
+| The one-line identity ("Android, 64-digit key") | documentation contradicts itself | changed once, in M8 |
 
 ---
 
