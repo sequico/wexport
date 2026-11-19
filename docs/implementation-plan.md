@@ -139,7 +139,7 @@ wexport/
 │   ├── implementation-plan.md   # this file
 │   ├── android-backup-formats.md
 │   ├── usage.md
-│   ├── plan-2.0.md              # iPhone backups for 2.0, and the GUI as later work
+│   ├── plan-2.0.md              # 2.0: iPhone added to Android, a macOS binary, still CLI only
 │   └── figures/                 # the phone screens usage.md shows
 ├── .github/
 │   ├── workflows/gate.yml       # the push gate on every pull request and push to main
@@ -523,9 +523,9 @@ No decision is open.
 
 ## 12. Later, deliberately not now
 
-- **iPhone backups, then the graphical application**: [`plan-2.0.md`](plan-2.0.md) is 2.0 — iPhone
-  backups with the CLI unchanged — and records the GUI, the portable AppImage and the signed macOS
-  and Windows artifacts as later work, with the reason an AppImage cannot be the macOS or Windows one.
+- **2.0: iPhone beside Android, and a macOS binary**: [`plan-2.0.md`](plan-2.0.md). The graphical
+  application, the AppImage and the signed `.dmg` are recorded there as later work, with the reason an
+  AppImage cannot be the macOS or Windows artifact.
 - **ffmpeg/tesseract bundling**: both builds still expect them on the host and degrade with a message
   when absent. Bundling them into the release archive is a packaging change on the same binary.
 - **Transcoding**: off and not exposed (§5); the record has room for an alternative track.
