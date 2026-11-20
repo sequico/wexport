@@ -202,7 +202,7 @@ directory. Inside it, the backup is found wherever the copy put it.
 | `-j` | — | JSON lines on stdout: `found`, `chat_list`, `progress`, `diagnostic` (with `-d`), `warning`, `failure`, `finished`; errors stay on stderr |
 | `-q` | — | no progress and no summary; a list or the JSON still prints |
 | `-d` | — | diagnostics: the files found, the columns recognised, every media file placed or missing |
-| `-n` | — | dry run: report what `-b` would build and write nothing; needs `-b` |
+| `-n` | — | dry run: report what `-b` would build and write nothing; needs `-b`. It does not count the files that are missing: `-c` does, and the `finished` event carries `missing: null` |
 | `-c` | — | check the source and exit; with `-b`, check and then build |
 
 The rules that decide most mistakes:

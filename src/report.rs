@@ -44,7 +44,8 @@ pub struct Finished {
     pub skipped: usize,
     pub messages: usize,
     pub media: usize,
-    pub missing: usize,
+    /// Media the built chats name but the copy does not hold; `None` when the run did not look.
+    pub missing: Option<usize>,
     pub failures: usize,
     pub bytes: u64,
     pub path: String,
@@ -218,7 +219,7 @@ mod tests {
                 skipped: 0,
                 messages: 4,
                 media: 2,
-                missing: 1,
+                missing: Some(1),
                 failures: 0,
                 bytes: 100,
                 path: "/tmp/out".into(),
@@ -249,6 +250,18 @@ mod tests {
         let finished = event_value(&events[6]);
         assert_eq!(finished["seconds"], 1.25);
         assert_eq!(finished["missing"], 1);
+    }
+
+    #[test]
+    fn a_finished_event_without_a_missing_count_says_null() {
+        let value = event_value(&Event::Finished(Finished {
+            archives: 1,
+            ..Finished::default()
+        }));
+        assert!(
+            value["missing"].is_null(),
+            "a dry run did not count the missing files"
+        );
     }
 
     #[test]

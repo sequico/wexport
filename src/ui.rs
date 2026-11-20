@@ -165,17 +165,14 @@ pub fn run(args: &[String]) -> Result<i32> {
     }
 
     if options.dry_run {
-        let (present, referenced) = store.media_counts()?;
         let messages: i64 = selected.iter().map(|stat| stat.messages).sum();
         let media: i64 = selected.iter().map(|stat| stat.media_count).sum();
         let bytes: i64 = selected.iter().map(|stat| stat.media_bytes).sum();
-        let missing = (referenced - present).max(0);
         report.info(format!(
-            "would build  {} chat(s), {} message(s), {} media file(s), {} not in the copy, about {}",
+            "would build  {} chat(s), {} message(s), {} media file(s), about {}; -c counts the files that are not in the copy",
             selected.len(),
             messages,
             media,
-            missing,
             human_bytes(bytes.max(0) as u64)
         ));
         report.emit(Event::Finished(Finished {
@@ -183,7 +180,7 @@ pub fn run(args: &[String]) -> Result<i32> {
             skipped: 0,
             messages: messages.max(0) as usize,
             media: media.max(0) as usize,
-            missing: missing as usize,
+            missing: None,
             failures: 0,
             bytes: bytes.max(0) as u64,
             path: out_root.display().to_string(),
@@ -276,7 +273,7 @@ pub fn run(args: &[String]) -> Result<i32> {
         skipped,
         messages,
         media,
-        missing,
+        missing: Some(missing),
         failures,
         bytes,
         path: out_root.display().to_string(),
