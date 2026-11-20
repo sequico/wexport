@@ -122,6 +122,9 @@ discover  ──►  Source::Android(Inputs)  ──►  msgstore (existing)  �
   `Chat`/`ChatStat`/`Message`.
 - **Media**: relative paths inside the backup; content-addressed placement, thumbnails and waveforms
   apply as they are (§5).
+- **Names**: a chat's title comes from the session row and a group's senders are resolved through the
+  membership table; a contact the database holds no name for is shown by its JID, which is what the
+  phone shows too. The address book is not read.
 - **Time**: Core Data counts seconds since 2001-01-01; one conversion in `ios.rs`, pinned by tests on a
   winter and a summer date.
 - **CLI**: every existing flag keeps its meaning; the five new ones are in §6. `-k` stays the Android
@@ -131,10 +134,10 @@ discover  ──►  Source::Android(Inputs)  ──►  msgstore (existing)  �
 
 ## 5. Media without `ffmpeg`
 
-The insight that makes this small: **the phone already stores the poster.** Android `msgstore.db` has
+The insight that makes this small: **the phone already stores the thumbnail.** Android `msgstore.db` has
 `message_thumbnail(message_row_id, thumbnail BLOB)` — the preview WhatsApp shows in the chat list, kept
 even for View Once media. iOS has `ZWAMEDIAITEM.ZTHUMBNAILLOCALPATH`, a path to the thumbnail file.
-Copying it needs no decoder at all.
+Using it as the poster needs no decoder at all.
 
 | Work | How | Weight |
 |---|---|---|
@@ -157,6 +160,10 @@ Two details decide whether it stays that small:
 **What changes in behaviour, stated plainly**
 - Posters come from the phone when it stored one: smaller and softer than the 480 px poster 1.0
   generates, because they are the preview WhatsApp itself shows in the chat list.
+- **The stored thumbnail is fitted, not stretched.** An image is still sized by the media's own `w` and
+  `h` — the record does not change — and the viewer fits the thumbnail inside that box
+  (`object-fit: contain`), so a thumbnail whose shape differs from the media keeps its proportions
+  instead of being distorted to fit.
 - When the phone stored none, the first frame is decoded. That works for H.264; a video in HEVC or
   another codec keeps the placeholder, because `openh264` decodes H.264 only.
 - **A video with no poster is not a media failure.** The file is copied and the record is complete; the
@@ -212,8 +219,13 @@ Rules that decide the awkward cases:
 - `-c` exits `0` when the source is sound, `4` when the build would be incomplete (a media file
   missing, an incremental behind the full backup), and `1`, `2`, `3` as a build does for an unreadable
   source, a wrong key and a wrong backup type.
+- On a bare `ChatStorage.sqlite` there is no `Manifest.db`, so `-c` checks the database and says the
+  media check was not possible, instead of counting every media file as missing.
 - `-j` and `-q` compose: quiet silences the human chatter, JSON still prints. `-j` and `-d` compose too,
   the diagnostics becoming events of the same stream.
+- `-j`'s **fields**, not only its event names, are the contract: one set of keys per event, shared by
+  the emitter and the tests, listed in the usage page. A field may be added later; none is renamed,
+  because a script reads it.
 - `-q` and `-d` say opposite things: together they are an error rather than one silently winning.
 - Every new flag is in `-h`, in the usage page's flag table and in the examples. No exit code is added:
   `-c` and `-n` use `0..5` for the same situations a build does.
@@ -257,7 +269,7 @@ Rules that decide the awkward cases:
 | M1 | **macOS artifact**: `macos-14` job, two targets + `lipo`, `release.sh --stage` gains the third archive | the archive is extracted and run on the macOS runner: `wexport -v`, `lipo -info`, `codesign -dv`, one chat built |
 | M2 | Source detection: `Source` enum, discovery for a backup directory and a bare `ChatStorage.sqlite` | every existing test passes; a fake iOS folder is recognised, a real Android one still builds, an encrypted backup is refused by name (exit `3`), two device folders in one path are listed and refused without a terminal (exit `1`) |
 | M3 | `src/ios.rs`: chats, messages, senders, the 2001 epoch | unit tests cover every field and a renamed column |
-| M4 | iPhone media: paths in the app group, `ZTHUMBNAILLOCALPATH` posters, missing files | the iOS fixture builds an archive that passes the viewer contract |
+| M4 | iPhone media: paths in the app group, `ZTHUMBNAILLOCALPATH` posters, missing files | the iOS fixture builds an archive that passes the viewer contract, and a thumbnail whose shape differs from its media is fitted, not stretched |
 | M5 | **Media without `ffmpeg`**: image path (JPEG out), container metadata, phone thumbnails on both phones, `openh264` poster when the phone stored none, `libopus` waveform, the startup check removed | the suite passes with no `ffmpeg` on `PATH`; the golden chunk moves once by the thumbnail extension and the diff is read; an H.264 video with and one without a stored thumbnail both get a poster, an HEVC one without keeps the placeholder and still exits `0` |
 | M6 | **Structured reporting**: `ui.rs` emits events (`found`, `chat_list`, `progress`, `warning`, `failure`, `finished`) and the CLI prints them, with the current output pinned by tests | the CLI's text and the archives are unchanged; this is also the GUI's prerequisite (§10.1) |
 | M7 | **The five flags**: `-j`, `-q`, `-d`, `-n`, `-c`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-q` with `-d` is refused, `-c` reports a damaged database and a missing media file |
@@ -306,6 +318,7 @@ Each milestone is committed and pushed on its own; the release gate runs once, b
 | The Windows `.zip` is only cross-built | a package that links and does not start | extracted and run on `windows-2022` before publishing |
 | Core Data schema differs between iOS versions | the adapter reads nothing, or the wrong column | probe the schema and fail naming the columns; a fixture for each layout that matters |
 | Media in more than one place (`Message/Media`, `Library/Media`) | missing media | resolve both, test both |
+| iOS edits, reactions and deletions have no documented shape | a message shows its stored body, and the edit, the reaction or the deletion is left out | probed like any other column; the fixture carries all three, so the adapter is built against a target and fails naming any column it cannot find |
 | The product's one-line identity ("Android, 64-digit key") | it describes only half of what opens | rewritten once, in M8 |
 
 ---
