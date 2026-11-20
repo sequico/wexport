@@ -23,5 +23,3 @@ pub mod progress;
 pub mod report;
 pub mod source;
 pub mod ui;
-
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
