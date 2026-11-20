@@ -13,6 +13,9 @@
 # (built by tests/fixtures/synthetic/build.py)
 !tests/fixtures/synthetic/phone/Databases/msgstore.db.crypt15
 !tests/fixtures/synthetic/phone/Backups/wa.db.crypt15
+# …and the iPhone fixture (built by tests/fixtures/synthetic/ios/build.py)
+!tests/fixtures/synthetic/ios/backup/Manifest.db
+!tests/fixtures/synthetic/ios/backup/*/
 
 # Editors and OS
 .idea/
@@ -24,6 +27,7 @@
 
 # Release artifacts: built by scripts/release.sh, uploaded to the release, never committed
 /dist/
+/dist-macos/
 
 # Mutation testing output
 mutants.out/

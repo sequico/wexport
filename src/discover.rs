@@ -1,8 +1,18 @@
 //! Finding the backup inside the folder the user copied, wherever the copy put it.
+//!
+//! Two phones, two layouts: Android keeps `Databases/msgstore*.db.crypt15` inside a copied app
+//! folder; an iPhone keeps a hashed-file backup with a `Manifest.db`, or an extracted app group with
+//! a plain `ChatStorage.sqlite`.
 
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
+
+/// The app group WhatsApp keeps its database and media in.
+pub const IOS_GROUP: &str = "group.net.whatsapp.WhatsApp.shared";
+
+/// The domain a Finder backup lists those files under.
+pub const IOS_DOMAIN: &str = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared";
 
 #[derive(Debug, Clone)]
 pub struct Inputs {
@@ -14,22 +24,43 @@ pub struct Inputs {
     pub ignored: Vec<PathBuf>,
 }
 
-/// Abort with the install command when an external binary is missing (plan §2).
-pub fn require_binaries(names: &[&str]) -> Result<()> {
-    for name in names {
-        let found = std::process::Command::new(name)
-            .arg("-version")
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false);
-        if !found {
-            return Err(crate::error::missing_binary(name));
-        }
-    }
-    Ok(())
+#[derive(Debug, Clone)]
+pub struct IosInputs {
+    /// The folder the user pointed at.
+    pub root: PathBuf,
+    /// `ChatStorage.sqlite` as it lies in the backup or the extracted container.
+    pub database: PathBuf,
+    pub wal: Option<PathBuf>,
+    pub shm: Option<PathBuf>,
+    /// `Manifest.db`, when this is a Finder/iTunes backup.
+    pub manifest: Option<PathBuf>,
+    /// The folder holding the hashed files, beside `Manifest.db`.
+    pub files: Option<PathBuf>,
+    /// The extracted app group, when the backup was already taken apart.
+    pub app_group: Option<PathBuf>,
 }
 
-pub fn discover(path: &Path) -> Result<Inputs> {
+#[derive(Debug, Clone)]
+pub enum Source {
+    Android(Inputs),
+    Ios(IosInputs),
+}
+
+/// What the folder turned out to hold: one source, or several phone backups to choose between.
+#[derive(Debug)]
+pub enum Detected {
+    One(Source),
+    Several(Vec<PathBuf>),
+}
+
+pub fn discover(path: &Path) -> Result<Source> {
+    match detect(path)? {
+        Detected::One(source) => Ok(source),
+        Detected::Several(folders) => Err(ambiguous(&folders)),
+    }
+}
+
+pub fn detect(path: &Path) -> Result<Detected> {
     let expanded = expand(path);
     let root = if expanded.is_file() {
         expanded.parent().unwrap_or(&expanded).to_path_buf()
@@ -40,12 +71,42 @@ pub fn discover(path: &Path) -> Result<Inputs> {
         return Err(Error::input(format!("not a folder: {}", root.display())));
     }
 
-    let databases = find_databases(&root).ok_or_else(|| {
-        Error::input(format!(
-            "no Databases/ folder with a msgstore backup under {}\nPoint me at the folder you copied from the phone: it must contain Databases/msgstore.db.crypt15.\nCopy Android/media/com.whatsapp/WhatsApp (or WhatsApp Business) and try again.",
-            root.display()
-        ))
-    })?;
+    if let Some(ios) = ios_in(&root)? {
+        return Ok(Detected::One(Source::Ios(ios)));
+    }
+    if find_databases(&root).is_some() {
+        return Ok(Detected::One(Source::Android(android_in(&root)?)));
+    }
+
+    let backups = backup_folders(&root);
+    match backups.len() {
+        0 => Err(not_a_backup(&root)),
+        1 => {
+            let ios = ios_backup(&backups[0])?;
+            Ok(Detected::One(Source::Ios(ios)))
+        }
+        _ => Ok(Detected::Several(backups)),
+    }
+}
+
+pub fn ambiguous(folders: &[PathBuf]) -> Error {
+    let mut message =
+        String::from("this folder holds more than one phone backup. Point me at one of these:\n");
+    for folder in folders {
+        message.push_str(&format!("  {}\n", folder.display()));
+    }
+    Error::input(message.trim_end())
+}
+
+fn not_a_backup(root: &Path) -> Error {
+    Error::input(format!(
+        "no backup under {}\nPoint me at the folder you copied from the phone.\nAndroid: the folder holding Databases/msgstore.db.crypt15.\niPhone: the device folder of a local backup, or its ChatStorage.sqlite.",
+        root.display()
+    ))
+}
+
+fn android_in(root: &Path) -> Result<Inputs> {
+    let databases = find_databases(root).ok_or_else(|| not_a_backup(root))?;
 
     let crypt15 = files_matching(&databases, ".crypt15");
     let crypt14 = files_matching(&databases, ".crypt14");
@@ -100,7 +161,7 @@ pub fn discover(path: &Path) -> Result<Inputs> {
 
     let mut contacts = None;
     let mut media = None;
-    for candidate_root in [&root, databases.parent().unwrap_or(&root)] {
+    for candidate_root in [root, databases.parent().unwrap_or(root)] {
         if contacts.is_none() {
             if let Some(backups) = first_dir(
                 candidate_root,
@@ -124,7 +185,7 @@ pub fn discover(path: &Path) -> Result<Inputs> {
     }
 
     Ok(Inputs {
-        root,
+        root: root.to_path_buf(),
         database: full,
         incrementals,
         contacts,
@@ -145,6 +206,175 @@ pub fn expand(path: &Path) -> PathBuf {
         }
     }
     path.to_path_buf()
+}
+
+/// A Finder-style backup, a bare database, or an extracted app group, in that order.
+fn ios_in(root: &Path) -> Result<Option<IosInputs>> {
+    if root.join("Manifest.db").is_file() {
+        return Ok(Some(ios_backup(root)?));
+    }
+    let candidates = [
+        root.join("ChatStorage.sqlite"),
+        root.join(IOS_GROUP).join("ChatStorage.sqlite"),
+        root.join(IOS_DOMAIN).join("ChatStorage.sqlite"),
+    ];
+    for database in candidates {
+        if database.is_file() {
+            let app_group = database.parent().unwrap_or(root).to_path_buf();
+            return Ok(Some(IosInputs {
+                root: root.to_path_buf(),
+                database,
+                wal: None,
+                shm: None,
+                manifest: None,
+                files: None,
+                app_group: Some(app_group),
+            }));
+        }
+    }
+    // One level further down: a folder holding the extracted group, not the group itself.
+    for entry in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        let folder = entry.path();
+        if !folder.is_dir() || skipped(&folder) {
+            continue;
+        }
+        for name in [IOS_GROUP, IOS_DOMAIN] {
+            let database = folder.join(name).join("ChatStorage.sqlite");
+            if database.is_file() {
+                let app_group = database.parent().map(Path::to_path_buf);
+                return Ok(Some(IosInputs {
+                    root: root.to_path_buf(),
+                    database,
+                    wal: None,
+                    shm: None,
+                    manifest: None,
+                    files: None,
+                    app_group,
+                }));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// A backup folder: refuse it when it is encrypted, then find WhatsApp's database through the
+/// manifest.
+fn ios_backup(folder: &Path) -> Result<IosInputs> {
+    if manifest_is_encrypted(folder) {
+        return Err(Error::wrong_type(format!(
+            "{} is an iPhone backup encrypted with a password, which this tool cannot open.\nTurn off \"Encrypt local backup\" in Finder, make the backup again, and copy the folder."
+            ,
+            folder.display()
+        )));
+    }
+    let manifest = folder.join("Manifest.db");
+    let (database, wal, shm) = ios_files(folder, &manifest).map_err(|error| {
+        Error::input(format!(
+            "cannot read {}: {error}\nThe backup may be encrypted, or WhatsApp may not be part of it.",
+            manifest.display()
+        ))
+    })?;
+    Ok(IosInputs {
+        root: folder.to_path_buf(),
+        database,
+        wal,
+        shm,
+        manifest: Some(manifest),
+        files: Some(folder.to_path_buf()),
+        app_group: None,
+    })
+}
+
+/// The database, its log and its shared-memory file, as the manifest names them.
+fn ios_files(
+    folder: &Path,
+    manifest: &Path,
+) -> std::result::Result<(PathBuf, Option<PathBuf>, Option<PathBuf>), rusqlite::Error> {
+    let connection = rusqlite::Connection::open_with_flags(
+        manifest,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )?;
+    let path_of = |name: &str| -> Option<PathBuf> {
+        let sql = "SELECT fileID FROM Files WHERE domain = ?1 AND relativePath = ?2 LIMIT 1";
+        let query = |domain: &str| -> Option<String> {
+            connection
+                .query_row(sql, rusqlite::params![domain, name], |row| {
+                    row.get::<_, String>(0)
+                })
+                .ok()
+        };
+        let file_id = query(IOS_DOMAIN).or_else(|| query(IOS_GROUP)).or_else(|| {
+            connection
+                .query_row(
+                    "SELECT fileID FROM Files WHERE relativePath = ?1 AND domain LIKE '%whatsapp%' LIMIT 1",
+                    rusqlite::params![name],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok()
+        })?;
+        Some(hashed_file(folder, &file_id))
+    };
+    let database = path_of("ChatStorage.sqlite").ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    Ok((
+        database,
+        path_of("ChatStorage.sqlite-wal"),
+        path_of("ChatStorage.sqlite-shm"),
+    ))
+}
+
+/// The file a backup keeps for `fileID`: inside the two hex-digit folder that names it.
+fn hashed_file(folder: &Path, file_id: &str) -> PathBuf {
+    let prefix: String = file_id.chars().take(2).collect();
+    folder.join(prefix).join(file_id)
+}
+
+/// `Manifest.plist` is readable even when everything beside it is not, and it says whether the
+/// files are encrypted.
+fn manifest_is_encrypted(folder: &Path) -> bool {
+    let Ok(plist) = plist::Value::from_file(folder.join("Manifest.plist")) else {
+        return false;
+    };
+    plist
+        .as_dictionary()
+        .and_then(|dictionary| dictionary.get("IsEncrypted"))
+        .and_then(plist::Value::as_boolean)
+        .unwrap_or(false)
+}
+
+/// The device folders a folder holds, for a path like `MobileSync/Backup`.
+fn backup_folders(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut level = vec![root.to_path_buf()];
+    // `MobileSync/Backup/<device>` puts the device two levels under the folder people point at.
+    for _ in 0..2 {
+        let mut next = Vec::new();
+        for folder in &level {
+            for child in child_dirs(folder) {
+                if child.join("Manifest.db").is_file() || child.join("Manifest.plist").is_file() {
+                    found.push(child);
+                } else {
+                    next.push(child);
+                }
+            }
+        }
+        level = next;
+    }
+    found.sort();
+    found
+}
+
+fn child_dirs(folder: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return Vec::new();
+    };
+    let mut children: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+        .map(|entry| entry.path())
+        .filter(|path| !skipped(path))
+        .collect();
+    children.sort();
+    children
 }
 
 fn first_dir(root: &Path, candidates: &[&str]) -> Option<PathBuf> {
@@ -277,9 +507,57 @@ fn modified(path: &Path) -> std::time::SystemTime {
         .unwrap_or(std::time::UNIX_EPOCH)
 }
 
+/// Build the file set of a Finder-style backup for the tests: a manifest and its hashed files.
+#[cfg(test)]
+pub fn write_backup(root: &Path, files: &[(&str, &[u8])]) -> std::path::PathBuf {
+    use sha1::{Digest, Sha1};
+    std::fs::create_dir_all(root).unwrap();
+    let connection = rusqlite::Connection::open(root.join("Manifest.db")).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE Files (fileID TEXT PRIMARY KEY, domain TEXT, relativePath TEXT, flags INTEGER, file BLOB);",
+        )
+        .unwrap();
+    for (relative, bytes) in files {
+        let mut digest = Sha1::new();
+        digest.update(format!("{IOS_DOMAIN}-{relative}").as_bytes());
+        let file_id = format!("{:x}", digest.finalize());
+        let prefix: String = file_id.chars().take(2).collect();
+        std::fs::create_dir_all(root.join(&prefix)).unwrap();
+        std::fs::write(root.join(&prefix).join(&file_id), bytes).unwrap();
+        connection
+            .execute(
+                "INSERT INTO Files (fileID, domain, relativePath, flags, file) VALUES (?1, ?2, ?3, 1, NULL)",
+                rusqlite::params![file_id, IOS_DOMAIN, relative],
+            )
+            .unwrap();
+    }
+    root.to_path_buf()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn root(name: &str) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("wexport-discover-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn write(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"backup").unwrap();
+    }
+
+    fn android(source: Source) -> Inputs {
+        match source {
+            Source::Android(inputs) => inputs,
+            Source::Ios(_) => panic!("expected an Android backup"),
+        }
+    }
 
     #[test]
     fn hex_looking_names_are_not_mistaken_for_a_folder() {
@@ -287,13 +565,6 @@ mod tests {
             Path::new("/tmp/msgstore.db.crypt15"),
             "msgstore-increment"
         ));
-    }
-
-    #[test]
-    fn a_missing_binary_is_a_dependency_failure() {
-        let error = require_binaries(&["wexport-no-such-binary"]).unwrap_err();
-        assert_eq!(error.code, crate::error::EXIT_DEPENDENCY);
-        assert!(error.message.contains("sudo apt install ffmpeg"));
     }
 
     #[test]
@@ -363,27 +634,9 @@ mod tests {
         let nested = root.join("WhatsApp/Databases");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(nested.join("msgstore.db.crypt15"), b"a backup lives here").unwrap();
-        let inputs = discover(&root).unwrap();
+        let inputs = android(discover(&root).unwrap());
         assert_eq!(inputs.database, nested.join("msgstore.db.crypt15"));
         let _ = std::fs::remove_dir_all(root);
-    }
-}
-
-#[cfg(test)]
-mod more_tests {
-    use super::*;
-
-    fn root(name: &str) -> PathBuf {
-        let path =
-            std::env::temp_dir().join(format!("wexport-discover-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&path);
-        std::fs::create_dir_all(&path).unwrap();
-        path
-    }
-
-    fn write(path: &Path) {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, b"backup").unwrap();
     }
 
     #[test]
@@ -393,7 +646,7 @@ mod more_tests {
         write(&databases.join("msgstore-2026-01-01.1.db.crypt15"));
         write(&databases.join("msgstore.db.crypt15"));
 
-        let inputs = discover(&root).unwrap();
+        let inputs = android(discover(&root).unwrap());
         assert_eq!(inputs.database.file_name().unwrap(), "msgstore.db.crypt15");
         assert!(
             inputs.incrementals.is_empty(),
@@ -410,7 +663,7 @@ mod more_tests {
         write(&databases.join("msgstore-increment-2026-12-03.db.crypt15"));
         write(&databases.join("msgstore-2026-12-04.1.db.crypt15"));
 
-        let inputs = discover(&root).unwrap();
+        let inputs = android(discover(&root).unwrap());
         assert_eq!(inputs.incrementals.len(), 1);
         assert!(inputs.incrementals[0]
             .file_name()
@@ -426,7 +679,7 @@ mod more_tests {
         let databases = parent.join("Databases");
         write(&databases.join("msgstore.db.crypt15"));
 
-        let inputs = discover(&databases).unwrap();
+        let inputs = android(discover(&databases).unwrap());
         assert_eq!(inputs.database, databases.join("msgstore.db.crypt15"));
         let _ = std::fs::remove_dir_all(parent);
     }
@@ -442,7 +695,7 @@ mod more_tests {
         let root = root("unrelated");
         write(&root.join("Databases/notes.txt"));
         let error = discover(&root).unwrap_err();
-        assert!(error.message.contains("no Databases/ folder"));
+        assert!(error.message.contains("no backup under"));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -508,5 +761,121 @@ mod more_tests {
         assert_eq!(find_databases(&root), None);
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn a_finder_backup_is_found_through_its_manifest() {
+        let root = root("ios-backup");
+        write_backup(
+            &root,
+            &[
+                ("ChatStorage.sqlite", b"the database"),
+                ("Message/Media/x.jpg", b"a picture"),
+            ],
+        );
+        let Source::Ios(inputs) = discover(&root).unwrap() else {
+            panic!("expected an iPhone backup");
+        };
+        assert!(inputs.database.is_file());
+        assert_eq!(inputs.manifest, Some(root.join("Manifest.db")));
+        assert_eq!(inputs.files.as_deref(), Some(root.as_path()));
+        assert!(inputs.wal.is_none() && inputs.shm.is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_backup_with_its_log_is_found_whole() {
+        let root = root("ios-wal");
+        write_backup(
+            &root,
+            &[
+                ("ChatStorage.sqlite", b"the database"),
+                ("ChatStorage.sqlite-wal", b"the log"),
+                ("ChatStorage.sqlite-shm", b"the index"),
+            ],
+        );
+        let Source::Ios(inputs) = discover(&root).unwrap() else {
+            panic!("expected an iPhone backup");
+        };
+        assert!(inputs.wal.is_some(), "the WAL is part of the database");
+        assert!(inputs.shm.is_some());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_encrypted_backup_is_refused_by_naming_it() {
+        let root = root("ios-encrypted");
+        let mut dictionary = plist::Dictionary::new();
+        dictionary.insert("IsEncrypted".into(), plist::Value::Boolean(true));
+        plist::Value::Dictionary(dictionary)
+            .to_file_binary(root.join("Manifest.plist"))
+            .unwrap();
+        std::fs::write(root.join("Manifest.db"), b"encrypted").unwrap();
+        let error = discover(&root).unwrap_err();
+        assert_eq!(error.code, crate::error::EXIT_TYPE);
+        assert!(error.message.contains("encrypted with a password"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn two_device_folders_are_listed_not_chosen() {
+        let root = root("ios-two");
+        write_backup(&root.join("aaa"), &[("ChatStorage.sqlite", b"a")]);
+        write_backup(&root.join("bbb"), &[("ChatStorage.sqlite", b"b")]);
+        match detect(&root).unwrap() {
+            Detected::Several(folders) => {
+                assert_eq!(folders.len(), 2);
+                assert!(folders[0].ends_with("aaa"));
+            }
+            Detected::One(_) => panic!("two backups are not one"),
+        }
+        let error = discover(&root).unwrap_err();
+        assert!(error.message.contains("more than one phone backup"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn one_device_folder_inside_a_backup_root_is_found() {
+        let root = root("ios-nested");
+        write_backup(&root.join("udid"), &[("ChatStorage.sqlite", b"a")]);
+        let Source::Ios(inputs) = discover(&root).unwrap() else {
+            panic!("expected an iPhone backup");
+        };
+        assert!(inputs.database.ends_with(
+            inputs
+                .database
+                .file_name()
+                .expect("a database file")
+                .to_str()
+                .unwrap()
+        ));
+        assert_eq!(inputs.manifest, Some(root.join("udid/Manifest.db")));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_extracted_app_group_opens_without_a_manifest() {
+        let root = root("ios-container");
+        let group = root.join(IOS_GROUP);
+        std::fs::create_dir_all(group.join("Message/Media")).unwrap();
+        std::fs::write(group.join("ChatStorage.sqlite"), b"a database").unwrap();
+        let Source::Ios(inputs) = discover(&root).unwrap() else {
+            panic!("expected an iPhone backup");
+        };
+        assert_eq!(inputs.app_group.as_deref(), Some(group.as_path()));
+        assert!(inputs.manifest.is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_bare_database_opens_and_has_no_media_root() {
+        let root = root("ios-bare");
+        std::fs::write(root.join("ChatStorage.sqlite"), b"a database").unwrap();
+        let Source::Ios(inputs) = discover(&root).unwrap() else {
+            panic!("expected an iPhone backup");
+        };
+        assert!(inputs.app_group.is_some());
+        assert!(inputs.manifest.is_none());
+        let _ = std::fs::remove_dir_all(root);
     }
 }

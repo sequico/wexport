@@ -4,7 +4,7 @@
 //! breaks exactly here and nowhere else.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OpenFlags};
@@ -28,6 +28,10 @@ pub struct Media {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub duration_ms: Option<i64>,
+    /// The file this row points at, resolved by the adapter that read the row.
+    pub source: Option<PathBuf>,
+    /// The preview the phone kept for it, even when the file itself is gone.
+    pub thumbnail: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,10 +112,14 @@ pub struct Msgstore {
     media_rows: HashMap<i64, MediaRow>,
     vcards: HashMap<i64, String>,
     reactions: HashMap<i64, Vec<String>>,
+    /// Where the copied app folder lives, and its media tree when it is a separate folder.
+    copy_root: PathBuf,
+    media_root: Option<PathBuf>,
+    has_thumbnails: bool,
 }
 
 impl Msgstore {
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path, copy_root: &Path, media_root: Option<&Path>) -> Result<Self> {
         let con = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|error| Error::input(format!("cannot open {}: {error}", path.display())))?;
         let tables: HashSet<String> = {
@@ -157,9 +165,13 @@ impl Msgstore {
             media_rows: HashMap::new(),
             vcards: HashMap::new(),
             reactions: HashMap::new(),
+            copy_root: copy_root.to_path_buf(),
+            media_root: media_root.map(Path::to_path_buf),
+            has_thumbnails: false,
             tables,
             con,
         };
+        store.has_thumbnails = store.pick("message_thumbnail", &["thumbnail"]).is_some();
 
         store.c_id = store.require("message", &["_id"])?;
         store.c_ts = store.require("message", &["timestamp"])?;
@@ -534,6 +546,50 @@ impl Msgstore {
         Ok(newest_first(out))
     }
 
+    /// Media files that resolve to a copied file, against the media the rows name.
+    pub fn media_counts(&self) -> (i64, i64) {
+        let referenced = self.media_rows.len() as i64;
+        let present = self
+            .media_rows
+            .values()
+            .filter(|row| {
+                crate::media::source_for(&row.rel_path, self.media_root.as_deref(), &self.copy_root)
+                    .is_some()
+            })
+            .count() as i64;
+        (present, referenced)
+    }
+
+    /// The database's own verdict on its pages: "ok", or the first problem it names.
+    pub fn integrity_check(&self) -> Result<()> {
+        let verdict: String = self
+            .con
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+        if verdict == "ok" {
+            Ok(())
+        } else {
+            Err(Error::incomplete(format!(
+                "the database is damaged: {verdict}"
+            )))
+        }
+    }
+
+    /// What `-d` says about the schema this build recognised.
+    pub fn diagnostics(&self) -> Vec<String> {
+        vec![
+            format!("tables: {} read", self.tables.len()),
+            format!(
+                "message: id={} timestamp={} from_me={:?} text={:?} sender={:?}",
+                self.c_id, self.c_ts, self.c_from_me, self.c_text, self.c_sender_row
+            ),
+            format!(
+                "media: path={:?} mime={:?} bytes={:?} thumbnails={}",
+                self.m_path, self.m_mime, self.m_bytes, self.has_thumbnails
+            ),
+            format!("chats: {}", self.chats.len()),
+        ]
+    }
+
     /// Message count and time range per chat, grouped by whichever column identifies a chat.
     fn totals<K>(&self, grouping: &str) -> Result<HashMap<K, (i64, i64, i64)>>
     where
@@ -804,7 +860,31 @@ impl Msgstore {
             width: row.width,
             height: row.height,
             duration_ms: row.duration,
+            source: crate::media::source_for(
+                &row.rel_path,
+                self.media_root.as_deref(),
+                &self.copy_root,
+            ),
+            thumbnail: self.thumbnail_of(message_id),
         })
+    }
+
+    /// The preview the phone keeps beside the message, for a media file that may no longer exist.
+    fn thumbnail_of(&self, message_id: i64) -> Option<Vec<u8>> {
+        if !self.has_thumbnails {
+            return None;
+        }
+        let mut statement = self
+            .con
+            .prepare("SELECT thumbnail FROM message_thumbnail WHERE message_row_id = ?1")
+            .ok()?;
+        statement
+            .query_row(rusqlite::params![message_id], |row| {
+                row.get::<_, Option<Vec<u8>>>(0)
+            })
+            .ok()
+            .flatten()
+            .filter(|bytes| !bytes.is_empty())
     }
 
     fn classify(
@@ -946,9 +1026,15 @@ fn jid_key(jid: &str) -> String {
         .to_string()
 }
 
-/// Newest event first: the order the list shows, and the order the chat codes are assigned in.
-fn newest_first(mut stats: Vec<ChatStat>) -> Vec<ChatStat> {
-    stats.sort_by_key(|stat| std::cmp::Reverse(stat.last_ts));
+/// Newest event first, ties by jid: the order the list shows, and the order the chat codes are
+/// assigned in, the same on every run whichever phone the backup came from.
+pub(crate) fn newest_first(mut stats: Vec<ChatStat>) -> Vec<ChatStat> {
+    stats.sort_by(|left, right| {
+        right
+            .last_ts
+            .cmp(&left.last_ts)
+            .then_with(|| left.chat.jid.cmp(&right.chat.jid))
+    });
     stats
 }
 
@@ -998,6 +1084,11 @@ fn media_kind(row: &MediaRow, wa_type: Option<i64>) -> String {
 mod tests {
     use super::*;
 
+    /// An Android store over a database with no copied media beside it.
+    fn open(path: &Path) -> Msgstore {
+        Msgstore::open(path, path.parent().unwrap_or(Path::new(".")), None).unwrap()
+    }
+
     /// The schema of the backups this app refuses to open is the only one the fixture does not
     /// carry: no `chat`/`jid` tables, the jid written on every row, calls pointing at it by text.
     fn legacy_store() -> (Msgstore, std::path::PathBuf) {
@@ -1022,7 +1113,7 @@ mod tests {
         )
         .unwrap();
         drop(con);
-        (Msgstore::open(&path).unwrap(), path)
+        (open(&path), path)
     }
 
     #[test]
@@ -1040,7 +1131,7 @@ mod tests {
         )
         .unwrap();
         drop(con);
-        let store = Msgstore::open(&path).unwrap();
+        let store = open(&path);
         let jids: Vec<String> = store
             .chat_stats()
             .unwrap()
@@ -1197,7 +1288,7 @@ mod tests {
         )
         .unwrap();
         drop(con);
-        (Msgstore::open(&path).unwrap(), path)
+        (open(&path), path)
     }
 
     #[test]
@@ -1216,7 +1307,7 @@ mod tests {
         )
         .unwrap();
         drop(con);
-        let store = Msgstore::open(&path).unwrap();
+        let store = open(&path);
         let stats = store.chat_stats().unwrap();
         let messages = store.messages(&stats[0].chat).unwrap();
         assert_eq!(
@@ -1264,6 +1355,11 @@ mod tests {
 mod range_and_contacts {
     use super::*;
 
+    /// An Android store over a database with no copied media beside it.
+    fn open(path: &Path) -> Msgstore {
+        Msgstore::open(path, path.parent().unwrap_or(Path::new(".")), None).unwrap()
+    }
+
     fn scratch(name: &str) -> (std::path::PathBuf, Connection) {
         let path = std::env::temp_dir().join(format!(
             "wexport-{name}-{}-{}.db",
@@ -1293,7 +1389,7 @@ mod range_and_contacts {
         )
         .unwrap();
         drop(con);
-        let store = Msgstore::open(&path).unwrap();
+        let store = open(&path);
         let stats = store.chat_stats().unwrap();
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].messages, 0);
@@ -1317,7 +1413,7 @@ mod range_and_contacts {
         )
         .unwrap();
         drop(con);
-        let store = Msgstore::open(&path).unwrap();
+        let store = open(&path);
         let stats = store.chat_stats().unwrap();
         let messages = store.messages(&stats[0].chat).unwrap();
         let call = messages.first().expect("the call is a message");
@@ -1354,7 +1450,7 @@ mod range_and_contacts {
             .unwrap();
         drop(contacts);
 
-        let mut store = Msgstore::open(&path).unwrap();
+        let mut store = open(&path);
         assert_eq!(store.chat_stats().unwrap()[0].chat.name, "393331234567");
         store.apply_contacts(&wa);
         assert_eq!(
@@ -1390,7 +1486,7 @@ mod range_and_contacts {
             .unwrap();
         drop(contacts);
 
-        let mut store = Msgstore::open(&path).unwrap();
+        let mut store = open(&path);
         store.apply_contacts(&wa);
         assert_eq!(store.chat_stats().unwrap()[0].chat.name, "393331234567");
         let _ = std::fs::remove_file(path);
@@ -1413,7 +1509,7 @@ mod range_and_contacts {
         .unwrap();
         drop(con);
 
-        let store = Msgstore::open(&path).unwrap();
+        let store = open(&path);
         let chat = store
             .chat_stats()
             .unwrap()

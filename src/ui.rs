@@ -1,15 +1,18 @@
-//! The command itself: parse the few flags, discover, decrypt, list, ask, build, report.
+//! The command itself: parse the flags, discover, check, list, build, report.
 
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use crate::archive::{self, Clock};
 use crate::crypt15;
-use crate::discover;
+use crate::discover::{self, Detected, Source};
 use crate::error::{Error, Result, EXIT_INCOMPLETE};
+use crate::ios::IosStore;
 use crate::keys;
 use crate::merge;
 use crate::msgstore::{ChatStat, Msgstore};
+use crate::report::{ChatRow, Event, Finished, Report};
+use crate::source::Store;
 
 const OUTPUT_DIR: &str = "output";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -26,6 +29,11 @@ struct Options {
     sort: Sort,
     reverse: bool,
     limit: Option<usize>,
+    json: bool,
+    quiet: bool,
+    diagnostics: bool,
+    dry_run: bool,
+    check: bool,
 }
 
 /// The order of the listing, and of the build that follows it.
@@ -76,27 +84,57 @@ fn sort_stats(stats: &mut [ChatStat], sort: Sort, reverse: bool) {
     }
 }
 
+/// Everything the shared half of the command needs from a source it has opened.
+struct Opened {
+    store: Box<dyn Store>,
+    kind: &'static str,
+    path: String,
+    app_version: String,
+    default_out: PathBuf,
+    ignored: Vec<PathBuf>,
+    note: Option<String>,
+}
+
 pub fn run(args: &[String]) -> Result<i32> {
     let options = parse(args)?;
+    let report = Report::new(options.json, options.quiet, options.diagnostics);
     let folder = options.folder.clone().unwrap_or_else(|| PathBuf::from("."));
+    let source = pick_source(&folder)?;
+    let workspace = Workspace::new()?;
+    let opened = match source {
+        Source::Android(inputs) => open_android(&inputs, &options, &report, &workspace)?,
+        Source::Ios(inputs) => open_ios(&inputs, &options, &report, &workspace)?,
+    };
 
-    discover::require_binaries(&["ffmpeg", "ffprobe"])?;
-    let inputs = discover::discover(&folder)?;
-    let mut database = std::fs::read(&inputs.database)?;
-    let header = crypt15::parse_header(&database)?;
-    require_openable(&header, &inputs.database)?;
-    if !inputs.ignored.is_empty() {
-        println!(
+    if !opened.ignored.is_empty() {
+        report.info(format!(
             "ignored      {} file(s) from the older backup chain (crypt14)",
-            inputs.ignored.len()
-        );
+            opened.ignored.len()
+        ));
+    }
+    let store = opened.store.as_ref();
+    let stats = store.chat_stats()?;
+    if stats.is_empty() {
+        return Err(Error::input("this backup holds no chat"));
+    }
+    report.emit(Event::Found {
+        source: opened.kind,
+        path: opened.path.clone(),
+        chats: stats.len(),
+    });
+    if report.diagnostics() {
+        for line in store.diagnostics() {
+            report.detail(line);
+        }
     }
 
-    let key_spec = match options.key.clone().or_else(|| key_beside(&inputs)) {
-        Some(spec) => spec,
-        None => ask_for_key()?,
-    };
-    let key = keys::load(&key_spec)?;
+    let mut check_code = 0;
+    if options.check {
+        check_code = check_source(store, opened.note.as_deref(), &report)?;
+        if options.chats.is_empty() && !options.all {
+            return Ok(check_code);
+        }
+    }
 
     let clock = match &options.zone {
         Some(name) => Clock::named(name)?,
@@ -104,52 +142,9 @@ pub fn run(args: &[String]) -> Result<i32> {
     };
     let out_root = match &options.out {
         Some(path) => discover::expand(path),
-        None => inputs.root.join(OUTPUT_DIR),
+        None => opened.default_out.clone(),
     };
 
-    let workspace = Workspace::new()?;
-    println!(
-        "decrypting   {}",
-        inputs
-            .database
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("backup")
-    );
-    let database_path = workspace.path.join("msgstore.db");
-    crypt15::decrypt_to(
-        &mut database,
-        &header,
-        &key,
-        &mut std::fs::File::create(&database_path)?,
-    )?;
-
-    if !inputs.incrementals.is_empty() {
-        println!(
-            "merging      {} incremental file(s)",
-            inputs.incrementals.len()
-        );
-        merge::apply(&database_path, &inputs.incrementals, &key, &workspace.path)?;
-    }
-
-    let mut store = Msgstore::open(&database_path)?;
-    if let Some(contacts) = &inputs.contacts {
-        if contacts.extension().and_then(|value| value.to_str()) == Some("crypt15") {
-            match decrypt_contacts(contacts, &key, &workspace) {
-                Ok(path) => store.apply_contacts(&path),
-                Err(error) => {
-                    eprintln!("warning: contacts not readable — names will be numbers ({error})")
-                }
-            }
-        } else {
-            store.apply_contacts(contacts);
-        }
-    }
-
-    let stats = store.chat_stats()?;
-    if stats.is_empty() {
-        return Err(Error::input("this backup holds no chat"));
-    }
     // The codes are this list's identity: assigned once, in the default order, and never moved.
     let total = stats.len();
     let numbers = numbered(&stats);
@@ -165,9 +160,38 @@ pub fn run(args: &[String]) -> Result<i32> {
         display.truncate(limit);
     }
     if selected.is_empty() {
-        show_chats(&display, &clock, &numbers, total);
-        return Ok(0);
+        show_chats(&display, &clock, &numbers, total, &report);
+        return Ok(check_code);
     }
+
+    if options.dry_run {
+        let (present, referenced) = store.media_counts()?;
+        let messages: i64 = selected.iter().map(|stat| stat.messages).sum();
+        let media: i64 = selected.iter().map(|stat| stat.media_count).sum();
+        let bytes: i64 = selected.iter().map(|stat| stat.media_bytes).sum();
+        let missing = (referenced - present).max(0);
+        report.info(format!(
+            "would build  {} chat(s), {} message(s), {} media file(s), {} not in the copy, about {}",
+            selected.len(),
+            messages,
+            media,
+            missing,
+            human_bytes(bytes.max(0) as u64)
+        ));
+        report.emit(Event::Finished(Finished {
+            archives: selected.len(),
+            skipped: 0,
+            messages: messages.max(0) as usize,
+            media: media.max(0) as usize,
+            missing: missing as usize,
+            failures: 0,
+            bytes: bytes.max(0) as u64,
+            path: out_root.display().to_string(),
+            seconds: report.elapsed(),
+        }));
+        return Ok(check_code);
+    }
+
     let chosen = selected;
     std::fs::create_dir_all(&out_root)?;
     let jobs = std::thread::available_parallelism()
@@ -175,31 +199,40 @@ pub fn run(args: &[String]) -> Result<i32> {
         .unwrap_or(2)
         .div_ceil(2)
         .clamp(1, 8);
-    println!(
+    report.info(format!(
         "\nbuilding     {} chat(s) into {} ({jobs} workers)",
         chosen.len(),
         out_root.display()
-    );
+    ));
     let mut summaries = Vec::new();
-    let source_version = app_version(&header);
     let context = archive::BuildContext {
         out_root: &out_root,
         clock: &clock,
-        app_version: &source_version,
-        copy_root: &inputs.root,
-        media_root: inputs.media.as_deref(),
+        app_version: &opened.app_version,
         jobs,
+        report: &report,
     };
     for stat in chosen.iter() {
         let number = numbers.get(&stat.chat.jid).copied().unwrap_or(0);
         let label = format!("{number}. {}", stat.chat.name);
-        let summary = archive::build_chat(&store, stat, &context, &label)?;
+        let total_media = stat.media_count.max(0) as usize;
+        report.emit(Event::Progress {
+            label: label.clone(),
+            done: 0,
+            total: total_media,
+        });
+        let summary = archive::build_chat(store, stat, &context, &label)?;
+        report.emit(Event::Progress {
+            label,
+            done: total_media,
+            total: total_media,
+        });
         if summary.empty {
-            println!("  {}: skipped, no messages", summary.name);
+            report.info(format!("  {}: skipped, no messages", summary.name));
             summaries.push(summary);
             continue;
         }
-        println!(
+        report.info(format!(
             "  {}: {} messages, {} media ({} missing), {:.1} MB",
             summary
                 .archive
@@ -210,16 +243,16 @@ pub fn run(args: &[String]) -> Result<i32> {
             summary.media,
             summary.missing,
             summary.bytes as f64 / 1e6
-        );
-        for failure in summary.failures.iter().take(5) {
-            println!("    {failure}");
+        ));
+        for failure in &summary.failures {
+            report.emit(Event::Failure(failure.clone()));
         }
         summaries.push(summary);
     }
 
     if !summaries.is_empty() {
         let index = archive::write_index(&out_root, &summaries)?;
-        println!("\nindex        {}", index.display());
+        report.info(format!("\nindex        {}", index.display()));
         open_if_desktop(&index);
     }
     let failures: usize = summaries.iter().map(|summary| summary.failure_count).sum();
@@ -229,16 +262,200 @@ pub fn run(args: &[String]) -> Result<i32> {
     } else {
         String::new()
     };
-    println!(
+    let bytes: u64 = summaries.iter().map(|summary| summary.bytes).sum();
+    let messages: usize = summaries.iter().map(|summary| summary.messages).sum();
+    let media: usize = summaries.iter().map(|summary| summary.media).sum();
+    let missing: usize = summaries.iter().map(|summary| summary.missing).sum();
+    report.info(format!(
         "\ndone: {} archive(s) in {}{suffix}",
         summaries.len() - skipped,
         out_root.display()
-    );
+    ));
+    report.emit(Event::Finished(Finished {
+        archives: summaries.len() - skipped,
+        skipped,
+        messages,
+        media,
+        missing,
+        failures,
+        bytes,
+        path: out_root.display().to_string(),
+        seconds: report.elapsed(),
+    }));
     if failures > 0 {
-        eprintln!("{failures} file(s) could not be processed; the archives are usable");
         return Ok(EXIT_INCOMPLETE);
     }
-    Ok(0)
+    Ok(check_code)
+}
+
+/// What `-c` asks of any source: a sound database, and every media file the rows name.
+fn check_source(store: &dyn Store, note: Option<&str>, report: &Report) -> Result<i32> {
+    store.integrity_check()?;
+    let (present, referenced) = store.media_counts()?;
+    report.info(format!(
+        "check        database sound, {present} of {referenced} media file(s) present"
+    ));
+    let mut code = 0;
+    if present < referenced {
+        report.emit(Event::Warning(format!(
+            "{} media file(s) named by the database are not in the copy",
+            referenced - present
+        )));
+        code = EXIT_INCOMPLETE;
+    }
+    if let Some(note) = note {
+        report.emit(Event::Warning(note.to_string()));
+        code = EXIT_INCOMPLETE;
+    }
+    Ok(code)
+}
+
+fn open_android(
+    inputs: &discover::Inputs,
+    options: &Options,
+    report: &Report,
+    workspace: &Workspace,
+) -> Result<Opened> {
+    let mut database = std::fs::read(&inputs.database)?;
+    let header = crypt15::parse_header(&database)?;
+    require_openable(&header, &inputs.database)?;
+
+    let key_spec = match options.key.clone().or_else(|| key_beside(inputs)) {
+        Some(spec) => spec,
+        None => ask_for_key()?,
+    };
+    let key = keys::load(&key_spec)?;
+    let note = incremental_note(inputs);
+
+    report.info(format!(
+        "decrypting   {}",
+        inputs
+            .database
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("backup")
+    ));
+    let database_path = workspace.path.join("msgstore.db");
+    crypt15::decrypt_to(
+        &mut database,
+        &header,
+        &key,
+        &mut std::fs::File::create(&database_path)?,
+    )?;
+
+    if !inputs.incrementals.is_empty() {
+        report.info(format!(
+            "merging      {} incremental file(s)",
+            inputs.incrementals.len()
+        ));
+        merge::apply(&database_path, &inputs.incrementals, &key, &workspace.path)?;
+    }
+
+    let mut store = Msgstore::open(&database_path, &inputs.root, inputs.media.as_deref())?;
+    if let Some(contacts) = &inputs.contacts {
+        if contacts.extension().and_then(|value| value.to_str()) == Some("crypt15") {
+            match decrypt_contacts(contacts, &key, workspace) {
+                Ok(path) => store.apply_contacts(&path),
+                Err(error) => report.emit(Event::Warning(format!(
+                    "contacts not readable — names will be numbers ({error})"
+                ))),
+            }
+        } else {
+            store.apply_contacts(contacts);
+        }
+    }
+
+    Ok(Opened {
+        store: Box::new(store),
+        kind: "android",
+        path: inputs.root.display().to_string(),
+        app_version: app_version(&header),
+        default_out: inputs.root.join(OUTPUT_DIR),
+        ignored: inputs.ignored.clone(),
+        note,
+    })
+}
+
+fn open_ios(
+    inputs: &discover::IosInputs,
+    options: &Options,
+    report: &Report,
+    workspace: &Workspace,
+) -> Result<Opened> {
+    if options.key.is_some() {
+        return Err(Error::input(
+            "-k is the Android key: an iPhone backup is read without one.\nDrop -k and run the same command.",
+        ));
+    }
+    report.info(format!(
+        "opening      {}",
+        inputs
+            .database
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("ChatStorage.sqlite")
+    ));
+    let store = IosStore::open(inputs, &workspace.path)?;
+    Ok(Opened {
+        store: Box::new(store),
+        kind: "iphone",
+        path: inputs.root.display().to_string(),
+        app_version: "unknown".to_string(),
+        default_out: inputs.root.join(OUTPUT_DIR),
+        ignored: Vec::new(),
+        note: None,
+    })
+}
+
+/// An incremental older than the full backup: the delta was made before the base, so the database
+/// it is merged into is newer than the delta.
+fn incremental_note(inputs: &discover::Inputs) -> Option<String> {
+    let full = std::fs::metadata(&inputs.database)
+        .and_then(|meta| meta.modified())
+        .ok()?;
+    inputs.incrementals.iter().find_map(|path| {
+        let stamp = std::fs::metadata(path)
+            .and_then(|meta| meta.modified())
+            .ok()?;
+        (stamp < full).then(|| {
+            format!(
+                "{} is older than the full backup: make a fresh full backup and the delta again",
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("an incremental")
+            )
+        })
+    })
+}
+
+/// A folder that holds several device backups is not guessed: a terminal is asked, a pipe is told.
+fn pick_source(folder: &Path) -> Result<Source> {
+    match discover::detect(folder)? {
+        Detected::One(source) => Ok(source),
+        Detected::Several(folders) => {
+            if !std::io::stdin().is_terminal() {
+                return Err(discover::ambiguous(&folders));
+            }
+            eprintln!("more than one phone backup here:");
+            for (index, path) in folders.iter().enumerate() {
+                eprintln!("  {}. {}", index + 1, path.display());
+            }
+            eprint!("which one? ");
+            let _ = std::io::stdout().flush();
+            let mut line = String::new();
+            std::io::stdin().lock().read_line(&mut line)?;
+            let chosen: usize = line
+                .trim()
+                .parse()
+                .ok()
+                .filter(|number| (1..=folders.len()).contains(number))
+                .ok_or_else(|| Error::input("not one of the folders listed"))?;
+            match discover::detect(&folders[chosen - 1])? {
+                Detected::One(source) => Ok(source),
+                Detected::Several(_) => Err(discover::ambiguous(&folders)),
+            }
+        }
+    }
 }
 
 fn human_bytes(count: u64) -> String {
@@ -289,7 +506,11 @@ fn require_openable(header: &crypt15::Header, path: &Path) -> Result<()> {
     }
     Err(Error::wrong_type(format!(
         "{name} uses key type {}, which this tool cannot open.\nMake a fresh backup after enabling end-to-end encrypted backup with the 64-digit key.",
-        if header.key_type.is_empty() { "unknown".to_string() } else { header.key_type.clone() }
+        if header.key_type.is_empty() {
+            "unknown".to_string()
+        } else {
+            header.key_type.clone()
+        }
     )))
 }
 
@@ -368,11 +589,30 @@ fn show_chats(
     clock: &Clock,
     numbers: &std::collections::HashMap<String, usize>,
     total: usize,
+    report: &Report,
 ) {
-    let labels: Vec<&str> = stats.iter().map(label_of).collect();
-    let width = labels
+    let rows: Vec<ChatRow> = stats
         .iter()
-        .map(|label| label.chars().count())
+        .map(|stat| ChatRow {
+            code: numbers.get(&stat.chat.jid).copied().unwrap_or(0),
+            name: label_of(stat).to_string(),
+            messages: stat.messages,
+            media: stat.media_count,
+            bytes: stat.media_bytes,
+            last: if stat.last_ts > 0 {
+                clock.local(stat.last_ts)
+            } else {
+                String::new()
+            },
+        })
+        .collect();
+    report.emit(Event::ChatList(rows.clone()));
+    if report.json() || report.quiet() {
+        return;
+    }
+    let width = rows
+        .iter()
+        .map(|row| row.name.chars().count())
         .max()
         .unwrap_or(8);
     println!();
@@ -380,30 +620,29 @@ fn show_chats(
         "{:>3}  {:<27} {:>7} {:>6} {:>9}  {:<width$}",
         "#", "last event", "msgs", "media", "size", "chat"
     );
-    for (stat, label) in stats.iter().zip(&labels) {
-        let stamp = if stat.last_ts > 0 {
-            clock.local(stat.last_ts)
-        } else {
-            "—".to_string()
-        };
+    for row in &rows {
         println!(
             "{:>3}  {:<27} {:>7} {:>6} {:>9}  {:<width$}",
-            numbers.get(&stat.chat.jid).copied().unwrap_or(0),
-            stamp,
-            stat.messages,
-            stat.media_count,
-            human_bytes(stat.media_bytes.max(0) as u64),
-            label
+            row.code,
+            if row.last.is_empty() {
+                "—"
+            } else {
+                row.last.as_str()
+            },
+            row.messages,
+            row.media,
+            human_bytes(row.bytes.max(0) as u64),
+            row.name
         );
     }
-    let messages: i64 = stats.iter().map(|stat| stat.messages).sum();
-    let bytes: i64 = stats.iter().map(|stat| stat.media_bytes).sum();
+    let messages: i64 = rows.iter().map(|row| row.messages).sum();
+    let bytes: i64 = rows.iter().map(|row| row.bytes).sum();
     println!(
         "\n{} chat(s), {} message(s), {} of media{}",
-        stats.len(),
+        rows.len(),
         messages,
         human_bytes(bytes.max(0) as u64),
-        if stats.len() < total {
+        if rows.len() < total {
             format!(" (of {total} in this backup)")
         } else {
             String::new()
@@ -542,6 +781,11 @@ fn parse(args: &[String]) -> Result<Options> {
         reverse: false,
         limit: None,
         zone: None,
+        json: false,
+        quiet: false,
+        diagnostics: false,
+        dry_run: false,
+        check: false,
     };
     let mut index = 0;
     while index < args.len() {
@@ -562,6 +806,11 @@ fn parse(args: &[String]) -> Result<Options> {
                 std::process::exit(0);
             }
             "-r" => options.reverse = true,
+            "-j" => options.json = true,
+            "-q" => options.quiet = true,
+            "-d" => options.diagnostics = true,
+            "-n" => options.dry_run = true,
+            "-c" => options.check = true,
             "-l" => {
                 options.list = true;
                 // Up to two values, recognised by their shape, in either order.
@@ -611,19 +860,35 @@ fn parse(args: &[String]) -> Result<Options> {
         index += 1;
     }
 
-    if options.list && (options.all || !options.chats.is_empty()) {
+    let building = options.all || !options.chats.is_empty();
+    if options.list && building {
         return Err(Error::input(
             "-l only lists and exits: drop -b, or build without -l",
         ));
     }
-    if options.out.is_some() && !options.all && options.chats.is_empty() {
+    if options.list && options.check {
+        return Err(Error::input(
+            "-c checks the source and exits: drop -l, or check and build without it",
+        ));
+    }
+    if options.dry_run && !building {
+        return Err(Error::input(
+            "-n changes a build, so it needs -b: -l lists, -n reports what -b would write",
+        ));
+    }
+    if options.out.is_some() && !building {
         return Err(Error::input(
             "-o says where the archives go: give -b as well",
         ));
     }
-    if options.reverse && (options.all || !options.chats.is_empty()) {
+    if options.reverse && building {
         return Err(Error::input(
             "-r orders the listing: -b builds and prints none, so there is nothing to reverse",
+        ));
+    }
+    if options.quiet && options.diagnostics {
+        return Err(Error::input(
+            "-q silences the run and -d recounts it: use one or the other",
         ));
     }
     Ok(options)
@@ -650,7 +915,7 @@ fn set_folder(options: &mut Options, argument: &str) -> Result<()> {
 }
 
 fn help() -> &'static str {
-    "usage: wexport [FOLDER] [flags]\n\nTurn an Android WhatsApp crypt15 backup into self-contained archives that open by\ndouble-clicking index.html: no server, no wexport and no network on the reading\nmachine. Point it at the folder you copied; without -b it lists the chats.\n\nOnly a backup protected by the 64-digit encryption key can be opened: with a\npassword or a passkey the key stays on WhatsApp's servers and the file on the\nphone cannot be read offline. iPhone backups are a different format.\n\nEvery time in the archive is written with its offset in the zone of this machine,\nunless -t names another one; the zone is recorded in the archive.\n\nflags:\n  -h          show this help and exit\n  -v          show the version and exit\n  -k KEY      the 64 hex digits, a screenshot of them, or encrypted_backup.key;\n              without it the key is looked up beside the backup (key.png, key.txt,\n              encrypted_backup.key) and otherwise asked once\n  -l [N] [ORDER]\n              list and exit: N rows, ordered by recent (default), size or name,\n              in either order after the flag\n  -r          reverse the listing order\n  -b CODES    build these chats, by code from the list; comma-separated, or all\n  -o DIR      where the archives go (default: <input>/output), with -b\n  -t ZONE     render every time in this zone instead of the machine's, e.g.\n              Europe/Rome; each archive records the name it was rendered in\n\nThe codes belong to that list: 1..N in the default order, and they do not move\nwhen -l orders or cuts the list. A different backup numbers its chats anew.\nOne flag per word: -l 10 size, not -ls.\n\nexit codes:\n  0  success\n  1  unreadable input, or a question that could not be asked without a terminal\n  2  unusable key: not a key, or the key does not open this backup\n  3  wrong backup type: crypt14, password-based or passkey-based backup\n  4  build incomplete: some media could not be processed, the archive is usable\n  5  missing external dependency: ffmpeg, ffprobe, or tesseract for a screenshot key\n\nrequirements: ffmpeg and ffprobe on PATH; tesseract only for a screenshot key.\n\nexamples:\n  wexport ~/Downloads/a\n  wexport ~/Downloads/a -l\n  wexport ~/Downloads/a -l 10 size\n  wexport ~/Downloads/a -l 5 recent -r\n  wexport ~/Downloads/a -b 3,42\n  wexport ~/Downloads/a -b all\n  wexport ~/Downloads/a -b all -t Europe/Rome\n  wexport ~/Downloads/a -b 1,2 -o /media/backup\n"
+    "usage: wexport [FOLDER] [flags]\n\nTurn a WhatsApp backup into self-contained archives that open by double-clicking\nindex.html: no server, no wexport and no network on the reading machine.\n\nAndroid: an end-to-end encrypted backup (crypt15) and its 64-digit key. A password\nor a passkey keeps the key on WhatsApp's servers, and the file on the phone cannot\nbe read offline. iPhone: a local backup made by Finder or iTunes with \"Encrypt\nlocal backup\" off, or the app's ChatStorage.sqlite; no key is involved.\n\nEvery time in the archive is written with its offset in the zone of this machine,\nunless -t names another one; the zone is recorded in the archive.\n\nflags:\n  -h          show this help and exit\n  -v          show the version and exit\n  -k KEY      the Android key: the 64 hex digits, a screenshot of them, or\n              encrypted_backup.key; without it the key is looked up beside the\n              backup (key.png, key.txt, encrypted_backup.key) and otherwise asked once\n  -l [N] [ORDER]\n              list and exit: N rows, ordered by recent (default), size or name,\n              in either order after the flag\n  -r          reverse the listing order\n  -b CODES    build these chats, by code from the list; comma-separated, or all\n  -o DIR      where the archives go (default: <input>/output), with -b\n  -t ZONE     render every time in this zone instead of the machine's, e.g.\n              Europe/Rome; each archive records the name it was rendered in\n  -j          JSON lines on stdout: found, chat_list, progress, warning, failure,\n              finished; errors stay on stderr\n  -q          no progress and no summary; a list or JSON still prints\n  -d          diagnostics: the files found, the columns recognised, every media\n              file placed or missing\n  -n          dry run: report what -b would build, write nothing; needs -b\n  -c          check the source and exit; with -b, check and then build\n\nThe codes belong to that list: 1..N in the default order, and they do not move\nwhen -l orders or cuts the list. A different backup numbers its chats anew.\nOne flag per word: -l 10 size, not -ls.\n\nexit codes:\n  0  success\n  1  unreadable input, or a question that could not be asked without a terminal\n  2  unusable key: not a key, or the key does not open this backup\n  3  wrong backup type: crypt14, password-based, passkey-based or encrypted iPhone\n  4  build incomplete: some media could not be processed, the archive is usable\n  5  missing external dependency: tesseract, for a key given as a screenshot\n\nrequirements: nothing to install; tesseract only for a key given as a screenshot.\n\nexamples:\n  wexport ~/Downloads/a\n  wexport ~/Downloads/a -l\n  wexport ~/Downloads/a -l 10 size\n  wexport ~/Downloads/a -l 5 recent -r\n  wexport ~/Downloads/a -b 3,42\n  wexport ~/Downloads/a -b all\n  wexport ~/Downloads/a -b all -t Europe/Rome\n  wexport ~/Downloads/a -b 1,2 -o /media/backup\n  wexport ~/Library/Application\\ Support/MobileSync/Backup/UDID -l\n  wexport ~/Library/Application\\ Support/MobileSync/Backup/UDID -b all -j\n"
 }
 
 #[cfg(test)]
@@ -792,6 +1057,39 @@ mod tests {
         let error = parse(&args("-x")).unwrap_err();
         assert!(error.message.contains("-x"));
         assert!(error.message.contains("-h"));
+    }
+
+    #[test]
+    fn the_five_new_flags_are_read() {
+        let parsed = parse(&args("-j -q -b all")).unwrap();
+        assert!(parsed.json && parsed.quiet);
+        let parsed = parse(&args("-d -b all")).unwrap();
+        assert!(parsed.diagnostics);
+        let parsed = parse(&args("-c")).unwrap();
+        assert!(parsed.check);
+        let parsed = parse(&args("-n -b all")).unwrap();
+        assert!(parsed.dry_run);
+    }
+
+    #[test]
+    fn a_dry_run_needs_a_build_and_a_check_does_not() {
+        let error = parse(&args("-n")).unwrap_err();
+        assert!(error.message.contains("needs -b"), "{}", error.message);
+        assert!(parse(&args("-c")).unwrap().check);
+        assert!(parse(&args("-c -n -b all")).unwrap().dry_run);
+    }
+
+    #[test]
+    fn quiet_and_diagnostics_are_opposites() {
+        let error = parse(&args("-q -d -b all")).unwrap_err();
+        assert!(error.message.contains("one or the other"));
+        assert!(parse(&args("-q -j -b all")).unwrap().json);
+    }
+
+    #[test]
+    fn checking_and_listing_do_not_mix() {
+        let error = parse(&args("-c -l")).unwrap_err();
+        assert!(error.message.contains("checks the source"));
     }
 
     #[test]

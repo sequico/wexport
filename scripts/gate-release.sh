@@ -25,18 +25,18 @@ echo "== release build"
 cargo build --release --locked
 
 echo "== release build (windows)"
-# The other half of the release: the linker output is inspected by hand, the binary is not run here.
+# The same build the release ships; CI extracts the packaged zip and runs it on Windows.
 cargo build --release --locked --target x86_64-pc-windows-gnu
 
 echo "== mutations"
 # One job per core (capped): 625 mutants at four seconds each is forty minutes in series.
 jobs=$(nproc 2>/dev/null || echo 2)
 [ "$jobs" -gt 8 ] && jobs=8
-# Mutation testing judges logic. The presentation modules (ui, progress) are mostly println and
-# arithmetic on numbers already asserted end-to-end; mutating them says nothing about the product.
+# Mutation testing judges logic. The presentation modules (ui, report, progress) are mostly println
+# and arithmetic on numbers already asserted end-to-end; mutating them says nothing about the product.
 set -- --timeout 180 --jobs "$jobs"
 for file in src/crypt15.rs src/keys.rs src/media.rs src/chunks.rs src/msgstore.rs src/merge.rs \
-    src/discover.rs src/archive.rs src/error.rs; do
+    src/discover.rs src/ios.rs src/container.rs src/archive.rs src/error.rs; do
     set -- "$@" --file "$file"
 done
 # Two mutants have no observable effect, so no test can kill them: the media batch size only decides

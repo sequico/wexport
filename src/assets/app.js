@@ -121,10 +121,24 @@
   function mediaNode(message) {
     var media = message.md;
     if (!media) return null;
+    // The file is not in the copy, which is normal for a partial archive. When the phone kept a
+    // preview of it, the picture is shown anyway, with the label underneath; otherwise the label is
+    // all there is to show.
     if (media.mi || !media.p) {
       var missing = el("div", "body", "[" + message.k + " — file not in the copied folder]");
       missing.classList.add("missing");
-      return missing;
+      if (!media.th) return missing;
+      var preview = document.createElement("div");
+      preview.className = "missing";
+      var picture = document.createElement("img");
+      picture.className = "thumb";
+      picture.loading = "lazy";
+      picture.decoding = "async";
+      picture.alt = media.nm || "";
+      picture.src = media.th;
+      preview.appendChild(picture);
+      preview.appendChild(missing);
+      return preview;
     }
     var wrap = document.createElement("div");
     var kind = message.k;

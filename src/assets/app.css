@@ -145,6 +145,8 @@ input:focus-visible {
   max-width: 100%;
   max-height: 60vh;
   width: auto;
+  /* The picture may come from the phone at its own shape: fit it inside the box, never stretch it. */
+  object-fit: contain;
   border-radius: 6px;
   cursor: zoom-in;
 }

@@ -1,9 +1,10 @@
-# Android backup formats (reference)
+# Backup formats (reference)
 
-What is inside the files, which key opens what, and where the tool's assumptions come from.
-Facts are from the sources listed at the end; anything derived rather than observed is marked
-`unverified`. Tested reference versions: WhatsApp **2.26.34.7** and `wa-crypt-tools` (0.2.0 and its
-`main` branch, which adds the OCR of the key screenshot and the `wagui` interface).
+What is inside the files a phone leaves behind — Android's encrypted container and an iPhone's Finder
+backup — which key opens what, and where the tool's assumptions come from. Facts are from the sources
+listed at the end; anything derived rather than observed is marked `unverified`. Tested reference
+versions: Android WhatsApp **2.26.34.7** with `wa-crypt-tools` (0.2.0 and its `main` branch, which adds
+the OCR of the key screenshot and the `wagui` interface), and the iPhone layout of iOS 10 and later.
 
 ---
 
@@ -140,6 +141,54 @@ Cautions:
 
 ---
 
+## 7. The iPhone: a local backup
+
+A Finder/iTunes backup is a folder of hashed files and one index. Nothing in it is encrypted unless
+the user asked for it, and then everything is.
+
+```
+<device-id>/
+├── Manifest.db          # SQLite: Files(fileID, domain, relativePath, flags, file)
+├── Manifest.plist       # binary plist: IsEncrypted, device name, last backup date
+├── 00/ ... ff/          # the files, named by fileID
+└── Info.plist
+```
+
+- **One file, one row.** `Files.fileID` is the SHA-1 of `domain-relativePath` for iOS 10 and later,
+  and the file lives at `<root>/<first two hex digits>/<fileID>`. Before iOS 10 the file sat at
+  `domain/relativePath` with no hash; wexport reads the hashed layout only and says so.
+- **`Manifest.plist` answers the encryption question.** With "Encrypt local backup" on, `IsEncrypted`
+  is true and even `Manifest.db` is encrypted; there is no offline way in without Apple's password
+  keybag, so wexport refuses the folder as a wrong backup type.
+- **WhatsApp's domain is `AppDomainGroup-group.net.whatsapp.WhatsApp.shared`.** Inside it:
+  `ChatStorage.sqlite` with its `-wal` and `-shm`, and the media under `Message/Media/…` (a few
+  versions keep some under `Library/Media`). A row's media path is relative to that group, so the
+  lookup goes through `Manifest.db` to the hashed file.
+
+`ChatStorage.sqlite` is Core Data, not WhatsApp's own schema:
+
+| Table | Use |
+|---|---|
+| `ZWACHATSESSION` | one row per chat: `ZCONTACTJID`, `ZPARTNERNAME` |
+| `ZWAMESSAGE` | `ZCHATSESSION`, `ZMESSAGEDATE`, `ZISFROMME`, `ZTEXT`, `ZFROMJID`, `ZMEDIAITEM`, `ZDELETED`, `ZEDITED`, `ZCALLTYPE` |
+| `ZWAMEDIAITEM` | `ZMEDIALOCALPATH`, `ZTHUMBNAILLOCALPATH`, `ZFILESIZE`, `ZMIMETYPE`, `ZLATITUDE`, `ZLONGITUDE`, `ZVCARDNAME` |
+| `ZWAGROUPMEMBER` | the roster of a group: `ZCHATSESSION`, `ZMEMBERJID`, `ZCONTACTNAME` |
+
+Cautions:
+
+- **Timestamps are seconds since 2001-01-01**, not since 1970. One conversion in the adapter, pinned
+  by a test.
+- **The newest messages are in the `-wal`.** A build that copies only `ChatStorage.sqlite` loses the
+  last days of every conversation; all three files travel together and are opened so SQLite replays
+  the log.
+- **The schema moves between iOS releases**, and WhatsApp's column names are not documented. They are
+  discovered by probing, and a schema that does not answer fails by naming what it could not find.
+- **Media deleted on the phone stays referenced** by its row, with the thumbnail file often still
+  there: the archive shows the preview and marks the file as not copied.
+- **No key is involved.** The 64-digit key on an iPhone protects the cloud copy, not the local backup.
+
+---
+
 ## Sources
 
 - ElDavoo/wa-crypt-tools — README, CHANGELOG (Nov 2026: Python 3.11+, protobuf edition 2026,
@@ -156,6 +205,10 @@ Cautions:
 - chathoarding.app, *Crypt15 explained* (18 May 2026): header fields, payload compression, table
   list.
 - WhatsApp FAQ: end-to-end encrypted backup, turning it off.
+- Apple Platform Security, *Backups* — the local backup layout, `Manifest.db`, and what turning on
+  the backup password protects.
+- mvt-project/mvt — the iOS backup parser (`Manifest.db`, the hashed `fileID`, the app-group
+  domains), read as a cross-check of the layout above.
 
 ---
 

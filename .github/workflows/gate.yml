@@ -1,4 +1,4 @@
-# The push gate, on every pull request and every push to main.
+# The push gate, on every pull request and every push to main, plus the macOS leg.
 #
 # Same script a release runs first, so a red check here is the same failure a push would hit:
 # format, lints, the test suite, the dependency gate and the Windows cross-check. Mutation testing,
@@ -27,29 +27,81 @@ jobs:
       - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-nextest,cargo-deny
-      - name: ffmpeg, ffprobe and the Windows linker
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg gcc-mingw-w64-x86-64
+      - name: the Windows cross toolchain
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
       - name: Windows target
         run: rustup target add x86_64-pc-windows-gnu
+      - name: no ffmpeg anywhere
+        # The media work is in-process: the suite must pass with the tool the old builds needed gone.
+        run: sudo apt-get remove -y ffmpeg || true
       - name: gate
         run: ./scripts/gate.sh
 
+  macos:
+    name: gate (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
+        with:
+          tool: cargo-nextest,cargo-deny
+      - name: gate
+        run: ./scripts/gate.sh
+      # Every push to main proves the macOS artifact too: both slices, lipo'd, extracted and run.
+      - name: macOS artifact
+        if: github.event_name == 'push'
+        run: ./scripts/release.sh --macos
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'push'
+        with:
+          name: dist-macos
+          path: dist/
+          if-no-files-found: error
+
   release:
     name: release binaries
-    # Every push to main proves the release artifacts build: one binary per platform, never one.
+    # Every push to main proves the release artifacts build: three binaries, never one.
     if: github.event_name == 'push'
+    needs: macos
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - name: Windows target and linker
+      - name: Windows target and the C/C++ cross compilers
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
           rustup target add x86_64-pc-windows-gnu
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist-macos
+          path: dist-macos
       - name: artifacts
-        run: ./scripts/release.sh
+        run: ./scripts/release.sh --stage dist-macos
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/
           if-no-files-found: error
+
+  windows-check:
+    name: windows binary runs
+    # A cross-build proves that it links, not that it starts: the zip is extracted and run here.
+    if: github.event_name == 'push'
+    needs: release
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist
+      - name: run the packaged binary
+        shell: pwsh
+        run: |
+          Expand-Archive -Path (Get-ChildItem dist\wexport-*-windows-x86_64.zip).FullName -DestinationPath windows
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches.Groups[1].Value
+          if ((.\windows\wexport.exe -v) -ne "wexport $version") { throw "the packaged binary does not report $version" }
+          if ($LASTEXITCODE -ne 0) { throw "wexport -v failed" }
+          .\windows\wexport.exe tests\fixtures\synthetic\ios\backup -l
+          if ($LASTEXITCODE -ne 0) { throw "listing the iPhone fixture failed" }

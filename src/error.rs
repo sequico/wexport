@@ -90,10 +90,10 @@ pub fn install_hints(name: &str) -> String {
         )
     } else {
         (
-            "sudo apt install ffmpeg",
-            "sudo dnf install ffmpeg",
-            "sudo pacman -S ffmpeg",
-            "winget install Gyan.FFmpeg",
+            "sudo apt install <the tool>",
+            "sudo dnf install <the tool>",
+            "sudo pacman -S <the tool>",
+            "winget install <the tool>",
         )
     };
     format!("  Debian/Ubuntu   {debian}\n  Fedora/RHEL     {fedora}\n  Arch            {arch}\n  Windows         {windows}")

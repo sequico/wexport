@@ -1,35 +1,33 @@
 # Using wexport
 
-What the person with the phone does, in order. Android on the phone. The release ships one archive per
-platform — `wexport-<version>-linux-x86_64.tar.gz` and `wexport-<version>-windows-x86_64.zip`, each
-holding the binary `wexport` (`wexport.exe` on Windows); the same source builds on macOS too. All of
-them need `ffmpeg` on the `PATH`.
-
-**wexport opens one kind of file: an Android WhatsApp backup protected by the 64-digit encryption
-key.** Not by a password, not by a passkey, and never an iPhone backup. If your backup is protected
-another way, no flag, setting or later step changes that — the key simply is not on your phone.
+What the person with the phone does, in order. Two phones are read: Android's encrypted `crypt15`
+backup, and an iPhone's local Finder/iTunes backup. The release ships one archive per platform —
+`wexport-<version>-linux-x86_64.tar.gz`, `wexport-<version>-windows-x86_64.zip` and
+`wexport-<version>-macos-universal.tar.gz` — each holding the binary `wexport` (`wexport.exe` on
+Windows) together with the licence files. Nothing has to be installed beside it.
 
 | The backup you have | Can wexport open it? |
 |---|---|
 | Android, end-to-end encrypted with the **64-digit key** — `Databases/msgstore.db.crypt15` | **yes** |
+| iPhone, **local backup** made by Finder/iTunes with "Encrypt local backup" off | **yes**, no key involved |
+| iPhone, an extracted `ChatStorage.sqlite` (from a jailbroken phone or a container copy) | **yes** |
 | Android, protected by a **password** | no: WhatsApp keeps the key on its servers |
 | Android, protected by a **passkey** | no: same, the key never touches the file |
 | Android with end-to-end encryption **off** — `msgstore.db.crypt14` | no: the file is not encrypted with a key you hold |
 | Android on the old **crypt12** chain | no: that chain needs a password, not a key |
-| iPhone / iCloud | no: a different format entirely |
+| iPhone, backup **encrypted with a password** | no: Apple's keybag is a different problem |
+| iPhone, **iCloud** backup | no: it is not a folder on a computer |
 
-The rest of this page is the path from "I have an Android phone" to "I have my chats as folders". The
-first four steps happen on the phone and are the same whatever computer you use.
-
-Time: 20–40 minutes, most of it waiting for the backup and for the file copy.
-Needed: the phone, a USB cable, a computer with enough free disk (the copied backup plus the archives
-can be tens of gigabytes), and the archive for that computer —
-[`wexport-<version>-linux-x86_64.tar.gz` or `wexport-<version>-windows-x86_64.zip` from the releases](https://github.com/sequico/wexport/releases).
-Extract it and you have the binary: `wexport` on Linux, `wexport.exe` on Windows.
-`ffmpeg` and `ffprobe` must be on the computer's `PATH`; `tesseract` only if you hand wexport a
-screenshot of the key instead of its digits.
+Time: 20–40 minutes, most of it waiting for the backup and for the file copy. Needed: the phone, a USB
+cable, a computer with enough free disk (the copied backup plus the archives can be tens of gigabytes),
+and the archive for that computer from the
+[releases](https://github.com/sequico/wexport/releases). Extract it and you have the binary: `wexport`
+on Linux and macOS, `wexport.exe` on Windows. `tesseract` only if you hand wexport a screenshot of an
+Android key instead of its digits.
 
 ---
+
+## Android
 
 ## 1. Turn on end-to-end encrypted backup with the 64-digit key (once)
 
@@ -136,35 +134,89 @@ Archives land in `<folder>/output/`: one folder per chat, plus an `index.html` t
 the build ends, wexport opens that page in the desktop browser if there is one, and prints how many
 messages and media files each archive holds.
 
-## 6. Commands and flags
+---
+
+## iPhone
+
+An iPhone's WhatsApp data lives in the phone's local backup, which Finder (or iTunes on an older Mac
+and on Windows) writes to a folder on the computer. wexport reads that folder directly. There is no
+key, no password and no cloud step.
+
+## 6. Make an unencrypted local backup
+
+1. Connect the iPhone by cable and open **Finder**, or **iTunes** on Windows and older macOS.
+2. Select the phone, open the **General** tab, and under **Backups** choose **Back up all of the data
+   on your iPhone to this Mac** (or **Back Up Now**).
+3. **Leave "Encrypt local backup" off.** An encrypted backup needs Apple's password keybag, and wexport
+   says so and stops rather than producing an empty archive.
+4. Wait for the backup to finish. It contains everything on the phone, so it can take a while and take
+   a lot of disk.
+
+You do not need WhatsApp's own 64-digit key for this: on an iPhone that key protects the **cloud**
+copy, not the local one.
+
+## 7. Run wexport on the backup folder
+
+Point it at the phone's folder inside the backup. On a Mac it is:
+
+```sh
+~/Library/Application Support/MobileSync/Backup/<device-id>
+```
+
+On Windows it is `%APPDATA%\Apple Computer\MobileSync\Backup\<device-id>`; the `<device-id>` is a long
+hex name, and `Info.plist` inside names the phone and the date. If you point at the parent folder
+(`MobileSync/Backup`) and it holds more than one phone, wexport lists them and asks which one.
+
+```sh
+wexport ~/Library/Application\ Support/MobileSync/Backup/<device-id>
+```
+
+The rest is the same as Android: the chats are listed with a code each, `-b CODE` or `-b all` builds
+them, and the archives land in the backup's `output/` folder.
+
+If you already have the app's `ChatStorage.sqlite` on its own — an extracted container, from a
+jailbroken phone or a forensic copy — point wexport at that folder instead.
+
+---
+
+## 8. Commands and flags
 
 ```
 wexport [FOLDER] [flags]
 ```
 
-`FOLDER` is the folder you copied, either the whole copy or `Databases/` itself; with no folder,
-wexport reads the current directory. Inside it, the backup is found wherever the copy put it.
+`FOLDER` is the folder you copied — on Android the whole copy or `Databases/` itself; on iPhone the
+device folder or a folder holding `ChatStorage.sqlite`. With no folder, wexport reads the current
+directory. Inside it, the backup is found wherever the copy put it.
 
 | Flag | Takes | Does |
 |---|---|---|
 | `-h` | — | print the help and exit |
 | `-v` | — | print the version and exit |
-| `-k KEY` | the 64 hex digits, a screenshot of them, or `encrypted_backup.key` | the key to open the backup; without it, one is looked for beside the backup and otherwise asked on the terminal |
+| `-k KEY` | the 64 hex digits, a screenshot of them, or `encrypted_backup.key` | the Android key; without it, one is looked for beside the backup and otherwise asked on the terminal. An iPhone backup needs none, and giving one is an error |
 | `-l [N] [ORDER]` | an optional count, an optional order | list and exit: `N` rows, ordered by `recent` (default), `size` or `name`; the two values come after the flag in either order |
 | `-r` | — | reverse the listing order, so the oldest or the largest comes first |
 | `-b CODES` | chat codes, comma-separated, or `all` | build those chats; the codes are the ones the list printed |
 | `-o DIR` | a folder | where the archives go, instead of `<FOLDER>/output`; needs `-b` |
 | `-t ZONE` | a zone name, `Europe/Rome` | render every time in that zone instead of the machine's; the name is written into each archive |
+| `-j` | — | JSON lines on stdout: `found`, `chat_list`, `progress`, `warning`, `failure`, `finished`; errors stay on stderr |
+| `-q` | — | no progress and no summary; a list or the JSON still prints |
+| `-d` | — | diagnostics: the files found, the columns recognised, every media file placed or missing |
+| `-n` | — | dry run: report what `-b` would build and write nothing; needs `-b` |
+| `-c` | — | check the source and exit; with `-b`, check and then build |
 
-Four rules decide most mistakes:
+The rules that decide most mistakes:
 
 - **A code belongs to the list, not to the chat.** Codes are `1..N` in the default order, most recent
   first, and they do not move when `-l` orders or cuts the list. A different backup numbers its chats
   anew.
 - **Listing is what happens when there is no `-b`**: `wexport FOLDER` alone is the list.
 - **One flag per word**: `-l 10 size`, never `-ls`, and there are no long flags.
-- **`-b` needs a code or `all`.** `-l` and `-b` together, `-o` without `-b`, and `-r` without a listing
-  are all errors, each with a message that says so.
+- **`-b` needs a code or `all`.** `-l` and `-b` together, `-o` without `-b`, `-n` without `-b`, `-r`
+  without a listing, `-q` with `-d`, and `-c` with `-l` are all errors, each with a message that says
+  so.
+- **`-j` and `-q` compose** — the JSON is a result, not chatter. **`-j` and `-d` compose too**: the
+  diagnostics become events of the same stream.
 
 | Command | What it does |
 |---|---|
@@ -177,6 +229,10 @@ Four rules decide most mistakes:
 | `wexport ~/whatsapp/phone-copy -b all -o /media/backup` | build everything, somewhere else |
 | `wexport ~/whatsapp/phone-copy -b 2 -t Europe/Rome` | build one chat with Rome's clock, whatever this machine's zone is |
 | `wexport ~/whatsapp/phone-copy -k key.png -b all` | the key from a screenshot, everything |
+| `wexport ~/Library/.../Backup/<id> -l` | list an iPhone's chats |
+| `wexport ~/Library/.../Backup/<id> -c` | check the iPhone backup before building |
+| `wexport ~/whatsapp/phone-copy -b all -n` | say what a full build would write, and write nothing |
+| `wexport ~/whatsapp/phone-copy -b all -j` | the same build, with JSON lines for a script |
 
 The exit code is what a script reads:
 
@@ -185,11 +241,11 @@ The exit code is what a script reads:
 | `0` | success |
 | `1` | unreadable input, or a question that could not be asked without a terminal |
 | `2` | unusable key: not a key, or the key does not open this backup |
-| `3` | wrong backup type: a `crypt14`, password-based or passkey-based backup |
+| `3` | wrong backup type: a `crypt14`, password-based or passkey-based backup, or an encrypted iPhone backup |
 | `4` | build incomplete: some media files could not be processed, the archive is usable |
-| `5` | missing external dependency: `ffmpeg`, `ffprobe`, or `tesseract` for a screenshot key |
+| `5` | a missing external tool: `tesseract`, for a key given as a screenshot |
 
-## 7. What can go wrong
+## 9. What can go wrong
 
 | Message | Meaning | What to do |
 |---|---|---|
@@ -197,11 +253,14 @@ The exit code is what a script reads:
 | `only crypt12 backups in …` | the old chain, which needs a password and has no end-to-end key | turn on the 64-digit key, back up now, copy again |
 | `was made with a password` / `with a passkey` | the key is on WhatsApp's servers, not in the file | re-enable with the 64-digit key and make a new full backup; the old files stay closed |
 | `the key does not open this backup` | wrong key, or the backup predates the current key | use the key from the screenshot; if the key was regenerated, build from a backup made after that |
-| `ffmpeg not found` / `tesseract not found` | a dependency is missing, and wexport refuses to produce a half-broken archive | run the install command the message prints, then the same command again |
-| `media missing` in the build summary | that file is not in the copied `Media/` — deleted on the phone, or never downloaded | nothing; the archive shows a placeholder |
-| contact names show as numbers | `Backups/wa.db` was not copied | copy `Backups/` and rebuild |
+| `is an iPhone backup encrypted with a password` | "Encrypt local backup" was on | turn it off, make the backup again, run wexport on the new folder |
+| `no ChatStorage.sqlite in the backup` | WhatsApp's data is not in this phone's backup | open WhatsApp, make the backup again, and check the folder is the whole backup |
+| `this folder holds more than one phone backup` | the path is the parent of several device folders | point wexport at one of the folders it lists |
+| `tesseract not found` | the key was handed over as a screenshot and the reader is missing | install `tesseract`, or pass the 64 digits with `-k` |
+| `media missing` in the build summary | that file is not in the copied `Media/` — deleted on the phone, or never downloaded | nothing; the archive shows a placeholder, and the phone's own preview when it kept one |
+| contact names show as numbers | Android: `Backups/wa.db` was not copied; iPhone: the contact has no name in the database | copy `Backups/` and rebuild; on iPhone the number is what the phone shows too |
 
-## 8. Afterwards
+## 10. Afterwards
 
 Each chat folder opens by double-clicking its `index.html`: no server, no wexport, no network.
 Everything it needs is inside it — messages, images, video, voice notes with their waveform. Sharing
@@ -214,7 +273,7 @@ machine that runs the build, or the one `-t ZONE` names; either way the archive 
 so a rebuild stays comparable.
 
 Keep the key and the chat folders together but separately stored: the folders need no key at all to be
-read, and the key without the backup opens nothing.
+read, and the key without the backup opens nothing. An iPhone build needs no key at any point.
 
 ---
 

@@ -30,7 +30,10 @@ cargo nextest run
 echo "== dependencies"
 cargo deny check
 
-echo "== windows"
-cargo check --target x86_64-pc-windows-gnu --quiet
+# The Windows cross-check needs the mingw toolchain, which only the Linux runner has.
+if [ "$(uname -s)" = "Linux" ]; then
+    echo "== windows"
+    cargo check --target x86_64-pc-windows-gnu --quiet
+fi
 
 echo "gate: ok"
