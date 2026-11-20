@@ -166,46 +166,54 @@ fn image_derivative(media: &Media, archive_root: &Path, sha: &str) -> Result<Der
             ..Derived::default()
         });
     }
-    Ok(stored_poster(media, archive_root))
+    Ok(Derived {
+        thumb: stored_poster(media, archive_root)?,
+        ..Derived::default()
+    })
 }
 
 fn video_derivative(media: &Media, archive_root: &Path, sha: &str) -> Result<Derived> {
     let mut derived = Derived::default();
     if let Some(source) = &media.source {
-        let info = container::probe(source)?;
-        derived.width = info.width;
-        derived.height = info.height;
-        derived.duration_ms = info.duration_ms;
-        if media.thumbnail.is_none() {
-            if let Some(frame) = info.h264.as_deref().and_then(h264_poster) {
-                let rel = write_derived(&frame, archive_root, &format!("{sha}.jpg"))?;
-                derived.thumb = Some(rel);
+        match container::probe(source) {
+            Ok(info) => {
+                derived.width = info.width;
+                derived.height = info.height;
+                derived.duration_ms = info.duration_ms;
+                if media.thumbnail.is_none() {
+                    if let Some(frame) = info.h264.as_deref().and_then(h264_poster) {
+                        let rel = write_derived(&frame, archive_root, &format!("{sha}.jpg"))?;
+                        derived.thumb = Some(rel);
+                    }
+                }
             }
+            // The file is copied either way: when the phone kept a preview, the picture is enough
+            // and only the duration is unknown.
+            Err(error) if media.thumbnail.is_none() => return Err(error),
+            Err(_) => {}
         }
     }
     if derived.thumb.is_none() {
-        derived.thumb = stored_poster(media, archive_root).thumb;
+        derived.thumb = stored_poster(media, archive_root)?;
     }
     Ok(derived)
 }
 
-/// The preview the phone kept, written as it is, named by the hash of its own bytes.
-fn stored_poster(media: &Media, archive_root: &Path) -> Derived {
-    let Some(bytes) = &media.thumbnail else {
-        return Derived::default();
+/// The preview the phone kept, written as it is, named by the hash of its own bytes. A preview in a
+/// format nobody can show is left out rather than written under an extension that lies.
+fn stored_poster(media: &Media, archive_root: &Path) -> Result<Option<String>> {
+    let Some(bytes) = media.thumbnail.as_ref().filter(|bytes| !bytes.is_empty()) else {
+        return Ok(None);
     };
-    if bytes.is_empty() {
-        return Derived::default();
-    }
+    let Some(extension) = extension_of(bytes) else {
+        return Ok(None);
+    };
     let digest = sha256_bytes(bytes);
-    let extension = extension_of(bytes);
-    let Ok(rel) = write_derived(bytes, archive_root, &format!("{digest}.{extension}")) else {
-        return Derived::default();
-    };
-    Derived {
-        thumb: Some(rel),
-        ..Derived::default()
-    }
+    Ok(Some(write_derived(
+        bytes,
+        archive_root,
+        &format!("{digest}.{extension}"),
+    )?))
 }
 
 fn audio_derivative(media: &Media) -> Result<Derived> {
@@ -318,16 +326,16 @@ fn clamp(value: i32) -> u8 {
     value.clamp(0, 255) as u8
 }
 
-/// The extension a picture's own bytes declare.
-pub fn extension_of(bytes: &[u8]) -> &'static str {
+/// The extension a picture's own bytes declare, or None for bytes no viewer could show.
+pub fn extension_of(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        "jpg"
+        Some("jpg")
     } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-        "png"
+        Some("png")
     } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
-        "webp"
+        Some("webp")
     } else {
-        "jpg"
+        None
     }
 }
 
@@ -347,11 +355,13 @@ fn decode_peaks(ogg: &container::Ogg) -> Result<Vec<u8>> {
     let mut fine: Vec<u8> = Vec::new();
     let mut samples = vec![0i16; 57_600 * ogg.channels.max(1) as usize];
     let mut index = 0usize;
+    let mut decoded = 0usize;
     let channels = ogg.channels.max(1) as usize;
     for packet in &ogg.packets {
         let Ok(count) = decoder.decode(&packet.bytes, &mut samples, false) else {
             continue;
         };
+        decoded += 1;
         for position in 0..count {
             let mut peak = 0i16;
             for channel in 0..channels {
@@ -365,6 +375,11 @@ fn decode_peaks(ogg: &container::Ogg) -> Result<Vec<u8>> {
             fine[bucket] = fine[bucket].max(value.min(100));
             index += 1;
         }
+    }
+    if decoded == 0 {
+        return Err(Error::input(
+            "the Opus decoder could not read a single packet",
+        ));
     }
     Ok(peaks_of(&fine))
 }
@@ -522,6 +537,29 @@ mod tests {
     }
 
     #[test]
+    fn a_preview_no_browser_could_show_is_left_out_rather_than_mislabelled() {
+        let root = scratch("unknown-preview");
+        let mut video = item("video", None);
+        video.thumbnail = Some(b"not a picture".to_vec());
+        let derived = derive(&video, &root, "ignored").unwrap();
+        assert!(derived.thumb.is_none(), "no file, no lying extension");
+        assert!(!root.join("deriv").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_video_with_a_corrupt_container_but_a_stored_preview_still_shows_it() {
+        let root = scratch("corrupt-with-preview");
+        let broken = root.join("broken.mp4");
+        std::fs::write(&broken, b"not a container").unwrap();
+        let mut video = item("video", Some(broken));
+        video.thumbnail = Some(vec![0xFF, 0xD8, 0xFF, 9, 9, 9]);
+        let derived = derive(&video, &root, "sha").unwrap();
+        assert!(derived.thumb.is_some(), "the preview is the poster");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn a_voice_note_gives_a_waveform_and_a_duration() {
         let root = scratch("audio");
         let derived = derive(
@@ -576,8 +614,10 @@ mod tests {
 
     proptest! {
         #[test]
-        fn a_picture_extension_is_always_one_we_can_write(bytes in proptest::collection::vec(any::<u8>(), 0..20)) {
-            prop_assert!(["jpg", "png", "webp"].contains(&extension_of(&bytes)));
+        fn a_picture_extension_is_known_or_absent(bytes in proptest::collection::vec(any::<u8>(), 0..20)) {
+            if let Some(extension) = extension_of(&bytes) {
+                prop_assert!(["jpg", "png", "webp"].contains(&extension));
+            }
         }
     }
 }

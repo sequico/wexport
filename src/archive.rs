@@ -339,15 +339,22 @@ fn one_media(
     let Some(source) = media_item.source.as_deref() else {
         // The file is not in the copy; the phone may still have kept its preview.
         row.insert("mi".into(), json!(1));
-        if let Ok(derived) = media::derive(media_item, archive, "") {
-            fill(&mut row, media_item, derived);
-        }
+        let preview = media::derive(media_item, archive, "");
         if let Ok(mut bar) = bar.lock() {
             bar.step(1);
         }
-        return Prepared {
-            row: Some(Value::Object(row)),
-            failure: None,
+        return match preview {
+            Ok(derived) => {
+                fill(&mut row, media_item, derived);
+                Prepared {
+                    row: Some(Value::Object(row)),
+                    failure: None,
+                }
+            }
+            Err(error) => Prepared {
+                row: Some(Value::Object(row)),
+                failure: Some(format!("{id}: {}: {}", media_item.rel_path, error)),
+            },
         };
     };
 
