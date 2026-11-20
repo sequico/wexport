@@ -374,13 +374,16 @@ fn ebml_walk(data: &[u8], depth: usize, raw: &mut EbmlRaw) {
             return;
         };
         match id {
-            0x1853_8067 => raw.scale = uint(payload),
+            // Segment, Info, Tracks, TrackEntry, Video: the elements whose children matter. The
+            // EBML header (0x1A45DFA3) is not one of them: it names the document, not the stream.
+            0x1853_8067 | 0x1549_A966 | 0x1654_AE6B | 0xAE | 0xE0 => {
+                ebml_walk(payload, depth + 1, raw);
+            }
+            // TimecodeScale, Duration, PixelWidth, PixelHeight.
+            0x2AD7_B1 => raw.scale = uint(payload),
             0x4489 => raw.duration = float(payload),
             0xB0 => raw.width = uint(payload),
             0xBA => raw.height = uint(payload),
-            0x1A45_DFA3 | 0x1549_A966 | 0x1654_AE6B | 0xAE | 0xE0 => {
-                ebml_walk(payload, depth + 1, raw);
-            }
             _ => {}
         }
         offset += header + size as usize;
@@ -403,7 +406,8 @@ fn ebml_vint(data: &[u8], keep_marker: bool) -> Option<(u64, usize)> {
     let mut value = if keep_marker {
         first as u64
     } else {
-        (first & (0xFF >> length)) as u64
+        // In a 16-bit shift an eight-byte length shifts by eight, which a u8 cannot do.
+        (first as u16 & (0xFFu16 >> length)) as u64
     };
     for byte in &data[1..length] {
         value = (value << 8) | *byte as u64;
@@ -514,6 +518,10 @@ fn ogg_info(path: &Path) -> Result<Info> {
         ..Info::default()
     })
 }
+
+#[cfg(test)]
+#[path = "container_tests.rs"]
+mod parser_tests;
 
 #[cfg(test)]
 mod tests {

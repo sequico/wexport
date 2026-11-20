@@ -38,9 +38,11 @@ echo "== mutations"
 # One job per core (capped): 625 mutants at four seconds each is forty minutes in series.
 jobs=$(nproc 2>/dev/null || echo 2)
 [ "$jobs" -gt 8 ] && jobs=8
-# Mutation testing judges logic. The presentation modules (ui, report, progress) are mostly println
-# and arithmetic on numbers already asserted end-to-end; mutating them says nothing about the product.
-set -- --timeout 180 --jobs "$jobs"
+# Twice the jobs of cores: each mutant is a small build plus one test run, so the extra jobs hide
+# their I/O without competing for a core. nextest starts the suite faster than cargo test does.
+# The memory test is left out of this run: it measures an allocation ceiling, which no mutant of the
+# parsers can move, and it costs six seconds on every one of a thousand mutants.
+set -- --timeout 120 --jobs $((jobs * 2)) --test-tool nextest -- -E 'not binary(memory)'
 for file in src/crypt15.rs src/keys.rs src/media.rs src/chunks.rs src/msgstore.rs src/merge.rs \
     src/discover.rs src/ios.rs src/container.rs src/archive.rs src/error.rs; do
     set -- "$@" --file "$file"
