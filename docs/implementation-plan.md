@@ -488,6 +488,7 @@ proves that it links, not that it starts.
 | `image` (JPEG, PNG, WebP) | decode and resize pictures, write JPEG thumbnails | MIT / Apache-2.0 |
 | `openh264` (vendored C++) | decode the first H.264 frame when the phone stored no preview | BSD-2-Clause |
 | `opus` (vendored C) | decode voice notes for the waveform | BSD-3-Clause |
+| `libc` (Unix only) | the SIGPIPE disposition, so a listing piped into `head` ends quietly | MIT / Apache-2.0 |
 | `tesseract` (external, optional) | read the 64 digits from a screenshot | Apache-2.0 |
 
 **Decision (owner, taken):** wexport is **GPL-3.0-or-later**. The crypt15 reader — varint + protobuf

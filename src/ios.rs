@@ -40,7 +40,6 @@ struct Columns {
     media_latitude: Option<String>,
     media_longitude: Option<String>,
     media_vcard: Option<String>,
-    member_chat: Option<String>,
     member_jid: Option<String>,
     member_name: Option<String>,
 }
@@ -133,16 +132,15 @@ impl IosStore {
 
     fn load_members(&mut self) -> Result<()> {
         let c = &self.columns;
-        let (Some(chat), Some(jid), Some(name)) = (&c.member_chat, &c.member_jid, &c.member_name)
-        else {
+        let (Some(jid), Some(name)) = (&c.member_jid, &c.member_name) else {
             return Ok(());
         };
-        let sql = format!("SELECT \"{chat}\", \"{jid}\", \"{name}\" FROM ZWAGROUPMEMBER",);
+        let sql = format!("SELECT \"{jid}\", \"{name}\" FROM ZWAGROUPMEMBER");
         let mut statement = self.con.prepare(&sql)?;
         let mut rows = statement.query([])?;
         while let Some(row) = rows.next()? {
-            let member: Option<String> = row.get(1)?;
-            let name: Option<String> = row.get(2)?;
+            let member: Option<String> = row.get(0)?;
+            let name: Option<String> = row.get(1)?;
             if let (Some(member), Some(name)) = (member, name) {
                 if !name.trim().is_empty() {
                     self.members.insert(key_of(&member), name);
@@ -538,7 +536,6 @@ fn probe(con: &Connection) -> Result<Columns> {
         media_latitude: media_table.then(|| pick(media, &["ZLATITUDE"])).flatten(),
         media_longitude: media_table.then(|| pick(media, &["ZLONGITUDE"])).flatten(),
         media_vcard: media_table.then(|| pick(media, &["ZVCARDNAME"])).flatten(),
-        member_chat: pick(member, &["ZCHATSESSION"]),
         member_jid: pick(member, &["ZMEMBERJID"]),
         member_name: pick(member, &["ZCONTACTNAME", "ZNAME"]),
     })
