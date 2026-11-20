@@ -259,6 +259,7 @@ The exit code is what a script reads:
 | `tesseract not found` | the key was handed over as a screenshot and the reader is missing | install `tesseract`, or pass the 64 digits with `-k` |
 | `media missing` in the build summary | that file is not in the copied `Media/` — deleted on the phone, or never downloaded | nothing; the archive shows a placeholder, and the phone's own preview when it kept one |
 | contact names show as numbers | Android: `Backups/wa.db` was not copied; iPhone: the contact has no name in the database | copy `Backups/` and rebuild; on iPhone the number is what the phone shows too |
+| `… file(s) from the older backup chain (crypt14) … were ignored` | the folder also holds old `crypt14` copies beside the `crypt15` one | nothing: the `crypt15` file is the one that opens, and the warning says which files were left out |
 
 ## 10. Afterwards
 

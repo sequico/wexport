@@ -107,10 +107,10 @@ pub fn run(args: &[String]) -> Result<i32> {
     };
 
     if !opened.ignored.is_empty() {
-        report.info(format!(
-            "ignored      {} file(s) from the older backup chain (crypt14)",
+        report.emit(Event::Warning(format!(
+            "{} file(s) from the older backup chain (crypt14) are not part of this backup and were ignored",
             opened.ignored.len()
-        ));
+        )));
     }
     let store = opened.store.as_ref();
     let stats = store.chat_stats()?;
