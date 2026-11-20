@@ -39,9 +39,9 @@ The graphical application, the AppImage and the signed `.dmg` are **later work**
 
 | Platform | Artifact | Built on | Notes |
 |---|---|---|---|
-| Linux x86-64 | `wexport-<v>-linux-x86_64.tar.gz` (holds `wexport`) | `ubuntu-24.04` | as in 1.0 |
-| Windows x86-64 | `wexport-<v>-windows-x86_64.zip` (holds `wexport.exe`) | `ubuntu-24.04` + mingw | as in 1.0 |
-| macOS universal | `wexport-<v>-macos-universal.tar.gz` (holds `wexport`) | `macos-14` | `aarch64-apple-darwin` + `x86_64-apple-darwin` installed and built, joined with `lipo` |
+| Linux x86-64 | `wexport-<v>-linux-x86_64.tar.gz` (holds `wexport` and the licences) | `ubuntu-24.04` | as in 1.0 |
+| Windows x86-64 | `wexport-<v>-windows-x86_64.zip` (holds `wexport.exe` and the licences) | `ubuntu-24.04` + mingw | as in 1.0 |
+| macOS universal | `wexport-<v>-macos-universal.tar.gz` (holds `wexport` and the licences) | `macos-14` | `aarch64-apple-darwin` + `x86_64-apple-darwin` installed and built, joined with `lipo` |
 
 **macOS needs no Apple Developer account and no notarization, because the artifact is a `.tar.gz`
 extracted from a terminal.** The quarantine attribute is set by the browser on the downloaded archive,
@@ -61,6 +61,11 @@ cannot be cross-built. The procedure is two commands:
 gh run download <run-id> -n dist -D dist-macos   # the macOS job uploads dist/ as the artifact "dist"
 ./scripts/release.sh --stage dist-macos          # stages all three, verifies, writes the .sha256 files
 ```
+
+**Each archive carries its licences.** Beside the binary, `LICENSE` (GPL-3.0-or-later for wexport) and
+`THIRD-PARTY.md`, generated from `Cargo.lock`, with the notices the statically linked crates and the two
+compiled-in libraries require. A binary distribution without them is not publishable, so
+`release.sh` stages both files into every archive and the verification step checks they are there.
 
 The script checks that each archive holds the binary it claims and that the inner binary hashes match
 what was built, and **refuses to produce a release without the macOS archive**, the way it already
@@ -92,8 +97,9 @@ not encrypted.*
 beside it, and the newest messages are in the WAL, not in the main file. All three are copied into the
 build's writable workspace — replaying a log needs room for the `-shm` — and the database is opened
 read-only there, so SQLite replays the log; a build that read only the main file would silently lose
-the last days of every conversation. The fixture has a WAL too, and a test asserts that a message
-written only to it is in the archive.
+the last days of every conversation. The copy is owner-only (0700) and removed when the build ends,
+success or failure, as the Android workspace is. The fixture has a WAL too, and a test asserts that a
+message written only to it is in the archive.
 
 **Backups written before iOS 10** keep their files at `domain-relativePath` instead of a hashed
 `fileID`; 2.0 does not read that layout and says so, naming what it found, rather than producing an
@@ -266,30 +272,33 @@ Rules that decide the awkward cases:
 
 | # | Work | Acceptance |
 |---|---|---|
-| M1 | **macOS artifact**: `macos-14` job, two targets + `lipo`, `release.sh --stage` gains the third archive | the archive is extracted and run on the macOS runner: `wexport -v`, `lipo -info`, `codesign -dv`, one chat built |
+| M1 | **macOS artifact**: `macos-14` job, two targets + `lipo`, `release.sh --stage` gains the third archive | the archive is extracted and run on the macOS runner: `wexport -v`, `lipo -info`, `codesign -dv`, one chat built; all three archives hold the binary, `LICENSE` and `THIRD-PARTY.md` |
 | M2 | Source detection: `Source` enum, discovery for a backup directory and a bare `ChatStorage.sqlite` | every existing test passes; a fake iOS folder is recognised, a real Android one still builds, an encrypted backup is refused by name (exit `3`), two device folders in one path are listed and refused without a terminal (exit `1`) |
 | M3 | `src/ios.rs`: chats, messages, senders, the 2001 epoch | unit tests cover every field and a renamed column |
 | M4 | iPhone media: paths in the app group, `ZTHUMBNAILLOCALPATH` posters, missing files | the iOS fixture builds an archive that passes the viewer contract, and a thumbnail whose shape differs from its media is fitted, not stretched |
 | M5 | **Media without `ffmpeg`**: image path (JPEG out), container metadata, phone thumbnails on both phones, `openh264` poster when the phone stored none, `libopus` waveform, the startup check removed | the suite passes with no `ffmpeg` on `PATH`; the golden chunk moves once by the thumbnail extension and the diff is read; an H.264 video with and one without a stored thumbnail both get a poster, an HEVC one without keeps the placeholder and still exits `0` |
-| M6 | **Structured reporting**: `ui.rs` emits events (`found`, `chat_list`, `progress`, `warning`, `failure`, `finished`) and the CLI prints them, with the current output pinned by tests | the CLI's text and the archives are unchanged; this is also the GUI's prerequisite (§10.1) |
-| M7 | **The five flags**: `-j`, `-q`, `-d`, `-n`, `-c`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-q` with `-d` is refused, `-c` reports a damaged database and a missing media file |
+| M6 | **Structured reporting**: `ui.rs` emits events (`found`, `chat_list`, `progress`, `warning`, `failure`, `finished`), `main.rs` and `progress.rs` render them — the bar keeps its throttling and its terminal check — with the current output pinned by tests | the CLI's text and the archives are unchanged; no module prints on its own; this is also the GUI's prerequisite (§10.1) |
+| M7 | **The five flags**: `-j`, `-q`, `-d`, `-n`, `-c`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-q` with `-d` is refused, `-q` and `-j` leave the progress bar silent, `-c` reports a damaged database and a missing media file |
 | M8 | Docs (usage page for an unencrypted iPhone backup, README box, `-h`, requirements, the flag table), `CHANGELOG.md` 2.0 entry, validation on real backups, 2.0 tag | download, extract and run works on both phones, on all three platforms |
 
 **The documentation alignment in M8 is every file.** A document that still
 describes 1.0 after the 2.0 tag is a defect, and it is fixed in M8, not reported:
 
 - `README.md` — the three assets in the install table, the key box ("Android needs the 64-digit key; an
-  iPhone needs an unencrypted local backup"), no `ffmpeg` in the requirements, the feature list.
+  iPhone needs an unencrypted local backup"), no `ffmpeg` in the requirements, the exit-code table with
+  exit `3` extended to an encrypted iPhone backup, the feature list.
 - `docs/usage.md` — the flag table with `-j -q -d -n -c`, the "what opens" table with the iPhone rows,
   the iPhone steps (unencrypted local backup, where to find it, what to copy), the requirements without
-  `ffmpeg`, the troubleshooting table for the new messages.
+  `ffmpeg`, the exit-code table with the encrypted iPhone backup, the troubleshooting table for the new
+  messages.
 - `docs/implementation-plan.md` — §2's CLI surface, §5 without the `ffmpeg` requirement, §6/§7 packaging
   for three platforms, the repository tree with `src/ios.rs` and the new fixtures.
 - `docs/android-backup-formats.md` — **renamed to `docs/backup-formats.md`**, so the title does not lie:
   it becomes the container reference for both phones, with the iOS `ChatStorage.sqlite` and
   `Manifest.db` layout added, and every reference to the old name followed.
 - `CHANGELOG.md` — the 2.0 entry, one line per change a user notices.
-- `-h` — the five flags, the requirements line without `ffmpeg`, the iPhone sentence.
+- `-h` — the five flags, the requirements line without `ffmpeg`, the iPhone sentence, and exit `3`
+  extended to an encrypted iPhone backup.
 - `SECURITY.md` — the scope extended to the iOS parser, the thumbnails read from the database and the
   two compiled libraries (`openh264`, `libopus`), which are parsing surfaces like everything else.
 - `.opencode/skills/wexport-implement/SKILL.md` — the module map and the fixture recipe.
