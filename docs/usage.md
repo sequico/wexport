@@ -199,7 +199,7 @@ directory. Inside it, the backup is found wherever the copy put it.
 | `-b CODES` | chat codes, comma-separated, or `all` | build those chats; the codes are the ones the list printed |
 | `-o DIR` | a folder | where the archives go, instead of `<FOLDER>/output`; needs `-b` |
 | `-t ZONE` | a zone name, `Europe/Rome` | render every time in that zone instead of the machine's; the name is written into each archive |
-| `-j` | — | JSON lines on stdout: `found`, `chat_list`, `progress`, `warning`, `failure`, `finished`; errors stay on stderr |
+| `-j` | — | JSON lines on stdout: `found`, `chat_list`, `progress`, `diagnostic` (with `-d`), `warning`, `failure`, `finished`; errors stay on stderr |
 | `-q` | — | no progress and no summary; a list or the JSON still prints |
 | `-d` | — | diagnostics: the files found, the columns recognised, every media file placed or missing |
 | `-n` | — | dry run: report what `-b` would build and write nothing; needs `-b` |

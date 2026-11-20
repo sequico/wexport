@@ -22,6 +22,7 @@ pub enum Event {
         done: usize,
         total: usize,
     },
+    Diagnostic(String),
     Warning(String),
     Failure(String),
     Finished(Finished),
@@ -97,7 +98,7 @@ impl Report {
             return;
         }
         if self.json {
-            self.emit(Event::Warning(format!("debug: {}", message.as_ref())));
+            self.emit(Event::Diagnostic(message.as_ref().to_string()));
         } else {
             eprintln!("debug: {}", message.as_ref());
         }
@@ -126,7 +127,8 @@ impl Report {
             Event::Found { .. }
             | Event::ChatList(_)
             | Event::Finished(_)
-            | Event::Progress { .. } => {}
+            | Event::Progress { .. }
+            | Event::Diagnostic(_) => {}
             Event::Warning(message) => eprintln!("warning: {message}"),
             Event::Failure(message) => eprintln!("{message}"),
         }
@@ -165,6 +167,7 @@ fn event_value(event: &Event) -> Value {
             "done": done,
             "total": total,
         }),
+        Event::Diagnostic(message) => json!({ "kind": "diagnostic", "message": message }),
         Event::Warning(message) => json!({ "kind": "warning", "message": message }),
         Event::Failure(message) => json!({ "kind": "failure", "message": message }),
         Event::Finished(finished) => json!({
@@ -207,6 +210,7 @@ mod tests {
                 done: 1,
                 total: 2,
             },
+            Event::Diagnostic("media: path=Some(file_path)".into()),
             Event::Warning("careful".into()),
             Event::Failure("broken".into()),
             Event::Finished(Finished {
@@ -236,12 +240,13 @@ mod tests {
                 "found",
                 "chat_list",
                 "progress",
+                "diagnostic",
                 "warning",
                 "failure",
                 "finished"
             ]
         );
-        let finished = event_value(&events[5]);
+        let finished = event_value(&events[6]);
         assert_eq!(finished["seconds"], 1.25);
         assert_eq!(finished["missing"], 1);
     }

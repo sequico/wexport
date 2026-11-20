@@ -105,9 +105,10 @@ Every rendered time uses this machine's zone unless `-t ZONE` names one (`Europe
 manifest records the name either way.
 
 Five flags report instead of changing the output: `-j` (JSON lines: `found`, `chat_list`, `progress`,
-`warning`, `failure`, `finished`), `-q` (silence, with results still printed), `-d` (diagnostics: the
-files found, the columns recognised, each media file placed or missing), `-n` (a dry run that needs
-`-b` and writes nothing) and `-c` (check the source and stop, or check and then build).
+`diagnostic`, `warning`, `failure`, `finished`), `-q` (silence, with results still printed), `-d`
+(diagnostics: the files found, the columns recognised, each media file placed or missing), `-n` (a
+dry run that needs `-b` and writes nothing) and `-c` (check the source and stop, or check and then
+build).
 
 Media that the user did not copy is **not** an error: it is the normal state of a partial archive,
 reported in the build summary and visible in the archive as a placeholder — with the phone's own
