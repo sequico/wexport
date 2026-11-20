@@ -66,15 +66,18 @@ pub fn source_for(rel_path: &str, media_root: Option<&Path>, copy_root: &Path) -
 
 /// The first candidate that exists and stays inside one of the roots.
 pub fn contain(candidates: Vec<PathBuf>, roots: &[PathBuf]) -> Option<PathBuf> {
+    let roots: Vec<PathBuf> = roots
+        .iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .collect();
+    if roots.is_empty() {
+        return None;
+    }
     for candidate in candidates {
         let Ok(resolved) = candidate.canonicalize() else {
             continue;
         };
-        if !roots.iter().any(|root| {
-            root.canonicalize()
-                .map(|root| resolved.starts_with(root))
-                .unwrap_or(false)
-        }) {
+        if !roots.iter().any(|root| resolved.starts_with(root)) {
             continue;
         }
         if resolved.is_file() {
@@ -431,6 +434,33 @@ mod tests {
             source,
             thumbnail: None,
         }
+    }
+
+    #[test]
+    fn a_path_that_climbs_out_of_the_copy_is_refused() {
+        let root = scratch("escape");
+        let media = root.join("Media");
+        std::fs::create_dir_all(&media).unwrap();
+        std::fs::write(media.join("photo.jpg"), b"bytes").unwrap();
+        let secret = std::env::temp_dir().join(format!(
+            "wexport-outside-{}-{}.txt",
+            std::process::id(),
+            "escape"
+        ));
+        std::fs::write(&secret, b"secret").unwrap();
+
+        assert_eq!(
+            source_for("photo.jpg", Some(&media), &root),
+            Some(media.join("photo.jpg").canonicalize().unwrap())
+        );
+        let climb = format!("../../{}", secret.file_name().unwrap().to_string_lossy());
+        assert_eq!(
+            source_for(&climb, Some(&media), &root),
+            None,
+            "a row cannot pull a file from outside the copy"
+        );
+        let _ = std::fs::remove_file(&secret);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
