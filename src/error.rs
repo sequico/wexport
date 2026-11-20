@@ -105,3 +105,24 @@ pub fn missing_binary(name: &str) -> Error {
         install_hints(name)
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tesseract_has_its_own_install_lines_and_nothing_else_does() {
+        let tesseract = install_hints("tesseract");
+        assert!(tesseract.contains("tesseract-ocr"));
+        let other = install_hints("some-other-tool");
+        assert!(!other.contains("tesseract"));
+        assert!(other.contains("<the tool>"));
+    }
+
+    #[test]
+    fn a_missing_binary_is_a_dependency_failure() {
+        let error = missing_binary("tesseract");
+        assert_eq!(error.code, EXIT_DEPENDENCY);
+        assert!(error.message.contains("tesseract-ocr"));
+    }
+}

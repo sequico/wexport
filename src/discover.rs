@@ -808,6 +808,15 @@ mod tests {
     }
 
     #[test]
+    fn a_file_id_of_forty_characters_that_are_not_hex_is_refused() {
+        let root = root("fake-id");
+        assert!(hashed_file(&root, &"z".repeat(40)).is_none());
+        assert!(hashed_file(&root, &"a".repeat(40)).is_some());
+        assert!(hashed_file(&root, &"a".repeat(39)).is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn a_manifest_that_answers_with_a_path_instead_of_a_file_id_finds_nothing() {
         let root = root("hostile-manifest");
         let connection = rusqlite::Connection::open(root.join("Manifest.db")).unwrap();

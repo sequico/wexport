@@ -693,4 +693,109 @@ mod tests {
             "a call whose length the row does not carry has no payload to invent one from"
         );
     }
+
+    fn open_store(
+        name: &str,
+        sql: &str,
+        media: &[(&str, &[u8])],
+    ) -> (std::result::Result<IosStore, crate::error::Error>, PathBuf) {
+        let root = std::env::temp_dir().join(format!("wexport-ios-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        for (relative, bytes) in media {
+            let path = root.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+        let database = root.join("ChatStorage.sqlite");
+        let con = Connection::open(&database).unwrap();
+        con.execute_batch(sql).unwrap();
+        drop(con);
+        let inputs = IosInputs {
+            root: root.clone(),
+            database,
+            wal: None,
+            shm: None,
+            manifest: None,
+            files: None,
+            app_group: Some(root.clone()),
+        };
+        let workspace = root.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        (IosStore::open(&inputs, &workspace), root)
+    }
+
+    #[test]
+    fn a_database_that_is_not_whatsapps_is_refused() {
+        for (name, sql) in [
+            ("only-messages", "CREATE TABLE ZWAMESSAGE (Z_PK INTEGER);"),
+            (
+                "only-sessions",
+                "CREATE TABLE ZWACHATSESSION (Z_PK INTEGER);",
+            ),
+        ] {
+            let (opened, root) = open_store(name, sql, &[]);
+            let error = opened.err().expect("not a WhatsApp database");
+            assert!(
+                error.message.contains("not WhatsApp's iPhone database"),
+                "{name}: {}",
+                error.message
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn a_nameless_member_is_the_number_and_a_missing_preview_is_nothing() {
+        let sql = "
+            CREATE TABLE ZWACHATSESSION (Z_PK INTEGER PRIMARY KEY, ZCONTACTJID TEXT, ZPARTNERNAME TEXT);
+            CREATE TABLE ZWAMESSAGE (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+                ZMESSAGEDATE REAL, ZISFROMME INTEGER, ZTEXT TEXT, ZFROMJID TEXT, ZMEDIAITEM INTEGER,
+                ZDELETED INTEGER, ZEDITED INTEGER, ZCALLTYPE INTEGER);
+            CREATE TABLE ZWAMEDIAITEM (Z_PK INTEGER PRIMARY KEY, ZMEDIALOCALPATH TEXT,
+                ZTHUMBNAILLOCALPATH TEXT, ZFILESIZE INTEGER, ZMIMETYPE TEXT, ZLATITUDE REAL,
+                ZLONGITUDE REAL, ZVCARDNAME TEXT);
+            CREATE TABLE ZWAGROUPMEMBER (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+                ZMEMBERJID TEXT, ZCONTACTNAME TEXT);
+            INSERT INTO ZWACHATSESSION VALUES (1, '120363000000000001@g.us', 'Family');
+            INSERT INTO ZWAMESSAGE VALUES (1, 1, 817808400.5, 0, 'one', '111@s.whatsapp.net', NULL, 0, 0, NULL);
+            INSERT INTO ZWAMESSAGE VALUES (2, 1, 817808460.5, 0, NULL, '222@s.whatsapp.net', 1, 0, 0, NULL);
+            INSERT INTO ZWAMESSAGE VALUES (3, 1, 817808520.5, 0, NULL, '222@s.whatsapp.net', 2, 0, 0, NULL);
+            INSERT INTO ZWAGROUPMEMBER VALUES (1, 1, '111@s.whatsapp.net', '   ');
+            INSERT INTO ZWAGROUPMEMBER VALUES (2, 1, '222@s.whatsapp.net', 'Bob');
+            INSERT INTO ZWAMEDIAITEM VALUES (1, NULL, 'Media/t.jpg', NULL, NULL, NULL, NULL, NULL);
+            INSERT INTO ZWAMEDIAITEM VALUES (2, NULL, '', NULL, NULL, NULL, NULL, NULL);";
+        let (opened, root) = open_store("preview", sql, &[("Media/t.jpg", b"a preview")]);
+        let store = opened.expect("a store");
+        let stats = store.chat_stats().unwrap();
+        let mut messages = Vec::new();
+        store
+            .each_message(&stats[0].chat, &mut |message| {
+                messages.push(message);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            messages[0].sender.as_deref(),
+            Some("111"),
+            "a nameless member is shown by the number the phone shows"
+        );
+        assert_eq!(messages[1].sender.as_deref(), Some("Bob"));
+        assert_eq!(
+            messages[1]
+                .media
+                .as_ref()
+                .and_then(|media| media.thumbnail.clone()),
+            Some(b"a preview".to_vec())
+        );
+        assert!(
+            messages[2]
+                .media
+                .as_ref()
+                .and_then(|media| media.thumbnail.clone())
+                .is_none(),
+            "an empty thumbnail path is no preview"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
