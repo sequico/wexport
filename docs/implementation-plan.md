@@ -298,7 +298,8 @@ Decisions worth stating:
   a corrupt file fails alone, on the per-file path.
 - **The phone's own preview is the poster.** Android keeps `message_thumbnail`, iOS keeps a thumbnail
   file even for media the phone deleted: a media row whose file is gone still shows its picture, with
-  the "not copied" mark.
+  the "not copied" mark. The preview is used when its bytes are a picture a browser can show (JPEG,
+  PNG or WebP); anything else is left out rather than written under an extension that lies.
 - The thumbnail and poster a derivative produces are named by the hash of their own bytes when the
   source file is gone, and by the source's hash otherwise: the content-addressed rule, applied to
   whatever content exists.
