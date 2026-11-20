@@ -87,6 +87,28 @@ fn find_box_reads_a_64_bit_size_and_a_size_that_runs_to_the_end() {
 }
 
 #[test]
+fn find_box_reads_an_open_size_after_another_box() {
+    let data = concat(&[be_box(b"free", b"x"), raw_box(b"moov", 0, b"end")]);
+    let (mut file, length) = file_with("open-after", &data);
+    assert_eq!(
+        find_box(&mut file, length, b"moov").unwrap(),
+        Some((3, 17)),
+        "what is left after the second header, not after the first"
+    );
+}
+
+#[test]
+fn find_box_finds_a_box_that_ends_exactly_at_the_file_end() {
+    let data = concat(&[be_box(b"free", b"x"), be_box(b"moov", b"")]);
+    let (mut file, length) = file_with("tail", &data);
+    assert_eq!(
+        find_box(&mut file, length, b"moov").unwrap(),
+        Some((0, 17)),
+        "the last eight bytes are a box too"
+    );
+}
+
+#[test]
 fn find_box_stops_at_a_file_shorter_than_its_boxes() {
     let (mut file, _) = file_with("short", b"abcd");
     assert_eq!(find_box(&mut file, 100, b"moov").unwrap(), None, "read < 8");
@@ -142,6 +164,11 @@ fn boxes_handle_a_normal_forty_bit_and_open_size() {
         boxes(&wide_header).is_empty(),
         "a 64-bit size with no room for it"
     );
+
+    let wide_empty = large_box(b"moov", b"");
+    let parsed = boxes(&wide_empty);
+    assert_eq!(parsed.len(), 1, "sixteen bytes are a whole 64-bit header");
+    assert!(parsed[0].1.is_empty());
 }
 
 #[test]
@@ -329,6 +356,32 @@ fn a_malformed_avcc_yields_what_it_holds_and_no_more() {
 }
 
 #[test]
+fn every_parameter_set_of_a_record_is_read() {
+    // Two SPS and two PPS: after each set the offset has to move by its length and its prefix.
+    let mut avcc = vec![0x01, 0x42, 0xC0, 0x1E, 0xFF, 0xE2];
+    for sps in [&[0x67u8, 0x01][..], &[0x67, 0x02, 0x03][..]] {
+        avcc.extend_from_slice(&(sps.len() as u16).to_be_bytes());
+        avcc.extend_from_slice(sps);
+    }
+    avcc.push(2);
+    for pps in [&[0x68u8, 0x01][..], &[0x68, 0x02, 0x03, 0x04][..]] {
+        avcc.extend_from_slice(&(pps.len() as u16).to_be_bytes());
+        avcc.extend_from_slice(pps);
+    }
+    let (sets, size) = parameter_sets(&avcc);
+    assert_eq!(size, 4);
+    assert_eq!(
+        sets,
+        [
+            &[0x67, 0x01][..],
+            &[0x67, 0x02, 0x03][..],
+            &[0x68, 0x01][..],
+            &[0x68, 0x02, 0x03, 0x04][..]
+        ]
+    );
+}
+
+#[test]
 fn the_first_chunk_and_sample_size_come_from_the_tables() {
     let mut stco = vec![0, 0, 0, 0];
     stco.extend_from_slice(&1u32.to_be_bytes());
@@ -399,23 +452,31 @@ fn element(id: &[u8], payload: &[u8]) -> Vec<u8> {
     out
 }
 
+fn webm_document(scale: Option<&[u8]>, duration: f32) -> Vec<u8> {
+    let mut info = Vec::new();
+    if let Some(scale) = scale {
+        info.extend_from_slice(&element(&[0x2A, 0xD7, 0xB1], scale));
+    }
+    info.extend_from_slice(&element(&[0x44, 0x89], &duration.to_be_bytes()));
+    let segment = element(
+        &[0x18, 0x53, 0x80, 0x67],
+        &element(&[0x15, 0x49, 0xA9, 0x66], &info),
+    );
+    concat(&[element(&[0x1A, 0x45, 0xDF, 0xA3], b"webm"), segment])
+}
+
 #[test]
 fn a_webm_gives_its_duration_and_size() {
-    let mut scale = vec![0x0F, 0x42, 0x40]; // 1 000 000
-    let mut info = element(&[0x2A, 0xD7, 0xB1], &scale);
-    let duration = 1500.0f32.to_be_bytes();
-    info.extend_from_slice(&element(&[0x44, 0x89], &duration));
     let mut video = element(&[0xB0], &[0x02, 0x80]); // 640
     video.extend_from_slice(&element(&[0xBA], &[0x01, 0xE0])); // 480
     let tracks = element(
         &[0x16, 0x54, 0xAE, 0x6B],
         &element(&[0xAE], &element(&[0xE0], &video)),
     );
-    let segment = element(
-        &[0x18, 0x53, 0x80, 0x67],
-        &concat(&[element(&[0x15, 0x49, 0xA9, 0x66], &info), tracks]),
-    );
-    let document = concat(&[element(&[0x1A, 0x45, 0xDF, 0xA3], b"webm"), segment]);
+    let mut document = webm_document(Some(&[0x0F, 0x42, 0x40]), 1500.0);
+    // The tracks element goes beside the info element, inside the Segment.
+    let segment = element(&[0x18, 0x53, 0x80, 0x67], &tracks);
+    document.extend_from_slice(&segment);
     let path = scratch("webm");
     std::fs::write(&path, document).unwrap();
     let info = probe(&path).unwrap();
@@ -423,7 +484,43 @@ fn a_webm_gives_its_duration_and_size() {
     assert_eq!(info.width, Some(640));
     assert_eq!(info.height, Some(480));
     assert!(info.h264.is_none());
-    scale.clear();
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn a_webm_says_which_scale_its_duration_uses() {
+    let path = scratch("webm-scale");
+    std::fs::write(&path, webm_document(Some(&[0x07, 0xA1, 0x20]), 1500.0)).unwrap();
+    assert_eq!(
+        ebml_info(&path).unwrap().duration_ms,
+        Some(750),
+        "a 500 000 scale halves the microseconds"
+    );
+    let _ = std::fs::remove_file(&path);
+
+    let path = scratch("webm-default-scale");
+    std::fs::write(&path, webm_document(None, 1500.0)).unwrap();
+    assert_eq!(
+        ebml_info(&path).unwrap().duration_ms,
+        Some(1500),
+        "with no scale the default is a millisecond"
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn a_value_five_segments_deep_is_still_read() {
+    let mut payload = element(&[0x44, 0x89], &1000.0f32.to_be_bytes());
+    for _ in 0..5 {
+        payload = element(&[0x18, 0x53, 0x80, 0x67], &payload);
+    }
+    let path = scratch("webm-depth-five");
+    std::fs::write(&path, payload).unwrap();
+    assert_eq!(
+        ebml_info(&path).unwrap().duration_ms,
+        Some(1000),
+        "the fifth level of nesting is still inside the walk"
+    );
     let _ = std::fs::remove_file(&path);
 }
 
@@ -457,6 +554,11 @@ fn the_ebml_primitives_read_what_they_should() {
     assert_eq!(ebml_element(&[0x44]), None);
 
     assert_eq!(uint(&[0x01, 0x01]), Some(0x0101));
+    assert_eq!(
+        uint(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
+        Some(0x0102_0304_0506_0708),
+        "eight bytes are still an unsigned integer"
+    );
     assert_eq!(uint(&[]), None);
     assert_eq!(uint(&[0; 9]), None);
 
@@ -473,8 +575,7 @@ fn an_ebml_element_that_lies_about_its_size_ends_the_walk() {
     broken.extend_from_slice(&1.0f32.to_be_bytes());
     let path = scratch("broken-ebml");
     std::fs::write(&path, broken).unwrap();
-    let info = ebml_info(&path).unwrap();
-    assert_eq!(info.duration_ms, None);
+    assert_eq!(ebml_info(&path).unwrap().duration_ms, None);
     let _ = std::fs::remove_file(&path);
 
     // A value nested deeper than the walk goes: it is not read, and nothing panics.
@@ -539,7 +640,7 @@ fn an_ogg_gives_its_channels_a_duration_and_its_audio_packets() {
 fn a_packet_that_spans_two_pages_is_one_packet() {
     let head = opus_head();
     let mut first = ogg_page(0x02, 0, &[head.len() as u8], &head);
-    // The page begins with the previous packet's tail, then a 255-byte segment that does not end.
+    // A page that begins with the previous packet's tail, then a 255-byte segment that does not end.
     let mut tail = ogg_page(0x01, 0, &[255], &[7u8; 255]);
     // A second page closes the packet with three bytes.
     let last = ogg_page(0x04, 0, &[3], &[8, 8, 8]);
@@ -597,12 +698,23 @@ fn a_whole_mp4_built_here_reads_back() {
     mvhd[16..20].copy_from_slice(&1500u32.to_be_bytes());
 
     let mut tkhd = vec![0u8; 84];
-    tkhd[0] = 0;
     tkhd[76..80].copy_from_slice(&(640u32 << 16).to_be_bytes());
     tkhd[80..84].copy_from_slice(&(480u32 << 16).to_be_bytes());
 
     let mut hdlr = vec![0u8; 8];
     hdlr.extend_from_slice(b"vide");
+
+    // An audio track before the video one: the first track is not the picture.
+    let audio_tkhd = vec![0u8; 84];
+    let mut audio_hdlr = vec![0u8; 8];
+    audio_hdlr.extend_from_slice(b"soun");
+    let audio_trak = be_box(
+        b"trak",
+        &concat(&[
+            be_box(b"tkhd", &audio_tkhd),
+            be_box(b"mdia", &be_box(b"hdlr", &audio_hdlr)),
+        ]),
+    );
 
     let build_moov = |chunk: u32| {
         let stbl = stbl_of(
@@ -614,7 +726,10 @@ fn a_whole_mp4_built_here_reads_back() {
         let minf = be_box(b"minf", &be_box(b"stbl", &stbl));
         let mdia = be_box(b"mdia", &concat(&[be_box(b"hdlr", &hdlr), minf]));
         let trak = be_box(b"trak", &concat(&[be_box(b"tkhd", &tkhd), mdia]));
-        be_box(b"moov", &concat(&[be_box(b"mvhd", &mvhd), trak]))
+        be_box(
+            b"moov",
+            &concat(&[be_box(b"mvhd", &mvhd), audio_trak.clone(), trak]),
+        )
     };
 
     let ftyp = be_box(b"ftyp", b"isom\0\0\0\0");
