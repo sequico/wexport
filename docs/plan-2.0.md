@@ -65,7 +65,13 @@ gh run download <run-id> -n dist -D dist-macos   # the macOS job uploads dist/ a
 **Each archive carries its licences.** Beside the binary, `LICENSE` (GPL-3.0-or-later for wexport) and
 `THIRD-PARTY.md`, generated from `Cargo.lock`, with the notices the statically linked crates and the two
 compiled-in libraries require. A binary distribution without them is not publishable, so
-`release.sh` stages both files into every archive and the verification step checks they are there.
+`release.sh` stages both files into every archive and the verification step checks they are there. The
+release notes name the commit the binaries were built from, which is where the source is.
+
+**The viewer carries the same licence into every chat.** A folder a person shares contains wexport's own
+`index.html` and `app.js`, so the notice sits in a comment at the top of `index.html`, naming the
+licence and pointing at the source — not a copy of the GPL in every folder, which would add thirty-odd
+kilobytes to each of the thousands of chats a backup holds.
 
 The script checks that each archive holds the binary it claims and that the inner binary hashes match
 what was built, and **refuses to produce a release without the macOS archive**, the way it already
@@ -147,14 +153,14 @@ Using it as the poster needs no decoder at all.
 
 | Work | How | Weight |
 |---|---|---|
-| image thumbnail (JPEG/PNG/WebP in → 320 px JPEG) | `image` decodes, applies the EXIF orientation, resizes to at most 320 px wide without upscaling, and writes JPEG; WebP input through its pure-Rust `image-webp` feature | ~1.0–1.5 MB |
+| image thumbnail (JPEG/PNG/WebP in → 320 px JPEG) | `image` with default features off and only JPEG, PNG and WebP enabled: it decodes, applies the EXIF orientation, resizes to at most 320 px wide without upscaling, and writes JPEG; WebP input through its pure-Rust `image-webp` feature | ~1.0–1.5 MB |
 | video/audio duration and dimensions | an MP4 box reader (duration, dimensions, the `avcC` header) and an EBML reader; OGG for Opus | ~0.2 MB |
 | video poster | **the phone's thumbnail** (Android BLOB, iOS file), copied unchanged, its extension taken from its own bytes | 0 |
 | video poster when the phone stored none | the first frame decoded with `openh264`: SPS/PPS out of `avcC`, the length-prefixed NAL units of the first sample, one frame — **H.264 only** | ~1.5 MB |
 | voice-note waveform | `opus` (libopus, BSD) + an OGG demuxer | ~0.6 MB |
 
 **Total: roughly 2–4 MB per platform**, to be measured at M5, with no subprocess and no `ffmpeg` build.
-Two details decide whether it stays that small:
+Two details keep it that small and buildable:
 
 - WebP is read with the pure-Rust `image-webp` decoder, not with `libwebp`.
 - `openh264` is C++ and `libopus` is C, so each platform needs both compilers for its target, and the
@@ -180,7 +186,9 @@ Two details decide whether it stays that small:
   downloaded, so the archive shows the picture with the "not copied" mark the record already carries
   (`mi`), instead of an empty placeholder. With no file there is no source hash to name it by, so such
   a thumbnail is named by the SHA-256 of its own bytes — the same content-addressed rule, applied to
-  the only content there is. One test pins it.
+  the only content there is. The viewer gains the branch this needs: with a thumbnail it shows the
+  picture with the "file not in the copied folder" label under it, without one it keeps the label
+  alone. One test pins each path.
 - A file `ffmpeg` would have salvaged — a broken container, a truncated frame — now fails on the
   existing per-file failure path, which reports it and lets the archive continue.
 - **Image thumbnails become JPEG** (`deriv/<sha>.jpg`) where 1.0 writes WebP (`deriv/<sha>.webp`): one
@@ -195,11 +203,12 @@ compiles it through `cc`, as the `opus` crate does for libopus.
 
 **What else changes in the repository at M5**, because the specification currently says the opposite of
 this plan: `docs/implementation-plan.md` §2 and §5 state that `ffmpeg` and `ffprobe` are required and
-that the startup gate refuses to run without them. M5 amends those paragraphs, the requirements in the
-README and the usage page, the `-h` requirements line, and deletes `discover::require_binaries`; the
-only optional external tool left is `tesseract`, for a screenshot key, and it is already checked where
-the image is read. Until M5 lands, the 1.0 statement is the true one — no document is edited ahead of
-the code that makes it true.
+that the startup gate refuses to run without them. M5 amends those paragraphs, §5's media table (the
+thumbnail format and where a poster comes from), §9's dependency table (out `ffmpeg` and `ffprobe`, in
+the image crate, `openh264` and `opus`), the requirements in the README and the usage page, the `-h`
+requirements line, and deletes `discover::require_binaries`; the only optional external tool left is
+`tesseract`, for a screenshot key, and it is already checked where the image is read. Until M5 lands,
+the 1.0 statement is the true one — no document is edited ahead of the code that makes it true.
 
 ---
 
@@ -212,7 +221,7 @@ Short flags only, one letter each, one flag per word — the rule the CLI has al
 | `-j` | JSON | one JSON object per line on stdout, each carrying the `kind` the reporter emits (`found`, `chat_list`, `progress`, `warning`, `failure`, `finished`), so a consumer reads a stream instead of waiting for a closing bracket; errors stay on stderr and keep their exit codes |
 | `-q` | quiet | no progress and no summary; a result still prints (the list from `-l`, the JSON from `-j`), errors still reach stderr and the exit code still carries the result |
 | `-d` | diagnostics | what was probed and decided: the files found, the columns recognised, each media file placed, each one missing, each video left without a poster |
-| `-n` | dry run | the same work up to the point of writing: what would be built, how many messages and media files, how many missing, the estimated bytes from the source sizes |
+| `-n` | dry run | the same work up to the point of writing: what would be built, how many messages and media files, how many missing, the estimated bytes from the source sizes — reported as unknown when the source carries none |
 | `-c` | check | the source is verified: on Android the `crypt15` header and key type first, without the key, then — with the key, which it therefore needs — `PRAGMA integrity_check` on the decrypted database and the count of media present against media referenced; on an iPhone backup `PRAGMA integrity_check`, every media path a row names resolved through `Manifest.db`, and media present against media referenced, since there is nothing to decrypt. It reports an incremental older than the full backup |
 
 Rules that decide the awkward cases:
@@ -222,9 +231,13 @@ Rules that decide the awkward cases:
   `-n` it checks, then reports what it would build, and writes nothing.
 - `-c` on an Android backup asks for the key exactly as a build does: the header can be read without
   it, the database cannot. On an iPhone backup it asks for nothing.
+- `-k` on an iPhone backup is an error, not a key quietly ignored: nothing needs it, and a script that
+  passes it is doing something else than it thinks.
 - `-c` exits `0` when the source is sound, `4` when the build would be incomplete (a media file
   missing, an incremental behind the full backup), and `1`, `2`, `3` as a build does for an unreadable
   source, a wrong key and a wrong backup type.
+- `-c` runs its check under the progress bar: `PRAGMA integrity_check` on a large database takes a
+  while, and a command that looks hung is a command people kill.
 - On a bare `ChatStorage.sqlite` there is no `Manifest.db`, so `-c` checks the database and says the
   media check was not possible, instead of counting every media file as missing.
 - `-j` and `-q` compose: quiet silences the human chatter, JSON still prints. `-j` and `-d` compose too,
@@ -242,13 +255,17 @@ Rules that decide the awkward cases:
 
 - **A synthetic iPhone fixture in the repository**, generated by a script next to the Android one: a
   `ChatStorage.sqlite` with chats, a group with senders, media rows, a call, a location, a vCard, a
-  deleted and an edited message, inside a `Manifest.db` backup. Committed.
+  deleted and an edited message, inside a `Manifest.db` backup. Committed. The two video samples — one
+  H.264, one HEVC — are committed as tiny files too, because nothing in the toolchain encodes video.
 - **Unit tests on the adapter**: every mapped field, the 2001 epoch, group authors, the media path,
   missing media, a schema with a renamed column.
+- **The workspace**: a build leaves nothing behind, on success and on failure; the directory is 0700
+  while it lives, which is already pinned for Android and applies to the copied iPhone database.
 - **Unit tests on the new media path**: an image thumbnail at the right size and orientation, a poster
   taken from the stored thumbnail, a video with no stored thumbnail (first frame decoded), an HEVC one
-  (placeholder, exit `0`), a waveform from an Opus fixture, a container whose duration cannot be read,
-  a corrupt file (per-file failure, no abort).
+  (placeholder, exit `0`), a file that is not in the copy but whose thumbnail is (the record keeps `th`
+  and sets `mi`), a waveform from an Opus fixture, a container whose duration cannot be read, a corrupt
+  file (per-file failure, no abort).
 - **End-to-end**: the iOS fixture builds archives that pass the same contract tests as Android, with
   its own golden chunk; the Android golden chunk moves once, at M5, by the thumbnail extension, and the
   diff is read before it is committed.
@@ -276,7 +293,7 @@ Rules that decide the awkward cases:
 | M2 | Source detection: `Source` enum, discovery for a backup directory and a bare `ChatStorage.sqlite` | every existing test passes; a fake iOS folder is recognised, a real Android one still builds, an encrypted backup is refused by name (exit `3`), two device folders in one path are listed and refused without a terminal (exit `1`) |
 | M3 | `src/ios.rs`: chats, messages, senders, the 2001 epoch | unit tests cover every field and a renamed column |
 | M4 | iPhone media: paths in the app group, `ZTHUMBNAILLOCALPATH` posters, missing files | the iOS fixture builds an archive that passes the viewer contract, and a thumbnail whose shape differs from its media is fitted, not stretched |
-| M5 | **Media without `ffmpeg`**: image path (JPEG out), container metadata, phone thumbnails on both phones, `openh264` poster when the phone stored none, `libopus` waveform, the startup check removed | the suite passes with no `ffmpeg` on `PATH`; the golden chunk moves once by the thumbnail extension and the diff is read; an H.264 video with and one without a stored thumbnail both get a poster, an HEVC one without keeps the placeholder and still exits `0` |
+| M5 | **Media without `ffmpeg`**: image path (JPEG out), container metadata, phone thumbnails on both phones, `openh264` poster when the phone stored none, `libopus` waveform, the startup check removed | the suite passes with no `ffmpeg` on `PATH`; the golden chunk moves once by the thumbnail extension and the diff is read; an H.264 video with and one without a stored thumbnail both get a poster, an HEVC one without keeps the placeholder and still exits `0`; a media file that is not in the copy shows its thumbnail with the `mi` mark |
 | M6 | **Structured reporting**: `ui.rs` emits events (`found`, `chat_list`, `progress`, `warning`, `failure`, `finished`), `main.rs` and `progress.rs` render them — the bar keeps its throttling and its terminal check — with the current output pinned by tests | the CLI's text and the archives are unchanged; no module prints on its own; this is also the GUI's prerequisite (§10.1) |
 | M7 | **The five flags**: `-j`, `-q`, `-d`, `-n`, `-c`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-q` with `-d` is refused, `-q` and `-j` leave the progress bar silent, `-c` reports a damaged database and a missing media file |
 | M8 | Docs (usage page for an unencrypted iPhone backup, README box, `-h`, requirements, the flag table), `CHANGELOG.md` 2.0 entry, validation on real backups, 2.0 tag | download, extract and run works on both phones, on all three platforms |
@@ -296,9 +313,10 @@ describes 1.0 after the 2.0 tag is a defect, and it is fixed in M8, not reported
 - `docs/android-backup-formats.md` — **renamed to `docs/backup-formats.md`**, so the title does not lie:
   it becomes the container reference for both phones, with the iOS `ChatStorage.sqlite` and
   `Manifest.db` layout added, and every reference to the old name followed.
-- `CHANGELOG.md` — the 2.0 entry, one line per change a user notices.
-- `-h` — the five flags, the requirements line without `ffmpeg`, the iPhone sentence, and exit `3`
-  extended to an encrypted iPhone backup.
+- `CHANGELOG.md` — the 2.0 entry, opened under `Unreleased` and taking the version at the tag, one
+  line per change a user notices.
+- `-h` — the five flags, the requirements line without `ffmpeg`, exit `5` narrowed to `tesseract`, the
+  iPhone sentence, and exit `3` extended to an encrypted iPhone backup.
 - `SECURITY.md` — the scope extended to the iOS parser, the thumbnails read from the database and the
   two compiled libraries (`openh264`, `libopus`), which are parsing surfaces like everything else.
 - `.opencode/skills/wexport-implement/SKILL.md` — the module map and the fixture recipe.
