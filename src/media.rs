@@ -248,9 +248,15 @@ fn write_derived(bytes: &[u8], archive_root: &Path, name: &str) -> Result<String
 
 /// Decode an image, honour the camera's orientation, and scale it down to a thumbnail.
 fn thumbnail_of(source: &Path) -> Result<(Vec<u8>, Option<i64>, Option<i64>)> {
-    let reader = image::ImageReader::open(source)
+    let mut reader = image::ImageReader::open(source)
         .and_then(|reader| reader.with_guessed_format())
         .map_err(|error| Error::input(format!("cannot read the image: {error}")))?;
+    // A picture is untrusted input: a crafted header must not be able to ask for gigabytes.
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(16_384);
+    limits.max_image_height = Some(16_384);
+    limits.max_alloc = Some(256 << 20);
+    reader.limits(limits);
     let mut decoder = reader
         .into_decoder()
         .map_err(|error| Error::input(format!("cannot decode the image: {error}")))?;
@@ -460,6 +466,29 @@ mod tests {
             "a row cannot pull a file from outside the copy"
         );
         let _ = std::fs::remove_file(&secret);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_image_that_claims_a_huge_size_is_refused_not_allocated() {
+        let root = scratch("bomb");
+        let source = root.join("bomb.png");
+        // A PNG header that declares 60 000 x 60 000 and then stops: the limit answers before any
+        // decoder tries to reserve the pixels.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+        bytes.extend_from_slice(&[0, 0, 0, 13]);
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&60_000u32.to_be_bytes());
+        bytes.extend_from_slice(&60_000u32.to_be_bytes());
+        bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+        std::fs::write(&source, bytes).unwrap();
+        let error = derive(&item("image", Some(source)), &root, "sha").unwrap_err();
+        assert!(
+            error.message.contains("cannot decode the image"),
+            "{}",
+            error.message
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
