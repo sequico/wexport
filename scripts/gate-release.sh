@@ -38,12 +38,12 @@ echo "== release build (windows)"
 cargo build --release --locked --target x86_64-pc-windows-gnu
 
 echo "== mutations"
-# One job per core (capped): 625 mutants at four seconds each is forty minutes in series.
+# One worker per core: a worker builds its own copy of the tree before it mutates, and more workers
+# than cores only multiply that startup work — eight of them on four cores made a shard three times
+# slower than one, and a full run reported every mutant as missed. Four is what this machine can do.
 jobs=$(nproc 2>/dev/null || echo 2)
 [ "$jobs" -gt 8 ] && jobs=8
-# Twice the jobs of cores: each mutant is a small build plus one test run, so the extra jobs hide
-# their I/O without competing for a core. nextest starts the suite faster than cargo test does.
-set -- --timeout 120 --jobs $((jobs * 2)) --test-tool nextest
+set -- --timeout 120 --jobs "$jobs" --test-tool nextest
 for file in src/crypt15.rs src/keys.rs src/media.rs src/chunks.rs src/msgstore.rs src/merge.rs \
     src/discover.rs src/ios.rs src/container.rs src/archive.rs src/error.rs; do
     set -- "$@" --file "$file"
