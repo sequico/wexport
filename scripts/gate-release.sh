@@ -43,9 +43,7 @@ jobs=$(nproc 2>/dev/null || echo 2)
 [ "$jobs" -gt 8 ] && jobs=8
 # Twice the jobs of cores: each mutant is a small build plus one test run, so the extra jobs hide
 # their I/O without competing for a core. nextest starts the suite faster than cargo test does.
-# The memory test is left out of this run: it measures an allocation ceiling, which no mutant of the
-# parsers can move, and it costs six seconds on every one of a thousand mutants.
-set -- --timeout 120 --jobs $((jobs * 2)) --test-tool nextest -- -E 'not binary(memory)'
+set -- --timeout 120 --jobs $((jobs * 2)) --test-tool nextest
 for file in src/crypt15.rs src/keys.rs src/media.rs src/chunks.rs src/msgstore.rs src/merge.rs \
     src/discover.rs src/ios.rs src/container.rs src/archive.rs src/error.rs; do
     set -- "$@" --file "$file"
@@ -66,6 +64,10 @@ set -- "$@" --exclude-re 'replace < with > in find_box'
 # The mutation makes the offset stay zero, which is an endless loop: no test can observe it except by
 # hanging, and a hang is not a wrong archive.
 set -- "$@" --exclude-re 'replace \+= with \*= in (find_box|ebml_walk)'
+# The memory test is left out of the test run: it measures an allocation ceiling, which no mutant of
+# the parsers can move, and it costs six seconds on every one of a thousand mutants. Everything after
+# `--` belongs to the test command, so it goes last.
+set -- "$@" -- -E 'not binary(memory)'
 cargo mutants "$@"
 
 echo "== fuzzing"
