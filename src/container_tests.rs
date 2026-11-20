@@ -754,7 +754,7 @@ fn an_mp4_without_a_video_track_is_an_error() {
     let ftyp = be_box(b"ftyp", b"isom\0\0\0\0");
     let moov = be_box(b"moov", &be_box(b"mvhd", &[0u8; 20]));
     let path = scratch("no-track");
-    std::fs::write(&path, concat(&[ftyp, moov])).unwrap();
+    std::fs::write(&path, concat(&[ftyp.clone(), moov])).unwrap();
     let error = probe(&path).unwrap_err();
     assert!(error.message.contains("without a video track"));
     let _ = std::fs::remove_file(path);
@@ -763,5 +763,29 @@ fn an_mp4_without_a_video_track_is_an_error() {
     std::fs::write(&path, be_box(b"ftyp", b"isom\0\0\0\0")).unwrap();
     let error = probe(&path).unwrap_err();
     assert!(error.message.contains("without a moov box"));
+    let _ = std::fs::remove_file(path);
+
+    // A movie with only a sound track: the track exists, but it is not a picture.
+    let audio_hdlr = {
+        let mut payload = vec![0u8; 8];
+        payload.extend_from_slice(b"soun");
+        payload
+    };
+    let audio_trak = be_box(
+        b"trak",
+        &concat(&[
+            be_box(b"tkhd", &[0u8; 84]),
+            be_box(b"mdia", &be_box(b"hdlr", &audio_hdlr)),
+        ]),
+    );
+    let moov = be_box(b"moov", &concat(&[be_box(b"mvhd", &[0u8; 20]), audio_trak]));
+    let path = scratch("audio-only");
+    std::fs::write(&path, concat(&[ftyp.clone(), moov])).unwrap();
+    let error = probe(&path).unwrap_err();
+    assert!(
+        error.message.contains("without a video track"),
+        "a sound track is not a picture: {}",
+        error.message
+    );
     let _ = std::fs::remove_file(path);
 }

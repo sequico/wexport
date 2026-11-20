@@ -26,6 +26,9 @@ done
 TMPDIR="$PWD/target/tmp"
 mkdir -p "$TMPDIR"
 export TMPDIR
+# Each mutant's build is one thread. Eight mutants, each starting four compilers, is thirty-two
+# compilers on four cores: the first run spent most of its wall time thrashing, not compiling.
+export CARGO_BUILD_JOBS=1
 
 echo "== release build"
 cargo build --release --locked
