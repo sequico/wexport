@@ -380,7 +380,7 @@ fn ebml_walk(data: &[u8], depth: usize, raw: &mut EbmlRaw) {
                 ebml_walk(payload, depth + 1, raw);
             }
             // TimecodeScale, Duration, PixelWidth, PixelHeight.
-            0x2AD7_B1 => raw.scale = uint(payload),
+            0x002A_D7B1 => raw.scale = uint(payload),
             0x4489 => raw.duration = float(payload),
             0xB0 => raw.width = uint(payload),
             0xBA => raw.height = uint(payload),

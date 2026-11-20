@@ -290,12 +290,7 @@ fn a_sample_that_is_not_h264_is_not_a_poster() {
         (Some(b"avc1"), None),
         (None, None),
     ] {
-        let stbl = stbl_of(
-            entry.map(|kind| kind),
-            avcc_bytes.as_deref(),
-            0,
-            sample.len() as u32,
-        );
+        let stbl = stbl_of(entry, avcc_bytes.as_deref(), 0, sample.len() as u32);
         let (mut file, _) = file_with("not-h264", &sample);
         assert_eq!(
             first_h264_sample(&mut file, &stbl).unwrap(),
@@ -614,7 +609,7 @@ fn opus_head() -> Vec<u8> {
 
 fn opus_file(name: &str, pages: &[Vec<u8>]) -> std::path::PathBuf {
     let path = scratch(name);
-    std::fs::write(&path, concat(&pages.to_vec())).unwrap();
+    std::fs::write(&path, concat(pages)).unwrap();
     path
 }
 
