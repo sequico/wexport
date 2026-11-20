@@ -431,10 +431,9 @@ fn classify(row: &Option<MediaRow>, call: Option<i64>, revoked: bool) -> (String
         return ("deleted".into(), None);
     }
     if call.unwrap_or(0) != 0 {
-        return (
-            "call".into(),
-            Some(json!({ "duration_s": 0, "video": false, "missed": false })),
-        );
+        // The row says a call happened; nothing here knows how long it lasted or whether it was
+        // missed, and inventing zeros would put a wrong duration in the archive.
+        return ("call".into(), None);
     }
     let Some(row) = row else {
         return ("text".into(), None);
@@ -627,6 +626,9 @@ mod tests {
         assert_eq!(kind, "deleted");
         let (kind, payload) = classify(&None, Some(1), false);
         assert_eq!(kind, "call");
-        assert!(payload.is_some());
+        assert!(
+            payload.is_none(),
+            "a call whose length the row does not carry has no payload to invent one from"
+        );
     }
 }
