@@ -313,7 +313,7 @@ fn ios_files(
                         |row| row.get(0),
                     )
                     .ok()?;
-                let path = hashed_file(folder, &file_id);
+                let path = hashed_file(folder, &file_id)?;
                 path.is_file().then_some(path)
             })
     };
@@ -325,10 +325,14 @@ fn ios_files(
     ))
 }
 
-/// The file a backup keeps for `fileID`: inside the two hex-digit folder that names it.
-fn hashed_file(folder: &Path, file_id: &str) -> PathBuf {
-    let prefix: String = file_id.chars().take(2).collect();
-    folder.join(prefix).join(file_id)
+/// The file a backup keeps for `fileID`, or None when the manifest hands over something that is not
+/// a file ID: the manifest is untrusted input, and `../../etc/passwd` is not a name a backup uses.
+fn hashed_file(folder: &Path, file_id: &str) -> Option<PathBuf> {
+    if file_id.len() != 40 || !file_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let prefix = &file_id[..2];
+    Some(folder.join(prefix).join(file_id))
 }
 
 /// The file a backup keeps for `domain`/`relative`, when the manifest lists it and it is there.
@@ -345,7 +349,7 @@ pub fn manifest_file(
             |row| row.get(0),
         )
         .ok()?;
-    let path = hashed_file(files, &file_id);
+    let path = hashed_file(files, &file_id)?;
     path.is_file().then_some(path)
 }
 
@@ -364,7 +368,7 @@ pub fn manifest_file_like(
             |row| row.get(0),
         )
         .ok()?;
-    let path = hashed_file(files, &file_id);
+    let path = hashed_file(files, &file_id)?;
     path.is_file().then_some(path)
 }
 
@@ -801,6 +805,28 @@ mod tests {
         assert_eq!(find_databases(&root), None);
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn a_manifest_that_answers_with_a_path_instead_of_a_file_id_finds_nothing() {
+        let root = root("hostile-manifest");
+        let connection = rusqlite::Connection::open(root.join("Manifest.db")).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER, file BLOB);",
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO Files VALUES ('../../etc/passwd', ?1, 'x.jpg', 1, NULL)",
+                rusqlite::params![IOS_DOMAIN],
+            )
+            .unwrap();
+        assert!(manifest_file(&connection, &root, IOS_DOMAIN, "x.jpg").is_none());
+        assert!(manifest_file_like(&connection, &root, IOS_DOMAIN, "x.jpg").is_none());
+        assert!(hashed_file(&root, "../../etc/passwd").is_none());
+        drop(connection);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
