@@ -552,7 +552,7 @@ Taken by the owner:
 9. **Packaging: one release binary per platform from `cargo build --release`**, **Linux, Windows and
    macOS universal**; no AppImage, no `.dmg` (§7 M5).
 10. **`tesseract` is the only external tool**, demanded only when the key is an image; everything else
-   the tool needs is compiled in, so a missing binary can no longer stop a build (§2).
+   the tool needs is compiled in, so a missing binary cannot stop a build (§2).
 11. **The archive opens from the filesystem**, and there is no server in the product: no `serve`
     command, no HTTP fallback. Double-clicking `index.html` must work with no wexport installed and no
     browser flag. That is why the data is emitted as classic scripts and why there is no SQLite-WASM

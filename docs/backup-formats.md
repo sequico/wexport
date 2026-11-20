@@ -67,7 +67,7 @@ root. The listing names them as ignored instead of silently skipping them.
 | `3` / `E2EE_ENCRYPTION_KEY` | user chose the 64-digit key | **yes**, if the user has the key |
 | `E2EE_PASSWORD` | user chose a password; key wrapped by the HSM | no — password only unlocks key retrieval from WhatsApp's servers |
 | `E2EE_PASSKEY` | key wrapped by a passkey; added in the 2.26 schema | no (unverified: no public tooling) |
-| `E2EE_DEPRECATED` | pre-E2EE server-held key (formerly called HSM-controlled) | no |
+| `E2EE_DEPRECATED` | pre-E2EE server-held key (some tools print it as `HSM_CONTROLLED`) | no |
 
 ---
 
