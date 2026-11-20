@@ -196,21 +196,17 @@ impl IosStore {
         }
         if let (Some(files), Some(manifest)) = (&self.files, &self.manifest) {
             for candidate in &candidates {
-                if let Some(path) = manifest_file(manifest, files, candidate) {
+                if let Some(path) =
+                    crate::discover::manifest_file(manifest, files, IOS_DOMAIN, candidate)
+                {
                     return Some(path);
                 }
             }
             let name = Path::new(relative).file_name()?.to_str()?;
-            let sql = "SELECT fileID FROM Files WHERE domain = ?1 AND relativePath LIKE ?2 LIMIT 1";
-            if let Ok(file) = manifest.query_row(
-                sql,
-                rusqlite::params![IOS_DOMAIN, format!("%{name}")],
-                |row| row.get::<_, String>(0),
-            ) {
-                let path = hashed(files, &file);
-                if path.is_file() {
-                    return Some(path);
-                }
+            if let Some(path) =
+                crate::discover::manifest_file_like(manifest, files, IOS_DOMAIN, name)
+            {
+                return Some(path);
             }
         }
         if let Some(group) = &self.app_group {
@@ -563,22 +559,6 @@ fn key_of(jid: &str) -> String {
         .next()
         .unwrap_or("")
         .to_string()
-}
-
-fn hashed(files: &Path, file_id: &str) -> PathBuf {
-    let prefix: String = file_id.chars().take(2).collect();
-    files.join(prefix).join(file_id)
-}
-
-fn manifest_file(manifest: &Connection, files: &Path, relative: &str) -> Option<PathBuf> {
-    let sql = "SELECT fileID FROM Files WHERE domain = ?1 AND relativePath = ?2 LIMIT 1";
-    let file: String = manifest
-        .query_row(sql, rusqlite::params![IOS_DOMAIN, relative], |row| {
-            row.get(0)
-        })
-        .ok()?;
-    let path = hashed(files, &file);
-    path.is_file().then_some(path)
 }
 
 /// The database and its log, copied into the writable workspace so SQLite can replay the WAL.

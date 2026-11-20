@@ -232,12 +232,11 @@ fn ios_in(root: &Path) -> Result<Option<IosInputs>> {
             }));
         }
     }
-    // One level further down: a folder holding the extracted group, not the group itself.
-    for entry in std::fs::read_dir(root).into_iter().flatten().flatten() {
-        let folder = entry.path();
-        if !folder.is_dir() || skipped(&folder) {
-            continue;
-        }
+    // One level further down: a folder holding the extracted group, not the group itself. The
+    // candidates are sorted, so two matching folders always pick the same one.
+    let mut children = child_dirs(root);
+    children.sort();
+    for folder in children {
         for name in [IOS_GROUP, IOS_DOMAIN] {
             let database = folder.join(name).join("ChatStorage.sqlite");
             if database.is_file() {
@@ -295,24 +294,19 @@ fn ios_files(
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )?;
     let path_of = |name: &str| -> Option<PathBuf> {
-        let sql = "SELECT fileID FROM Files WHERE domain = ?1 AND relativePath = ?2 LIMIT 1";
-        let query = |domain: &str| -> Option<String> {
-            connection
-                .query_row(sql, rusqlite::params![domain, name], |row| {
-                    row.get::<_, String>(0)
-                })
-                .ok()
-        };
-        let file_id = query(IOS_DOMAIN).or_else(|| query(IOS_GROUP)).or_else(|| {
-            connection
-                .query_row(
-                    "SELECT fileID FROM Files WHERE relativePath = ?1 AND domain LIKE '%whatsapp%' LIMIT 1",
-                    rusqlite::params![name],
-                    |row| row.get::<_, String>(0),
-                )
-                .ok()
-        })?;
-        Some(hashed_file(folder, &file_id))
+        manifest_file(&connection, folder, IOS_DOMAIN, name)
+            .or_else(|| manifest_file(&connection, folder, IOS_GROUP, name))
+            .or_else(|| {
+                let file_id: String = connection
+                    .query_row(
+                        "SELECT fileID FROM Files WHERE relativePath = ?1 AND domain LIKE '%whatsapp%' LIMIT 1",
+                        rusqlite::params![name],
+                        |row| row.get(0),
+                    )
+                    .ok()?;
+                let path = hashed_file(folder, &file_id);
+                path.is_file().then_some(path)
+            })
     };
     let database = path_of("ChatStorage.sqlite").ok_or(rusqlite::Error::QueryReturnedNoRows)?;
     Ok((
@@ -326,6 +320,43 @@ fn ios_files(
 fn hashed_file(folder: &Path, file_id: &str) -> PathBuf {
     let prefix: String = file_id.chars().take(2).collect();
     folder.join(prefix).join(file_id)
+}
+
+/// The file a backup keeps for `domain`/`relative`, when the manifest lists it and it is there.
+pub fn manifest_file(
+    manifest: &rusqlite::Connection,
+    files: &Path,
+    domain: &str,
+    relative: &str,
+) -> Option<PathBuf> {
+    let file_id: String = manifest
+        .query_row(
+            "SELECT fileID FROM Files WHERE domain = ?1 AND relativePath = ?2 LIMIT 1",
+            rusqlite::params![domain, relative],
+            |row| row.get(0),
+        )
+        .ok()?;
+    let path = hashed_file(files, &file_id);
+    path.is_file().then_some(path)
+}
+
+/// The same lookup by the file's name alone, for a path the database and the manifest spell
+/// differently.
+pub fn manifest_file_like(
+    manifest: &rusqlite::Connection,
+    files: &Path,
+    domain: &str,
+    name: &str,
+) -> Option<PathBuf> {
+    let file_id: String = manifest
+        .query_row(
+            "SELECT fileID FROM Files WHERE domain = ?1 AND relativePath LIKE ?2 LIMIT 1",
+            rusqlite::params![domain, format!("%{name}")],
+            |row| row.get(0),
+        )
+        .ok()?;
+    let path = hashed_file(files, &file_id);
+    path.is_file().then_some(path)
 }
 
 /// `Manifest.plist` is readable even when everything beside it is not, and it says whether the
