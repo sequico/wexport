@@ -276,8 +276,8 @@ impl Store for IosStore {
             out.push(ChatStat {
                 chat: chat.clone(),
                 messages: row.get(1)?,
-                first_ts: row.get::<_, Option<i64>>(2)?.map(stamp).unwrap_or(0),
-                last_ts: row.get::<_, Option<i64>>(3)?.map(stamp).unwrap_or(0),
+                first_ts: core_data(row.get_ref(2)?),
+                last_ts: core_data(row.get_ref(3)?),
                 media_count: row.get(4).unwrap_or(0),
                 media_bytes: row.get(5).unwrap_or(0),
             });
@@ -312,7 +312,7 @@ impl Store for IosStore {
         let mut rows = statement.query(rusqlite::params![id])?;
         while let Some(row) = rows.next()? {
             let pk: i64 = row.get(0)?;
-            let date: Option<i64> = row.get(1)?;
+            let date = core_data(row.get_ref(1)?);
             let from_me = row.get::<_, Option<i64>>(2)?.unwrap_or(0) != 0;
             let text: Option<String> = row.get(3)?;
             let from_jid: Option<String> = row.get(4)?;
@@ -336,7 +336,7 @@ impl Store for IosStore {
             let media = media_row.map(|row| self.media_of(&row, &kind));
             sink(Message {
                 id: pk,
-                ts: date.map(stamp).unwrap_or(0),
+                ts: date,
                 from_me,
                 kind: if revoked { "deleted".into() } else { kind },
                 text: text.unwrap_or_default(),
@@ -550,6 +550,17 @@ fn stamp(core_data_seconds: i64) -> i64 {
         .saturating_mul(1000)
 }
 
+/// Core Data keeps a date as an integer or a real number of seconds since 2001, depending on the
+/// version that wrote it; both mean the same instant.
+fn core_data(value: rusqlite::types::ValueRef<'_>) -> i64 {
+    use rusqlite::types::ValueRef;
+    match value {
+        ValueRef::Integer(seconds) => stamp(seconds),
+        ValueRef::Real(seconds) => stamp(seconds as i64),
+        _ => 0,
+    }
+}
+
 fn key_of(jid: &str) -> String {
     jid.split('@')
         .next()
@@ -606,6 +617,18 @@ mod tests {
     }
 
     #[test]
+    fn a_date_is_read_whether_it_is_integer_or_real() {
+        use rusqlite::types::ValueRef;
+        assert_eq!(core_data(ValueRef::Integer(817_808_400)), 1_796_115_600_000);
+        assert_eq!(core_data(ValueRef::Real(817_808_400.5)), 1_796_115_600_000);
+        assert_eq!(
+            core_data(ValueRef::Null),
+            0,
+            "no date is an unknown time, not 1970"
+        );
+    }
+
+    #[test]
     fn a_media_path_is_its_kind() {
         assert_eq!(path_kind("Message/Media/a.jpg", None), "image");
         assert_eq!(path_kind("Message/Media/sticker.webp", None), "sticker");
@@ -618,6 +641,48 @@ mod tests {
             "image",
             "the mime answers when the name does not"
         );
+    }
+
+    #[test]
+    fn a_store_with_real_dates_reads_both_ways() {
+        let root = std::env::temp_dir().join(format!("wexport-ios-real-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let database = root.join("ChatStorage.sqlite");
+        let con = Connection::open(&database).unwrap();
+        con.execute_batch(
+            "CREATE TABLE ZWACHATSESSION (Z_PK INTEGER PRIMARY KEY, ZCONTACTJID TEXT, ZPARTNERNAME TEXT);
+             CREATE TABLE ZWAMESSAGE (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+                 ZMESSAGEDATE REAL, ZISFROMME INTEGER, ZTEXT TEXT, ZFROMJID TEXT, ZMEDIAITEM INTEGER,
+                 ZDELETED INTEGER, ZEDITED INTEGER, ZCALLTYPE INTEGER);
+             INSERT INTO ZWACHATSESSION VALUES (1, '393331234567@s.whatsapp.net', 'Alice');
+             INSERT INTO ZWAMESSAGE VALUES (1, 1, 817808400.5, 0, 'hello', NULL, NULL, 0, 0, NULL);",
+        )
+        .unwrap();
+        drop(con);
+        let inputs = IosInputs {
+            root: root.clone(),
+            database,
+            wal: None,
+            shm: None,
+            manifest: None,
+            files: None,
+            app_group: Some(root.clone()),
+        };
+        let workspace = root.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let store = IosStore::open(&inputs, &workspace).unwrap();
+        let stats = store.chat_stats().unwrap();
+        assert_eq!(stats[0].last_ts, 1_796_115_600_000);
+        let mut first = None;
+        store
+            .each_message(&stats[0].chat, &mut |message| {
+                first = Some(message.ts);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(first, Some(1_796_115_600_000));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
