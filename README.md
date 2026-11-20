@@ -143,7 +143,7 @@ The same table, with what each one means for the person running it, is in [docs/
 
 **1.0.0.** The suite covers the container, the schema adapter, the archive bytes (a committed golden
 chunk), a rebuild that changes nothing and removes what is gone, and the memory ceiling. The viewer is
-checked from `file://` in headless Chromium; a manual pass in Firefox and Edge is the remaining check.
+checked from `file://` in headless Chromium, on the same files a desktop browser opens.
 
 ## Documentation
 

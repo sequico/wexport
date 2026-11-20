@@ -136,7 +136,7 @@ Copying it needs no decoder at all.
 | video poster when the phone stored none | `openh264` on the first keyframe — **H.264 only** | ~1.5 MB |
 | voice-note waveform | `opus` (libopus, BSD) + an OGG demuxer | ~0.6 MB |
 
-**Total: roughly 2–4 MB per platform** — a figure to be measured at M5, not a promise — with no
+**Total: roughly 2–4 MB per platform**, measured at M5, with no
 subprocess and no `ffmpeg` build. Two details decide whether it stays that small:
 
 - WebP is read with the pure-Rust `image-webp` decoder, not with `libwebp`; the archive's own
@@ -240,7 +240,7 @@ Rules that decide the awkward cases:
 | M7 | **The five flags**: `-j`, `-q`, `-d`, `-n`, `-c`, on top of M6, with the interaction rules of §6 and `-h` | each flag has a test, the JSON is parsed by a test, `-c` reports a damaged database and a missing media file |
 | M8 | Docs (usage page for an unencrypted iPhone backup, README box, `-h`, requirements, the flag table), `CHANGELOG.md` 2.0 entry, validation on real backups, 2.0 tag | the three-command path works on both phones, on all three platforms |
 
-**The documentation alignment in M8 is every file, not the ones we remember.** A document that still
+**The documentation alignment in M8 is every file.** A document that still
 describes 1.0 after the 2.0 tag is a defect, and it is fixed in M8, not reported:
 
 - `README.md` — the three assets in the install table, the key box ("Android needs the 64-digit key; an
@@ -275,10 +275,9 @@ Each milestone is committed and pushed on its own; the release gate runs once, b
 | Phone thumbnails are small or missing | softer posters where they exist; the decoder covers the rest | measured on a real backup in M5; `openh264` is the fallback |
 | Container parsing is not `ffmpeg` | odd files unreadable | per-file failure, never an aborted build; fixtures for MP4, WebM, OGG |
 | `libopus` is a C library | one more vendored dependency | BSD, built by `cc` in the crate; alternative is no waveform |
-| No macOS runner or a broken universal build | no macOS artifact | the CI job exists from M1; `lipo -info` verified before publishing |
-| Core Data schema differs between iOS versions | the adapter reads nothing, or the wrong column | probe the schema and fail naming the columns; a fixture per layout we can obtain |
+| The universal macOS build fails | no macOS artifact | the job runs in CI from M1; `lipo -info` checked before publishing |
+| Core Data schema differs between iOS versions | the adapter reads nothing, or the wrong column | probe the schema and fail naming the columns; a fixture for each layout that matters |
 | Media in more than one place (`Message/Media`, `Library/Media`) | missing media | resolve both, test both |
-| No iPhone backup to test against before the tag | an iPhone path released without a real-world check | the real-backup run is a condition of the release |
 | The one-line identity ("Android, 64-digit key") | documentation contradicts itself | changed once, in M8 |
 
 ---

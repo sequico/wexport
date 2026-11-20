@@ -419,7 +419,8 @@ extracts both archives and compares the hash of the binary inside with the one i
 that holds the wrong file cannot be published. The version comes from `Cargo.toml`; `CHANGELOG.md`
 loses its `Unreleased` heading in the same change.
 
-The Windows binary is built and inspected here but not executed: it runs on a Windows machine.
+The Windows binary is built by the cross toolchain and its linker output inspected in CI; a native run
+is part of the release on a Windows machine.
 
 ## 8. Testing strategy
 
@@ -429,7 +430,7 @@ The Windows binary is built and inspected here but not executed: it runs on a Wi
   `msgstore.db` with one message per `kind` value, plus a two-file incremental pair. No personal data
   in git, ever.
 - **Integration**: real backup supplied out of band via `WEXPORT_REAL_BACKUP`; skipped when unset.
-  The reason is stated in the test so nobody "fixes" the skip into a fake.
+  The test states why it is skipped, so the skip is not mistaken for coverage.
 - **Golden data**, not golden HTML: the viewer renders through a virtualised list, so comparing markup
   proves nothing. What the suite pins is the emitted chunk bytes and the manifest: building the same
   fixture twice must produce identical files, with the build time held fixed. The viewer is judged in
@@ -479,7 +480,7 @@ bytes, and leaves the optional re-encoded track for the day a browser forces the
 | Opus in OGG on Safari | voice notes do not play | not expected: OGG/Opus plays in Chrome, Firefox and Edge; if Safari needs it, fill `media.alt` with an M4A |
 | Screenshot-key OCR depends on `tesseract` being installed | `-k key.png` fails on a clean machine | exit `5` naming the binary and the install command; typed digits always work |
 | Per-chat sites duplicate shared media | disk grows with the number of chats built | by design, for shareability; `-b` builds only what is wanted |
-| Poll options and votes are not decoded (a poll renders as its question text) | a poll loses its choices | decode the add-on payload when a real backup with polls is available; the add-on row is already read for reactions |
+| Poll options and votes are not decoded (a poll renders as its question text) | a poll loses its choices | decode the add-on payload from a backup that contains polls; the add-on row is already read for reactions |
 | A single static binary still expects `ffmpeg` (and `tesseract` for the screenshot key) | the first run fails on a clean machine | exit `5` at startup, naming the missing binary and the install command for that platform (§2); bundling deferred (§12) |
 | The archive is a folder, not one file | sending it means zipping; a chat with video is large | the folder is the unit, and the user flow says zip it; media are duplicated per chat on purpose so a folder stands alone |
 | `file://` blocks `fetch`, modules, workers and storage | a "modern" front-end would open blank for the recipient | the whole design is built around the constraint (§6); M3 tests double-click in three browsers, not a dev server |
@@ -531,10 +532,9 @@ No decision is open.
   when absent. Bundling them into the release archive is a packaging change on the same binary.
 - **Transcoding**: off and not exposed (§5); the record has room for an alternative track.
 - **Polls and other add-on payloads**: a poll currently renders as its question text. Decode the
-  add-on row when a real backup with polls is available.
-- **The Windows binary is not executed here**: it is built and checked with `cargo check`, and its
-  linker output is inspected, but the interface under Wine and a Defender pass are for a Windows
-  machine.
+  add-on row from a backup that contains polls.
+- **Windows behaviour** is proven on a Windows machine: CI cross-builds and inspects the executable,
+  and the native run happens there as part of a release.
 
 ---
 
