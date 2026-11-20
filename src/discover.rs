@@ -71,11 +71,20 @@ pub fn detect(path: &Path) -> Result<Detected> {
         return Err(Error::input(format!("not a folder: {}", root.display())));
     }
 
-    if let Some(ios) = ios_in(&root)? {
-        return Ok(Detected::One(Source::Ios(ios)));
-    }
-    if find_databases(&root).is_some() {
-        return Ok(Detected::One(Source::Android(android_in(&root)?)));
+    let ios = ios_in(&root)?;
+    let android = find_databases(&root);
+    match (ios, android) {
+        (Some(_), Some(databases)) => {
+            return Err(Error::input(format!(
+                "{} holds both an Android copy and an iPhone backup.\nPoint me at one of them:\n  {}\n  {}",
+                root.display(),
+                databases.display(),
+                root.display()
+            )))
+        }
+        (Some(ios), None) => return Ok(Detected::One(Source::Ios(ios))),
+        (None, Some(_)) => return Ok(Detected::One(Source::Android(android_in(&root)?))),
+        (None, None) => {}
     }
 
     let backups = backup_folders(&root);
@@ -792,6 +801,22 @@ mod tests {
         assert_eq!(find_databases(&root), None);
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn a_folder_holding_both_phones_says_so_instead_of_picking_one() {
+        let root = root("both");
+        write_backup(&root, &[("ChatStorage.sqlite", b"a")]);
+        write(&root.join("Databases/msgstore.db.crypt15"));
+        let error = discover(&root).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("both an Android copy and an iPhone backup"),
+            "{}",
+            error.message
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
