@@ -215,7 +215,7 @@ fn first_h264_sample(file: &mut File, stbl: &[u8]) -> Result<Option<Vec<u8>>> {
     let Some(avcc) = find_in(children, &[b"avcC"]) else {
         return Ok(None);
     };
-    let parameter_sets = parameter_sets(avcc);
+    let (parameter_sets, length_size) = parameter_sets(avcc);
     if parameter_sets.is_empty() {
         return Ok(None);
     }
@@ -232,7 +232,7 @@ fn first_h264_sample(file: &mut File, stbl: &[u8]) -> Result<Option<Vec<u8>>> {
         out.extend_from_slice(&[0, 0, 0, 1]);
         out.extend_from_slice(set);
     }
-    out.extend_from_slice(&annex_b(&sample));
+    out.extend_from_slice(&annex_b(&sample, length_size));
     if out.is_empty() {
         Ok(None)
     } else {
@@ -240,47 +240,46 @@ fn first_h264_sample(file: &mut File, stbl: &[u8]) -> Result<Option<Vec<u8>>> {
     }
 }
 
-/// The SPS and PPS lists of an AVCDecoderConfigurationRecord.
-fn parameter_sets(avcc: &[u8]) -> Vec<&[u8]> {
+/// The SPS and PPS lists of an AVCDecoderConfigurationRecord, and how many bytes each NAL length
+/// takes in the samples (one, two or four).
+fn parameter_sets(avcc: &[u8]) -> (Vec<&[u8]>, usize) {
     let mut out = Vec::new();
     let Some(&length_size) = avcc.get(4) else {
-        return out;
+        return (out, 4);
     };
-    if length_size & 0x03 == 0 {
-        return out;
-    }
+    let length_size = (length_size & 0x03) as usize + 1;
     let mut offset = 5;
     let Some(&sps_count) = avcc.get(offset) else {
-        return out;
+        return (out, length_size);
     };
     offset += 1;
     for _ in 0..(sps_count & 0x1F) {
         let Some(bytes) = avcc.get(offset..offset + 2) else {
-            return out;
+            return (out, length_size);
         };
         let length = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
         let Some(set) = avcc.get(offset + 2..offset + 2 + length) else {
-            return out;
+            return (out, length_size);
         };
         out.push(set);
         offset += 2 + length;
     }
     let Some(&pps_count) = avcc.get(offset) else {
-        return out;
+        return (out, length_size);
     };
     offset += 1;
     for _ in 0..pps_count {
         let Some(bytes) = avcc.get(offset..offset + 2) else {
-            return out;
+            return (out, length_size);
         };
         let length = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
         let Some(set) = avcc.get(offset + 2..offset + 2 + length) else {
-            return out;
+            return (out, length_size);
         };
         out.push(set);
         offset += 2 + length;
     }
-    out
+    (out, length_size)
 }
 
 /// The first sample offset: the first chunk of the first chunk group, whose offset is the sample's.
@@ -314,17 +313,15 @@ fn first_sample_size(stbl: &[u8]) -> Option<usize> {
 }
 
 /// Length-prefixed NAL units (the MP4 form) into Annex-B.
-fn annex_b(sample: &[u8]) -> Vec<u8> {
+fn annex_b(sample: &[u8], length_size: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(sample.len() + 16);
     let mut offset = 0;
-    while offset + 4 <= sample.len() {
-        let length = u32::from_be_bytes([
-            sample[offset],
-            sample[offset + 1],
-            sample[offset + 2],
-            sample[offset + 3],
-        ]) as usize;
-        offset += 4;
+    while offset + length_size <= sample.len() {
+        let mut length = 0usize;
+        for byte in &sample[offset..offset + length_size] {
+            length = (length << 8) | *byte as usize;
+        }
+        offset += length_size;
         let Some(unit) = sample.get(offset..offset + length) else {
             break;
         };
@@ -566,5 +563,37 @@ mod tests {
         let data = [0x01, 0x02, 0x03];
         assert_eq!(uint(&data), Some(0x0001_0203));
         assert_eq!(float(&[0x3F, 0x80, 0, 0]), Some(1.0));
+    }
+
+    #[test]
+    fn a_nal_length_can_be_one_two_or_four_bytes() {
+        let unit = [0x65u8, 0x88, 0x84];
+        for width in [1usize, 2, 4] {
+            let mut sample = Vec::new();
+            sample.extend_from_slice(&(unit.len() as u32).to_be_bytes()[4 - width..]);
+            sample.extend_from_slice(&unit);
+            assert_eq!(
+                annex_b(&sample, width),
+                [0, 0, 0, 1, 0x65, 0x88, 0x84],
+                "a {width}-byte length prefix"
+            );
+        }
+    }
+
+    #[test]
+    fn the_avcc_header_says_how_long_its_nal_lengths_are() {
+        // version, profile, compatibility, level, lengthSizeMinusOne 3 (four bytes), one SPS, one PPS.
+        let avcc = [
+            0x01, 0x42, 0xC0, 0x1E, 0xFF, 0xE1, 0x00, 0x03, 0x67, 0x42, 0xC0, 0x01, 0x00, 0x02,
+            0x68, 0xCE,
+        ];
+        let (sets, length_size) = parameter_sets(&avcc);
+        assert_eq!(length_size, 4);
+        assert_eq!(sets, [&[0x67, 0x42, 0xC0][..], &[0x68, 0xCE][..]]);
+
+        // The same record with one-byte NAL lengths.
+        let mut one_byte = avcc;
+        one_byte[4] = 0xFC;
+        assert_eq!(parameter_sets(&one_byte).1, 1);
     }
 }
