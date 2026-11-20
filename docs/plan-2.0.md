@@ -42,13 +42,12 @@ The graphical application, the AppImage and the signed `.dmg` are **later work**
 | Windows x86-64 | `wexport-<v>-windows-x86_64.zip` (holds `wexport.exe`) | `ubuntu-24.04` + mingw | as in 1.0 |
 | macOS universal | `wexport-<v>-macos-universal.tar.gz` (holds `wexport`) | `macos-14` | `aarch64-apple-darwin` + `x86_64-apple-darwin`, joined with `lipo` |
 
-**macOS needs no Apple account, because the artifact is a `.tar.gz` extracted from a terminal.** The
-quarantine attribute is set by the browser on the downloaded archive, and `tar` does not copy a
-container's extended attributes onto the files it extracts; the binary is therefore not quarantined
-and Gatekeeper does not stop it. (Double-clicking the archive in Finder is the exception: Archive
-Utility propagates the flag. The documented install is `curl` + `tar`.) On Apple Silicon the linker
-signs ad-hoc, which is what execution requires; `codesign -dv` shows it. Notarization is only needed
-to survive a quarantined file, and this path has none.
+**macOS needs no Apple account or code signing, because the artifact is a `.tar.gz` extracted from a
+terminal.** The quarantine attribute is set by the browser on the downloaded archive, and `tar` does not
+copy a container's extended attributes onto the files it extracts, so the binary is not quarantined and
+Gatekeeper does not stop it. (Double-clicking the archive in Finder is the exception: Archive Utility
+propagates the flag. The documented install is `curl` + `tar`.) On Apple Silicon the linker signs
+ad-hoc, which is what execution requires; `codesign -dv` shows it.
 
 With `ffmpeg` gone there is **no external dependency at all**: nothing to install on the machine that
 builds an archive.
@@ -129,13 +128,13 @@ The insight that makes this small: **the phone already stores the poster.** Andr
 even for View Once media. iOS has `ZWAMEDIAITEM.ZTHUMBNAILLOCALPATH`, a path to the thumbnail file.
 Copying it needs no decoder at all.
 
-| Work | How | What it costs |
+| Work | How | Weight |
 |---|---|---|
 | image thumbnail (JPEG/PNG/WebP in → 320 px) | `image` for decode, its resize, `jpeg-encoder` (or WebP lossless) for the output | ~1.0–1.5 MB |
 | video/audio duration and dimensions | an MP4 box parser and a small EBML reader, a few hundred lines; OGG for Opus | ~0.2 MB |
 | video poster | **the phone's thumbnail** (Android BLOB, iOS file); nothing when absent, the archive shows the placeholder it already has | 0 |
-| video poster when the phone stored none | `openh264` on the first keyframe — **H.264 only** (decided, §9) | ~1.5 MB |
-| voice-note waveform | `opus` (libopus, BSD, royalty-free) + an OGG demuxer | ~0.6 MB |
+| video poster when the phone stored none | `openh264` on the first keyframe — **H.264 only** | ~1.5 MB |
+| voice-note waveform | `opus` (libopus, BSD) + an OGG demuxer | ~0.6 MB |
 
 **Total: roughly 2–4 MB per platform** — a figure to be measured at M5, not a promise — with no
 subprocess and no `ffmpeg` build. Two details decide whether it stays that small:
@@ -165,11 +164,8 @@ subprocess and no `ffmpeg` build. Two details decide whether it stays that small
   meaning, and 1.0 archives remain readable.
 
 **`openh264` is in.** A video always gets a poster: the phone's thumbnail when that exists, the first
-frame decoded with `openh264` when it does not. The licensing note is recorded here so nobody has to
-rediscover it — most AVC patents have lapsed, what remains runs to about 2027 in the United States and
-2030 for a single Brazilian patent, and Cisco's royalty payment covers Cisco's own prebuilt binaries,
-not a decoder compiled into ours. That is a small exposure, the tool is GPL-3.0-or-later and free, and
-the decision is taken: decode H.264.
+frame decoded with `openh264` when it does not. The crate vendors the BSD-licensed library, like the
+other C dependency does.
 
 **What else changes in the repository at M5**, because the specification currently says the opposite of
 this plan: `docs/implementation-plan.md` §2 and §5 state that `ffmpeg` and `ffprobe` are required and
@@ -271,18 +267,18 @@ Each milestone is committed and pushed on its own; the release gate runs once, b
 
 ---
 
-## 9. Risks and open decisions
+## 9. Risks
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| **H.264 patent licensing for `openh264`** | most AVC patents have lapsed (US ~2027, one Brazilian to 2030); the pool still licences, and we would be the distributor | **decided: in.** The note stays in §5 so the reasoning is not lost; no further decision needed |
+| **H.264 decoding with `openh264`** | a video whose first frame cannot be decoded gets no poster | per-file failure, as for any corrupt media; the phone's thumbnail is tried first |
 | Phone thumbnails are small or missing | softer posters where they exist; the decoder covers the rest | measured on a real backup in M5; `openh264` is the fallback |
 | Container parsing is not `ffmpeg` | odd files unreadable | per-file failure, never an aborted build; fixtures for MP4, WebM, OGG |
-| `libopus` is a C library | one more vendored dependency | BSD, royalty-free, built by `cc` in the crate; alternative is no waveform |
+| `libopus` is a C library | one more vendored dependency | BSD, built by `cc` in the crate; alternative is no waveform |
 | No macOS runner or a broken universal build | no macOS artifact | the CI job exists from M1; `lipo -info` verified before publishing |
 | Core Data schema differs between iOS versions | the adapter reads nothing, or the wrong column | probe the schema and fail naming the columns; a fixture per layout we can obtain |
 | Media in more than one place (`Message/Media`, `Library/Media`) | missing media | resolve both, test both |
-| No iPhone among the maintainers | untested code shipped | the real-backup run is a condition of the release |
+| No iPhone backup to test against before the tag | an iPhone path released without a real-world check | the real-backup run is a condition of the release |
 | The one-line identity ("Android, 64-digit key") | documentation contradicts itself | changed once, in M8 |
 
 ---
@@ -293,9 +289,9 @@ Each milestone is committed and pushed on its own; the release gate runs once, b
    artifact. Prerequisite: `ui.rs` emits events instead of printing.
 2. **Portable packaging for the GUI**: **AppImage** on Linux (current
    [`type2-runtime`](https://github.com/AppImage/type2-runtime), statically linked, so `libfuse2` is not
-   required — proven in a container without it), a **signed, notarized `.dmg`** on macOS (an unsigned
-   `.app` double-clicked from a download is quarantined; ~99 USD/year), a **portable `.exe`** on
-   Windows. Tauri generates all of them from one configuration, one runner per system.
+   required — proven in a container without it), a **signed, notarized `.dmg`** on macOS (signing is
+   what makes a downloaded `.app` open on a double click), a **portable `.exe`** on Windows. Tauri
+   generates all of them from one configuration, one runner per system.
 3. **Encrypted iPhone backups**: Apple's keybag (PBKDF2, class keys, AES-CBC per file).
 
 ## 11. Explicit non-goals for 2.0
