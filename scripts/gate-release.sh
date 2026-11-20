@@ -21,6 +21,12 @@ done
 
 ./scripts/gate.sh
 
+# Mutation testing copies the tree per job and builds it there: on a machine whose /tmp is a small
+# tmpfs that runs out of space before it runs out of mutants. The work goes under target/ instead.
+TMPDIR="$PWD/target/tmp"
+mkdir -p "$TMPDIR"
+export TMPDIR
+
 echo "== release build"
 cargo build --release --locked
 
