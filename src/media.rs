@@ -269,7 +269,7 @@ fn thumbnail_of(source: &Path) -> Result<(Vec<u8>, Option<i64>, Option<i64>)> {
     let (width, height) = (picture.width(), picture.height());
     if width > THUMB_WIDTH {
         let scaled = (height as u64 * THUMB_WIDTH as u64 / width.max(1) as u64) as u32;
-        picture = picture.resize(
+        picture = picture.resize_exact(
             THUMB_WIDTH,
             scaled.max(1),
             image::imageops::FilterType::Triangle,
@@ -290,7 +290,7 @@ fn h264_poster(bitstream: &[u8]) -> Option<Vec<u8>> {
     if width == 0 || height == 0 {
         return None;
     }
-    let rgb = yuv_to_rgb(&yuv);
+    let rgb = yuv_to_rgb(width, height, yuv.strides(), (yuv.y(), yuv.u(), yuv.v()));
     let frame = image::RgbImage::from_raw(width as u32, height as u32, rgb)?;
     let frame = if width as u32 > POSTER_WIDTH {
         let scaled = (height as u64 * POSTER_WIDTH as u64 / width as u64) as u32;
@@ -311,10 +311,12 @@ fn h264_poster(bitstream: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// BT.601 limited-range YUV to RGB, which is what H.264 streams carry.
-fn yuv_to_rgb(yuv: &openh264::decoder::DecodedYUV<'_>) -> Vec<u8> {
-    let (width, height) = yuv.dimensions();
-    let (stride_y, stride_u, stride_v) = yuv.strides();
-    let (luma, blue, red) = (yuv.y(), yuv.u(), yuv.v());
+fn yuv_to_rgb(
+    width: usize,
+    height: usize,
+    (stride_y, stride_u, stride_v): (usize, usize, usize),
+    (luma, blue, red): (&[u8], &[u8], &[u8]),
+) -> Vec<u8> {
     let mut rgb = vec![0u8; width * height * 3];
     for row in 0..height {
         for column in 0..width {
@@ -372,10 +374,7 @@ fn decode_peaks(ogg: &container::Ogg) -> Result<Vec<u8>> {
         };
         decoded += 1;
         for position in 0..count {
-            let mut peak = 0i16;
-            for channel in 0..channels {
-                peak = peak.max(samples[position * channels + channel]);
-            }
+            let peak = peak_of(&samples, position, channels);
             let bucket = index / WINDOW;
             if fine.len() <= bucket {
                 fine.resize(bucket + 1, 0);
@@ -391,6 +390,15 @@ fn decode_peaks(ogg: &container::Ogg) -> Result<Vec<u8>> {
         ));
     }
     Ok(peaks_of(&fine))
+}
+
+/// The loudest of the interleaved channels at one frame position.
+fn peak_of(samples: &[i16], position: usize, channels: usize) -> i16 {
+    let mut peak = 0i16;
+    for channel in 0..channels {
+        peak = peak.max(samples[position * channels + channel]);
+    }
+    peak
 }
 
 /// Squeeze the fine windows into the 500 the record carries.
@@ -656,6 +664,12 @@ mod tests {
         let peaks = peaks_of(&varied);
         assert_eq!(peaks.len(), PEAKS);
         assert!(peaks.iter().all(|peak| *peak > 0), "no window is skipped");
+        // Three windows per bucket, and the loud one is never at the bucket's first sample: a
+        // boundary that slips shows a quiet window instead.
+        let alternating: Vec<u8> = (0..1500)
+            .map(|index| if index % 2 == 0 { 1 } else { 3 })
+            .collect();
+        assert!(peaks_of(&alternating).iter().all(|peak| *peak == 3));
         assert_eq!(peaks_of(&[]), vec![0; PEAKS]);
     }
 
@@ -669,6 +683,138 @@ mod tests {
         .unwrap();
         assert!(derived.thumb.is_none());
         assert!(derived.peaks.is_none());
+    }
+
+    #[test]
+    fn a_wide_video_poster_is_scaled_to_four_hundred_and_eighty() {
+        let root = scratch("wide");
+        let derived = derive(
+            &item(
+                "video",
+                Some(media("WhatsApp Video/VID-20261201-WA0005.mp4")),
+            ),
+            &root,
+            "sha",
+        )
+        .unwrap();
+        assert_eq!((derived.width, derived.height), (Some(960), Some(540)));
+        let poster = image::open(root.join(derived.thumb.expect("a decoded poster"))).unwrap();
+        assert_eq!(
+            (poster.width(), poster.height()),
+            (480, 270),
+            "the shape is kept"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_frame_peak_is_the_loudest_of_its_interleaved_channels() {
+        // Frame 1 of two channels is samples 2 and 3; every other way of reading an index lands on
+        // a louder pair.
+        let samples = [100i16, 100, 5, 5, 50, 50];
+        assert_eq!(peak_of(&samples, 1, 2), 5);
+    }
+
+    #[test]
+    fn a_pixel_comes_out_of_the_bt601_matrix() {
+        // A 3x6 frame: row 5, column 2 reads luma[5 * 4 + 2] and the chroma at row 2, column 1.
+        let mut luma = vec![100u8; 30];
+        luma[22] = 128;
+        luma[11] = 30;
+        luma[3] = 200;
+        let mut blue = vec![100u8; 16];
+        blue[7] = 64;
+        blue[6] = 10;
+        blue[1] = 20;
+        blue[10] = 200;
+        let mut red = vec![100u8; 16];
+        red[7] = 192;
+        red[6] = 40;
+        red[1] = 60;
+        red[10] = 50;
+        let rgb = yuv_to_rgb(3, 6, (4, 3, 3), (&luma, &blue, &red));
+        let index = (5 * 3 + 2) * 3;
+        assert_eq!(
+            &rgb[index..index + 3],
+            &[233, 103, 1],
+            "y=128, u=64, v=192 through BT.601 limited range"
+        );
+    }
+
+    #[test]
+    fn a_stored_preview_is_the_thumbnail_of_an_image_that_was_not_copied() {
+        let root = scratch("stored-image");
+        let mut image = item("image", None);
+        image.thumbnail = Some(vec![0x89, b'P', b'N', b'G', 1, 2, 3]);
+        let derived = derive(&image, &root, "ignored").unwrap();
+        let rel = derived.thumb.expect("the preview the phone kept");
+        assert!(rel.ends_with(".png"), "{rel}");
+        assert!(root.join(&rel).is_file());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_video_that_cannot_be_read_and_has_no_preview_is_an_error() {
+        let root = scratch("corrupt-no-preview");
+        let broken = root.join("broken.mp4");
+        std::fs::write(&broken, b"not a container").unwrap();
+        let error = derive(&item("video", Some(broken)), &root, "sha").unwrap_err();
+        assert!(!error.message.is_empty(), "the reason is reported");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_webp_is_a_webp_and_a_riff_that_is_not_one_is_nothing() {
+        assert_eq!(extension_of(b"RIFF\x00\x00\x00\x00WEBPVP8 "), Some("webp"));
+        assert_eq!(extension_of(b"RIFF\x00\x00\x00\x00WAVEfmt "), None);
+        assert_eq!(extension_of(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("jpg"));
+        assert_eq!(extension_of(&[0x89, b'P', b'N', b'G', 0x0D]), Some("png"));
+    }
+
+    #[test]
+    fn placing_without_a_link_copies_the_file() {
+        let root = scratch("copy");
+        let source = root.join("photo.jpg");
+        std::fs::write(&source, b"same bytes").unwrap();
+        let archive = root.join("archive");
+        std::fs::create_dir_all(&archive).unwrap();
+        let placed = place(&source, &archive, false).unwrap();
+        let copied = archive.join(&placed.rel_path);
+        std::fs::write(&copied, b"changed").unwrap();
+        assert_eq!(
+            std::fs::read(&source).unwrap(),
+            b"same bytes",
+            "a copy can be edited without touching the phone's file"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_stereo_note_is_decoded_as_two_channels() {
+        let mut encoder =
+            opus::Encoder::new(48_000, opus::Channels::Stereo, opus::Application::Audio).unwrap();
+        let mut packets = Vec::new();
+        for _ in 0..10 {
+            // A loud left channel and a silent right one: a decoder opened in mono either refuses
+            // the packet or hears half the level.
+            let frame: Vec<i16> = (0..960).flat_map(|_| [24_000i16, 0]).collect();
+            let mut bytes = vec![0u8; 4096];
+            let written = encoder.encode(&frame, &mut bytes).unwrap();
+            bytes.truncate(written);
+            packets.push(container::OggPacket { bytes, audio: true });
+        }
+        let ogg = container::Ogg {
+            channels: 2,
+            duration_ms: None,
+            packets,
+        };
+        let peaks = decode_peaks(&ogg).unwrap();
+        assert_eq!(peaks.len(), PEAKS);
+        assert!(
+            peaks.iter().any(|peak| *peak > 50),
+            "the loud channel reaches the waveform: {:?}",
+            peaks.iter().max()
+        );
     }
 
     proptest! {

@@ -51,7 +51,8 @@ the version the product uses:
 ## Media fixtures
 
 Commit the tiny real files (a 16×16 PNG, a 12×12 WebP sticker, a fraction-of-a-second Opus voice
-note, a one-second H.264 MP4). A few KB in git buys tests that run with no external tool at all.
+note, a one-second H.264 MP4, and a 960×540 one so the poster has to be scaled). A few KB in git buys
+tests that run with no external tool at all.
 
 `build.py` is a test tool, not part of the product: it runs only when the fixture is regenerated, and
 the crate never calls it. The media it commits are generated once with `ffmpeg` on the machine of

@@ -746,6 +746,156 @@ mod tests {
     }
 
     #[test]
+    fn a_database_with_tables_but_no_chats_is_refused_with_the_reason() {
+        let (opened, root) = open_store(
+            "no-chat-table",
+            "CREATE TABLE ZWAMESSAGE (Z_PK INTEGER);
+             CREATE TABLE ZWAMEDIAITEM (Z_PK INTEGER);",
+            &[],
+        );
+        let error = opened.err().expect("not a WhatsApp iPhone database");
+        assert!(
+            error.message.contains("not WhatsApp's iPhone database"),
+            "{}",
+            error.message
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    const RICH_SCHEMA: &str = "
+        CREATE TABLE ZWACHATSESSION (Z_PK INTEGER PRIMARY KEY, ZCONTACTJID TEXT, ZPARTNERNAME TEXT);
+        CREATE TABLE ZWAMESSAGE (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+            ZMESSAGEDATE REAL, ZISFROMME INTEGER, ZTEXT TEXT, ZFROMJID TEXT, ZMEDIAITEM INTEGER,
+            ZDELETED INTEGER, ZEDITED INTEGER, ZCALLTYPE INTEGER);
+        CREATE TABLE ZWAMEDIAITEM (Z_PK INTEGER PRIMARY KEY, ZMEDIALOCALPATH TEXT,
+            ZTHUMBNAILLOCALPATH TEXT, ZFILESIZE INTEGER, ZMIMETYPE TEXT, ZLATITUDE REAL,
+            ZLONGITUDE REAL, ZVCARDNAME TEXT);
+        CREATE TABLE ZWAGROUPMEMBER (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+            ZMEMBERJID TEXT, ZCONTACTNAME TEXT);
+        INSERT INTO ZWACHATSESSION VALUES (1, '120363000000000001@g.us', 'Family');
+        INSERT INTO ZWAMEDIAITEM VALUES (1, 'Media/a.jpg', NULL, 10, 'image/jpeg', NULL, NULL, '   ');
+        INSERT INTO ZWAMEDIAITEM VALUES (2, 'Media/b.jpg', NULL, 20, NULL, 0.0, 0.0, NULL);
+        INSERT INTO ZWAMEDIAITEM VALUES (3, 'Media/b.jpg', NULL, 30, NULL, 45.0, 0.0, NULL);
+        INSERT INTO ZWAMEDIAITEM VALUES (4, 'Media/b.jpg', NULL, 40, NULL, 0.0, 5.0, NULL);
+        INSERT INTO ZWAMEDIAITEM VALUES (5, 'Media/b.jpg', NULL, 50, NULL, NULL, NULL, 'Bob');
+        INSERT INTO ZWAMESSAGE VALUES (1, 1, 817808400, 0, NULL, NULL, 1, 0, 0, NULL);
+        INSERT INTO ZWAMESSAGE VALUES (2, 1, 817808460, 0, NULL, NULL, 2, 0, 0, NULL);
+        INSERT INTO ZWAMESSAGE VALUES (3, 1, 817808520, 0, NULL, NULL, 3, 0, 0, NULL);
+        INSERT INTO ZWAMESSAGE VALUES (4, 1, 817808580, 0, NULL, NULL, 4, 0, 0, NULL);
+        INSERT INTO ZWAMESSAGE VALUES (5, 1, 817808640, 0, NULL, NULL, 5, 0, 1, NULL);
+        INSERT INTO ZWAMESSAGE VALUES (6, 1, 817808700, 0, 'plain', NULL, NULL, 0, 1, NULL);";
+
+    fn rich_store() -> (IosStore, PathBuf) {
+        let (opened, root) = open_store(
+            "rich",
+            RICH_SCHEMA,
+            &[("Media/a.jpg", b"a picture"), ("Media/b.jpg", b"another")],
+        );
+        (opened.expect("a store"), root)
+    }
+
+    #[test]
+    fn a_media_row_answers_what_it_holds() {
+        let (store, root) = rich_store();
+        let stats = store.chat_stats().unwrap();
+        let mut kinds: Vec<(String, String)> = Vec::new();
+        store
+            .each_message(&stats[0].chat, &mut |message| {
+                kinds.push((message.kind, message.text));
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            kinds,
+            [
+                ("image".to_string(), String::new()),
+                ("image".to_string(), String::new()),
+                ("location".to_string(), String::new()),
+                ("location".to_string(), String::new()),
+                ("contact".to_string(), String::new()),
+                ("text".to_string(), "plain".to_string()),
+            ],
+            "a blank vcard is no contact, and a zero coordinate is not a place"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_message_says_whether_it_was_edited() {
+        let (store, root) = rich_store();
+        let stats = store.chat_stats().unwrap();
+        let mut edited = Vec::new();
+        store
+            .each_message(&stats[0].chat, &mut |message| {
+                edited.push(message.edited);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(edited, [false, false, false, false, true, true]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_media_counts_are_what_the_files_say() {
+        let (store, root) = rich_store();
+        assert_eq!(
+            store.media_counts().unwrap(),
+            (5, 5),
+            "five rows name a file, and every one of them resolved"
+        );
+        std::fs::remove_file(root.join("Media/b.jpg")).unwrap();
+        assert_eq!(store.media_counts().unwrap(), (1, 5));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_diagnostics_name_the_source_and_the_matcher() {
+        let (store, root) = rich_store();
+        let lines = store.diagnostics();
+        assert_eq!(lines.len(), 5, "{lines:?}");
+        assert!(lines[0].starts_with("source: iphone backup, 1 chat(s)"));
+        assert!(lines[4].contains("an extracted app group"), "{lines:?}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_damaged_database_fails_the_integrity_check() {
+        let (store, root) = rich_store();
+        assert!(store.integrity_check().is_ok(), "the fixture is sound");
+        // The rows past the first pages were never read, so the file can be cut under the open
+        // connection: the check walks every page and finds the rest missing.
+        let path = root.join("workspace/ChatStorage.sqlite");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(4096)
+            .unwrap();
+        assert!(
+            store.integrity_check().is_err(),
+            "a cut database is not sound"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_jid_column_is_read_when_the_name_one_is_gone() {
+        let sql = "
+            CREATE TABLE ZWACHATSESSION (Z_PK INTEGER PRIMARY KEY, ZJID TEXT, ZNAME TEXT);
+            CREATE TABLE ZWAMESSAGE (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+                ZMESSAGEDATE REAL, ZISFROMME INTEGER, ZTEXT TEXT, ZFROMJID TEXT, ZMEDIAITEM INTEGER,
+                ZDELETED INTEGER, ZEDITED INTEGER, ZCALLTYPE INTEGER);
+            INSERT INTO ZWACHATSESSION VALUES (6, '393331234567@s.whatsapp.net', 'Alice');
+            INSERT INTO ZWAMESSAGE VALUES (1, 6, 817808400, 0, 'hello', NULL, NULL, 0, 0, NULL);";
+        let (opened, root) = open_store("zjid", sql, &[]);
+        let store = opened.expect("a store that says ZJID");
+        let stats = store.chat_stats().unwrap();
+        assert_eq!(stats[0].chat.jid, "393331234567@s.whatsapp.net");
+        assert_eq!(stats[0].chat.name, "Alice");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn a_nameless_member_is_the_number_and_a_missing_preview_is_nothing() {
         let sql = "
             CREATE TABLE ZWACHATSESSION (Z_PK INTEGER PRIMARY KEY, ZCONTACTJID TEXT, ZPARTNERNAME TEXT);

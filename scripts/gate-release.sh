@@ -64,6 +64,11 @@ set -- "$@" --exclude-re 'replace < with > in find_box'
 # The mutation makes the offset stay zero, which is an endless loop: no test can observe it except by
 # hanging, and a hang is not a wrong archive.
 set -- "$@" --exclude-re 'replace \+= with \*= in (find_box|ebml_walk)'
+# An image already at the width limit is resized to the size it has, so the two comparisons are the
+# same picture; and a decoded frame always carries both dimensions, so a zero test joined by AND or
+# by OR never runs at all.
+set -- "$@" --exclude-re 'replace > with >= in (thumbnail_of|h264_poster)'
+set -- "$@" --exclude-re 'replace \|\| with && in h264_poster'
 # The memory test is left out of the test run: it measures an allocation ceiling, which no mutant of
 # the parsers can move, and it costs six seconds on every one of a thousand mutants. Everything after
 # `--` belongs to the test command, so it goes last.

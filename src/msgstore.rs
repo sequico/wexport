@@ -1117,6 +1117,63 @@ mod tests {
     }
 
     #[test]
+    fn the_media_counts_are_what_the_files_say() {
+        let root = std::env::temp_dir().join(format!("wexport-counts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("Media")).unwrap();
+        std::fs::write(root.join("Media/a.jpg"), b"a picture").unwrap();
+        let path = root.join("msgstore.db");
+        let con = Connection::open(&path).unwrap();
+        con.execute_batch(
+            "CREATE TABLE message (_id INTEGER PRIMARY KEY, key_remote_jid TEXT,
+                 timestamp INTEGER, from_me INTEGER, data TEXT, media_wa_type INTEGER);
+             CREATE TABLE message_media (message_id INTEGER, file_path TEXT,
+                 mime_type TEXT, file_size INTEGER);
+             INSERT INTO message VALUES
+                 (1, '393331234567@s.whatsapp.net', 1000, 1, NULL, 1),
+                 (2, '393331234567@s.whatsapp.net', 2000, 1, NULL, 1);
+             INSERT INTO message_media VALUES
+                 (1, 'Media/a.jpg', 'image/jpeg', 10),
+                 (2, 'Media/b.jpg', 'image/jpeg', 20);",
+        )
+        .unwrap();
+        drop(con);
+        let store = Msgstore::open(&path, &root, None).unwrap();
+        assert_eq!(store.media_counts(), (1, 2));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_damaged_database_fails_the_integrity_check() {
+        let (store, path) = legacy_store();
+        assert!(store.integrity_check().is_ok(), "the fixture is sound");
+        // The pages past the ones the queries read are still on disk: cut them and the check finds
+        // the rest missing.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(4096)
+            .unwrap();
+        assert!(
+            store.integrity_check().is_err(),
+            "a cut database is not sound"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn the_diagnostics_name_the_columns_that_were_found() {
+        let (store, path) = legacy_store();
+        let lines = store.diagnostics();
+        assert_eq!(lines.len(), 4, "{lines:?}");
+        assert!(lines[0].starts_with("tables: "), "{lines:?}");
+        assert!(lines[0].ends_with(" read"), "{lines:?}");
+        assert!(lines[2].contains("thumbnails="), "{lines:?}");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn chats_with_the_same_last_event_come_out_in_the_same_order_every_run() {
         let path = std::env::temp_dir().join(format!("wexport-ties-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);

@@ -59,6 +59,12 @@ def _media(dest: Path) -> None:
             "-movflags", "+faststart",
             str(media / "WhatsApp Video/VID-20261201-WA0003.mp4"),
         )
+    if not (media / "WhatsApp Video/VID-20261201-WA0005.mp4").exists():
+        _ffmpeg(
+            "-f", "lavfi", "-i", "color=c=gray:s=960x540:d=1", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(media / "WhatsApp Video/VID-20261201-WA0005.mp4"),
+        )
     if not (media / "WhatsApp Animated Gifs/GIF-20261201-WA0004.mp4").exists():
         _ffmpeg(
             "-f", "lavfi", "-i", "color=c=red:s=16x16:d=1", "-pix_fmt", "yuv420p",

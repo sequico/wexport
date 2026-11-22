@@ -352,14 +352,21 @@ fn a_malformed_avcc_yields_what_it_holds_and_no_more() {
 
 #[test]
 fn every_parameter_set_of_a_record_is_read() {
-    // Two SPS and two PPS: after each set the offset has to move by its length and its prefix.
-    let mut avcc = vec![0x01, 0x42, 0xC0, 0x1E, 0xFF, 0xE2];
-    for sps in [&[0x67u8, 0x01][..], &[0x67, 0x02, 0x03][..]] {
+    // Three SPS and three PPS: after each set the offset has to move by its length and its prefix.
+    // The middle SPS is long, so a prefix read or a step that lands in the wrong place falls past
+    // the end of the record instead of reading the same two bytes.
+    let long = vec![0x67u8; 400];
+    let mut avcc = vec![0x01, 0x42, 0xC0, 0x1E, 0xFF, 0xE3];
+    for sps in [&[0x67u8, 0x01][..], &long[..], &[0x67, 0x02, 0x03][..]] {
         avcc.extend_from_slice(&(sps.len() as u16).to_be_bytes());
         avcc.extend_from_slice(sps);
     }
-    avcc.push(2);
-    for pps in [&[0x68u8, 0x01][..], &[0x68, 0x02, 0x03, 0x04][..]] {
+    avcc.push(3);
+    for pps in [
+        &[0x68u8, 0x01][..],
+        &[0x68, 0x02, 0x03, 0x04][..],
+        &[0x68][..],
+    ] {
         avcc.extend_from_slice(&(pps.len() as u16).to_be_bytes());
         avcc.extend_from_slice(pps);
     }
@@ -369,9 +376,11 @@ fn every_parameter_set_of_a_record_is_read() {
         sets,
         [
             &[0x67, 0x01][..],
+            &long[..],
             &[0x67, 0x02, 0x03][..],
             &[0x68, 0x01][..],
-            &[0x68, 0x02, 0x03, 0x04][..]
+            &[0x68, 0x02, 0x03, 0x04][..],
+            &[0x68][..]
         ]
     );
 }
