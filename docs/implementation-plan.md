@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status: v2.0.0 implemented. This document remains the **specification** — what the product must be;
+Status: v2.0.0 implemented. This document is the **specification** — what the product must be;
 `README.md` says what is done and what is still open. Two phones (Android `crypt15` with the 64-digit
 key, iPhone local backups), three platforms, and media made in-process.
 
@@ -598,8 +598,8 @@ No decision is open.
 ## 12. Later, deliberately not now
 
 - **The graphical application, the AppImage and the signed `.dmg`**: a window over the same pipeline,
-  portable packaging per system. `ui.rs` already emits events instead of printing, which was the
-  prerequisite; the CLI is the product until then.
+  portable packaging per system. `ui.rs` emits events instead of printing, which is the prerequisite;
+  the CLI is the product until then.
 - **Encrypted iPhone backups**: Apple's keybag (PBKDF2, class keys, AES-CBC per file).
 - **HEVC decoding**, for an iPhone video whose thumbnail the phone never stored.
 - **Transcoding**: off and not exposed (§5); the record has room for an alternative track.
