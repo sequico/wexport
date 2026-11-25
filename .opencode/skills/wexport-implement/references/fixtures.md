@@ -8,10 +8,13 @@ itself, from a `msgstore.db` we also build ourselves.
 ```
 tests/fixtures/
 ├── synthetic/
-│   ├── schema.sql          # the WhatsApp tables we read, minimal columns
+│   ├── schema.sql          # the Android tables we read, minimal columns
 │   ├── data.sql            # one row per message kind, plus reactions, quotes, edits, revokes, calls
-│   ├── media/              # tiny real files, a few KB total
-│   └── build.py            # sqlite3 → msgstore.db → msgstore.db.crypt15 with a fixed test key
+│   ├── phone/              # the committed fixture: databases, media, contacts
+│   ├── build.py            # sqlite3 → msgstore.db → msgstore.db.crypt15 with a fixed test key
+│   └── ios/
+│       ├── build.py        # a Finder backup: Manifest.db, Manifest.plist, hashed files, a live -wal
+│       └── backup/         # the committed iPhone fixture
 └── real/                   # gitignored; supplied through WEXPORT_REAL_BACKUP
 ```
 
@@ -24,33 +27,44 @@ Use the pinned `wa-crypt-tools` library, not a shelled-out command, so the fixtu
 the version the product uses:
 
 1. `sqlite3` from the stdlib applies `schema.sql` and `data.sql` to `msgstore.db`.
-2. The library's key factory turns the fixed hex key into a key object; the database factory parses a
-   header and encrypts the payload.
-3. Confirm the exact encrypt call by reading the installed package (site-packages of
-   `wa-crypt-tools`). Do not guess an API and do not copy a command line from a blog post: the entry
-   points are `KeyFactory` and `DatabaseFactory`, and everything else is internal.
+2. `KeyFactory.from_hex` turns the fixed hex key into a key object; `Database15(iv=…)` encrypts the
+   zlib-compressed payload. The IV is **fixed**, because the fixture is committed and its bytes must
+   not change from one generation to the next.
+3. Install it from its repository (`pip install git+https://github.com/ElDavoo/wa-crypt-tools.git`):
+   the PyPI release is an older layout whose exit is not compatible with the code above.
 
 ## What the fixture must cover
 
 - one message per `kind` in the §4 vocabulary, including `deleted` and `system`;
 - a quoted reply, an edited message, a revoked message, a reaction and a read receipt;
 - a media row whose file exists and one whose file does not (the `missing` state is normal data);
+- a `message_thumbnail` row for a video and one for a file that is gone, so the stored preview is
+  covered on both paths;
 - a group chat and a one-to-one chat;
 - a `call_log` row;
 - two chunks' worth of messages, so the month split is exercised;
 - one incremental file, so the merge path has a delta pair to replay.
+- on the iPhone side: two chats, one of them a group; a message that exists only in the `-wal`; a
+  stored thumbnail; a media file that is not in the backup; a location, a vCard, a call and a deleted
+  message.
 
 ## Media fixtures
 
-Commit the tiny real files (a 1x1 PNG, a 120-byte WebP sticker, a fraction-of-a-second Opus voice
-note, a minimal MP4). A few KB in git buys tests that need no external binary.
+Commit the tiny real files (a 16×16 PNG, a 12×12 WebP sticker, a fraction-of-a-second Opus voice
+note, a one-second H.264 MP4, and a 960×540 one so the poster has to be scaled). A few KB in git buys
+tests that run with no external tool at all.
 
 `build.py` is a test tool, not part of the product: it runs only when the fixture is regenerated, and
-the crate never calls it. Image derivatives are
-produced with `ffmpeg`, which the product requires anyway, so the only external tools a test run needs
-are the same two the product needs. Unit tests that must not depend on a binary work on bytes (the
-waveform peaks from raw PCM, chunk splitting, escaping), and one integration test runs the real
-`ffmpeg`/`ffprobe` path on the fixture.
+the crate never calls it. The media it commits are generated once with `ffmpeg` on the machine of
+whoever regenerates the fixture; the *test run* needs no binary. The same applies to the iPhone
+fixture, which reuses those media files through `Manifest.db`.
+
+## The iPhone fixture
+
+`tests/fixtures/synthetic/ios/build.py` writes a Finder backup: `Manifest.db` with the `Files` table,
+a binary `Manifest.plist`, the files under their two-hex-digit `fileID` folders, and a `ChatStorage`
+database with a **live WAL** holding the last message. Reuse the Android fixture's media bytes for
+the picture, the video and the voice note, so the two fixtures cannot drift apart.
 
 ## Golden files
 

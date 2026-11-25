@@ -19,7 +19,7 @@ Never attach your backup, your key, or a real conversation. A tiny synthetic exa
 
 - `wexport -v`:
 - operating system and version:
-- first line of `ffmpeg -version`:
+- the phone: Android (backup made with the 64-digit key) or iPhone (Finder/iTunes backup)
 - the exact command, with the folder written as `<folder>`:
 
 **Output**

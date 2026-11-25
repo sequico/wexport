@@ -76,7 +76,7 @@ fn database(messages: i64, root: &Path) -> PathBuf {
 fn peak_for(messages: i64, name: &str) -> usize {
     let workspace = scratch(name);
     let path = database(messages, &workspace);
-    let store = Msgstore::open(&path).unwrap();
+    let store = Msgstore::open(&path, &workspace, None).unwrap();
     let stat = store.chat_stats().unwrap().remove(0);
     let out = workspace.join("archives");
     std::fs::create_dir_all(&out).unwrap();
@@ -84,13 +84,13 @@ fn peak_for(messages: i64, name: &str) -> usize {
         tz: jiff::tz::TimeZone::UTC,
         name: "UTC".into(),
     };
+    let report = wexport::report::Report::new(false, false, false);
     let context = archive::BuildContext {
         out_root: &out,
         clock: &clock,
         app_version: "2.26.34.7",
-        copy_root: &workspace,
-        media_root: None,
         jobs: 2,
+        report: &report,
     };
 
     // Only the peak is reset: the live counter must stay true across the two builds.

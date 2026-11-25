@@ -1,6 +1,6 @@
 ---
 name: wexport implementation
-description: Implement, fix or review the wexport repository (Android WhatsApp crypt15 backup → offline chat archive). Use for any edit under src/ or tests/, for milestone work, and for judging whether a change respects the project's invariants.
+description: Implement, fix or review the wexport repository (WhatsApp backups from Android and iPhone → offline chat archive). Use for any edit under src/ or tests/, for milestone work, and for judging whether a change respects the project's invariants.
 ---
 
 # Implementing wexport
@@ -15,20 +15,21 @@ Read before editing:
 
 1. `docs/implementation-plan.md` — the section covering the stage you touch (§2 pipeline, §4 data
    model, §5 media, §6 archive format, §7 milestones).
-2. `docs/android-backup-formats.md` — only for decryption, keys, msgstore schema, incrementals.
+2. `docs/backup-formats.md` — only for decryption, keys, the two schemas, incrementals, the backup
+   manifest.
 3. `docs/usage.md` — only when the change is observable by the person using the tool.
 
 ## Invariants a change may never break
 
 | Invariant | Why it matters | Spec |
 |---|---|---|
-| Only `src/msgstore.rs` knows WhatsApp table or column names | one file to fix when WhatsApp renames something; everything else survives | §3 |
+| Only `src/msgstore.rs` and `src/ios.rs` know a phone's table or column names | one file to fix per phone when WhatsApp renames something; everything else survives | §3 |
 | The archive opens from `file://`; the product has no server | the recipient must need nothing installed, not even wexport | §6 |
 | Timestamps are frozen at build; the viewer never derives a local time | timezone rules change; the archive must keep saying when it happened | §4 |
 | Media are content-addressed inside the chat folder, never grouped by chat on disk | a chat folder stands alone when copied or zipped | §5 |
 | A chat archive never reveals that other chats exist | sharing one conversation must not disclose the rest | §6 |
 | Exit codes `0..5` are the interface; each has a test | the CLI is what the person actually drives | §2 |
-| A missing external binary aborts; nothing degrades silently | an archive without thumbnails looks finished and is not | §2 |
+| No external tool is needed to build an archive; `tesseract` is the one optional exception, and only for a screenshot key | an archive without thumbnails looks finished and is not | §2 |
 | The key derivation stays pinned to the reference value | a silent change makes every archive wrong in a way no fixture catches | §9 |
 
 ## How to work
@@ -47,9 +48,9 @@ bullet, not a whole milestone.
    `feat(store): read message_add_on reactions`, `fix(media): keep peaks for zero-length voice
    notes`.
 
-Tests are written but **not run on your own initiative** (owner rule): the project's checks run
-once, whole tree, before a push, and the owner decides when a push happens. Reading the code and
-the diff is what judges a unit.
+Tests are written but **not run on your own initiative**: the project's checks run once, whole tree,
+before a push, and a push is the maintainer's decision. Reading the code and the diff is what judges
+a unit.
 
 ## The Rust this crate is written in
 
@@ -59,24 +60,28 @@ the diff is what judges a unit.
   `wrong_type`, `incomplete`, `dependency` (one per exit code). `?` is fine through the `From`
   impls; never `.unwrap()` on input data, never a silent `ok()` that hides a failure the user would
   want to know about. `unwrap`/`expect` are for invariants the code has just checked.
-- **Printing** happens in `ui.rs` and `main.rs` only. A module returns data or an `Error`; it does
-  not decide what a person reads.
-- **Schema probing**: names are discovered, never assumed (`pick`/`require` in `msgstore.rs`); a
-  query built from a probed name is quoted and its parameters bound, never interpolated.
-- **Trust boundary**: media paths and anything else from the database are untrusted — resolve, then
-  check containment (`media::source_for` is the pattern).
-- **No `unsafe`**, no `sh -c`, no shelling out except the three documented external tools
-  (`ffmpeg`, `ffprobe`, `tesseract`), each with the install hint from `error::install_hints`.
+- **Printing** happens in `ui.rs`, `report.rs` and `main.rs` only; `progress.rs` draws the bar the
+  reporter asks it for. A module returns data or an `Error`; it does not decide what a person reads.
+- **Schema probing**: names are discovered, never assumed (`pick`/`require` in `msgstore.rs` and
+  `probe` in `ios.rs`); a query built from a probed name is quoted and its parameters bound, never
+  interpolated.
+- **Trust boundary**: media paths and anything else from a database are untrusted — resolve, then
+  check containment (`media::source_for` and `media::contain` are the patterns). An iPhone path goes
+  through `Manifest.db`, never straight to the filesystem.
+- **No `unsafe`**, no `sh -c`, no shelling out at all: `tesseract` is the only external tool, and it
+  runs when a screenshot key is read.
 - **Tests**: unit tests live in the module (`#[cfg(test)]`) and cover pure functions and the schema
-  shapes the fixture cannot carry; `tests/fixture.rs` runs the product end to end; `tests/real.rs`
-  is the optional run on a real backup. A non-trivial branch needs one of them.
-- **The golden chunk** (`tests/fixtures/golden/`) pins the record format byte for byte. If a change
-  is meant to alter it, regenerate it, read the diff, and say in the commit why the format moved.
+  shapes the fixtures cannot carry; `tests/fixture.rs` runs the Android product end to end,
+  `tests/ios.rs` the iPhone one, `tests/real.rs` is the optional run on a real backup. A non-trivial
+  branch needs one of them.
+- **The golden chunk** (`tests/fixtures/golden/`) pins the record format byte for byte — one per
+  phone. If a change is meant to alter it, regenerate it, read the diff, and say in the commit why the
+  format moved.
 
 ## Never do this
 
 - Add a dependency to avoid writing thirty lines. The crates already in `Cargo.toml` are the budget;
-  anything else needs the owner.
+  anything else needs a reason in the commit.
 - Add `fetch`, ES modules, Web Workers or `localStorage` to the viewer because they feel convenient.
   They are exactly what `file://` blocks (§6).
 - Recompute in the viewer anything the build already froze (timestamps, dimensions, mime, paths).
@@ -84,15 +89,16 @@ the diff is what judges a unit.
 - Probe WhatsApp's version string to decide a schema shape when the schema itself answers.
 - Make a fixture match the code instead of the reality the fixture is meant to represent.
 - Silence a failure into a warning. Either the archive is correct or the exit code says why not.
-- Read a WhatsApp column anywhere outside `src/msgstore.rs`.
-- Print from a module other than `ui.rs`/`main.rs`, or read the command line outside `ui.rs`.
+- Read a phone's column anywhere outside `src/msgstore.rs` or `src/ios.rs`.
+- Print from a module other than `ui.rs`/`report.rs`/`main.rs`, or read the command line outside
+  `ui.rs`.
 
 ## Adding a message kind
 
-Three places, in this order: the mapping in `src/msgstore.rs` → the `kind` vocabulary in §4 (with the
-plan updated in the same commit) → a renderer in `app.js` with a fallback for unknown payloads. If
-the kind needs a new data field, it goes in the `pl` payload JSON; a new record field requires the
-plan and the viewer to change together.
+Three places, in this order: the mapping in the adapter that produces it (`src/msgstore.rs`,
+`src/ios.rs`, or both) → the `kind` vocabulary in §4 (with the plan updated in the same commit) → a
+renderer in `app.js` with a fallback for unknown payloads. If the kind needs a new data field, it goes
+in the `pl` payload JSON; a new record field requires the plan and the viewer to change together.
 
 ## Definition of done for a unit
 

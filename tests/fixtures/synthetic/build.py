@@ -59,6 +59,12 @@ def _media(dest: Path) -> None:
             "-movflags", "+faststart",
             str(media / "WhatsApp Video/VID-20261201-WA0003.mp4"),
         )
+    if not (media / "WhatsApp Video/VID-20261201-WA0005.mp4").exists():
+        _ffmpeg(
+            "-f", "lavfi", "-i", "color=c=gray:s=960x540:d=1", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            str(media / "WhatsApp Video/VID-20261201-WA0005.mp4"),
+        )
     if not (media / "WhatsApp Animated Gifs/GIF-20261201-WA0004.mp4").exists():
         _ffmpeg(
             "-f", "lavfi", "-i", "color=c=red:s=16x16:d=1", "-pix_fmt", "yuv420p",
@@ -73,13 +79,16 @@ def build(dest: Path = PHONE) -> Path:
     (dest / "Backups").mkdir(exist_ok=True)
 
     msgstore = dest / "Databases" / "msgstore.db"
+    msgstore.unlink(missing_ok=True)
     with sqlite3.connect(msgstore) as con:
         con.executescript((HERE / "schema.sql").read_text(encoding="utf-8"))
         con.executescript((HERE / "data.sql").read_text(encoding="utf-8"))
+        _thumbnails(con)
     (dest / "Databases" / "msgstore.db.crypt15").write_bytes(_encrypt(msgstore.read_bytes()))
     msgstore.unlink()
 
     contacts = dest / "Backups" / "wa.db"
+    contacts.unlink(missing_ok=True)
     with sqlite3.connect(contacts) as con:
         con.executescript(CONTACTS_SCHEMA)
     (dest / "Backups" / "wa.db.crypt15").write_bytes(_encrypt(contacts.read_bytes()))
@@ -104,7 +113,23 @@ def _encrypt(data: bytes) -> bytes:
     from wa_crypt_tools import Database15, KeyFactory, Props
 
     key = KeyFactory.from_hex(KEY_HEX)
-    return Database15().encrypt(key, Props(), zlib.compress(data, 9))
+    # A fixed IV: the fixture is committed, so its bytes must not change from one generation to the
+    # next, and the header test pins this value.
+    cipher = Database15(iv=bytes.fromhex("bd75ec327fb184c2b0fb38bbf0d26049"))
+    return cipher.encrypt(key, Props(), zlib.compress(data, 9))
+
+
+def _thumbnails(con: sqlite3.Connection) -> None:
+    """The previews the phone keeps: the video's poster, and one for a file that is gone."""
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (24, 16), (200, 120, 60)).save(buffer, "JPEG")
+    blob = buffer.getvalue()
+    con.execute("INSERT INTO message_thumbnail VALUES (8, ?)", (blob,))
+    con.execute("INSERT INTO message_thumbnail VALUES (12, ?)", (blob,))
 
 
 def _png(path: Path, size: tuple[int, int]) -> None:

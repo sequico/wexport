@@ -18,7 +18,7 @@ fn fixture() -> PathBuf {
 fn decrypted() -> (Msgstore, PathBuf) {
     let path = std::env::temp_dir().join(format!("wexport-it-{}-store.db", unique()));
     decrypt_file(&fixture().join("Databases/msgstore.db.crypt15"), &path);
-    let mut store = Msgstore::open(&path).unwrap();
+    let mut store = Msgstore::open(&path, &fixture(), Some(&fixture().join("Media"))).unwrap();
     let contacts = fixture().join("Backups/wa.db.crypt15");
     if contacts.is_file() {
         let contacts_path = path.with_file_name(format!("wexport-it-{}-contacts.db", unique()));
@@ -55,6 +55,11 @@ fn rome() -> archive::Clock {
         tz: jiff::tz::TimeZone::get("Europe/Rome").expect("a zone name jiff knows"),
         name: "Europe/Rome".into(),
     }
+}
+
+/// The reporter a test build writes through: no JSON, no quiet, no diagnostics.
+fn report() -> wexport::report::Report {
+    wexport::report::Report::new(false, false, false)
 }
 
 fn build(out: &Path) {
@@ -168,6 +173,52 @@ fn message_text_cannot_escape_the_script() {
 }
 
 #[test]
+fn the_check_reports_the_media_file_that_is_not_in_the_copy() {
+    let args = vec![
+        fixture().display().to_string(),
+        "-k".into(),
+        KEY.into(),
+        "-c".into(),
+    ];
+    assert_eq!(
+        ui::run(&args).expect("check runs"),
+        wexport::error::EXIT_INCOMPLETE
+    );
+}
+
+#[test]
+fn a_dry_run_writes_nothing_and_answers_zero() {
+    let out = scratch("dry-run");
+    let target = out.join("archives");
+    let args = vec![
+        fixture().display().to_string(),
+        "-k".into(),
+        KEY.into(),
+        "-b".into(),
+        "all".into(),
+        "-n".into(),
+        "-o".into(),
+        target.display().to_string(),
+    ];
+    assert_eq!(ui::run(&args).expect("dry run runs"), 0);
+    assert!(!target.exists(), "a dry run writes nothing");
+    let _ = std::fs::remove_dir_all(&out);
+}
+
+#[test]
+fn quiet_and_diagnostics_are_not_the_same_run() {
+    let args = vec![
+        fixture().display().to_string(),
+        "-q".into(),
+        "-d".into(),
+        "-b".into(),
+        "all".into(),
+    ];
+    let error = ui::run(&args).expect_err("the two say opposite things");
+    assert!(error.message.contains("one or the other"));
+}
+
+#[test]
 fn a_second_build_is_byte_identical() {
     let out = scratch("again");
     build(&out);
@@ -245,16 +296,14 @@ fn a_media_file_that_was_not_copied_is_counted_as_missing() {
     let stats = store.chat_stats().unwrap();
     let alice = stats.iter().find(|stat| stat.chat.name == "Alice").unwrap();
     let out = scratch("missing");
-    let root = fixture();
-    let media = root.join("Media");
     let clock = rome();
+    let report = report();
     let context = archive::BuildContext {
         out_root: &out,
         clock: &clock,
         app_version: "2.26.34.7",
-        copy_root: &root,
-        media_root: Some(&media),
         jobs: 2,
+        report: &report,
     };
     let summary = archive::build_chat(&store, alice, &context, "Alice").unwrap();
     assert_eq!(summary.media, 1);
@@ -322,16 +371,14 @@ fn the_family_chunk_is_the_committed_golden_file() {
         .find(|stat| stat.chat.name == "Family")
         .unwrap();
     let out = scratch("golden");
-    let root = fixture();
-    let media = root.join("Media");
     let clock = rome();
+    let report = report();
     let context = archive::BuildContext {
         out_root: &out,
         clock: &clock,
         app_version: "2.26.34.7",
-        copy_root: &root,
-        media_root: Some(&media),
         jobs: 2,
+        report: &report,
     };
     let built = archive::build_chat(&store, family, &context, "Family").unwrap();
     let chunk = built.archive.join("data/2026-12.js");
@@ -364,13 +411,13 @@ fn a_rebuild_after_new_messages_leaves_one_folder() {
     let out = root.join("out");
     std::fs::create_dir_all(&out).unwrap();
     let clock = rome();
+    let report = report();
     let context = archive::BuildContext {
         out_root: &out,
         clock: &clock,
         app_version: "2.26.34.7",
-        copy_root: &fixture(),
-        media_root: None,
         jobs: 2,
+        report: &report,
     };
     let first = archive::build_chat(&store, &stat, &context, "first").unwrap();
     stat.last_ts += 86_400_000;
@@ -409,18 +456,18 @@ fn a_chat_longer_than_a_batch_is_counted_from_end_to_end() {
         .unwrap();
     drop(connection);
 
-    let store = Msgstore::open(&path).unwrap();
+    let store = Msgstore::open(&path, &root, None).unwrap();
     let stat = store.chat_stats().unwrap().remove(0);
     let out = root.join("out");
     std::fs::create_dir_all(&out).unwrap();
     let clock = rome();
+    let report = report();
     let context = archive::BuildContext {
         out_root: &out,
         clock: &clock,
         app_version: "2.26.34.7",
-        copy_root: &root,
-        media_root: None,
         jobs: 2,
+        report: &report,
     };
     let summary = archive::build_chat(&store, &stat, &context, "batch").unwrap();
 

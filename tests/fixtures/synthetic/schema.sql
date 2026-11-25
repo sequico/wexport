@@ -37,6 +37,12 @@ CREATE TABLE message_media (
     caption TEXT
 );
 
+-- The preview WhatsApp keeps for a message, even when the file itself is gone.
+CREATE TABLE message_thumbnail (
+    message_row_id INTEGER PRIMARY KEY,
+    thumbnail BLOB
+);
+
 CREATE TABLE message_revoked (message_row_id INTEGER PRIMARY KEY);
 CREATE TABLE message_system (message_row_id INTEGER PRIMARY KEY);
 CREATE TABLE message_add_on (

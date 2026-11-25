@@ -9,8 +9,10 @@ use serde_json::{json, Map, Value};
 use crate::chunks::{self, Record};
 use crate::error::{Error, Result};
 use crate::media;
-use crate::msgstore::{Chat, ChatStat, Message, Msgstore};
+use crate::msgstore::{Chat, ChatStat, Message};
 use crate::progress::Bar;
+use crate::report::Report;
+use crate::source::Store;
 
 const INDEX_HTML: &str = include_str!("assets/index.html");
 const APP_JS: &str = include_str!("assets/app.js");
@@ -86,16 +88,15 @@ pub struct BuildContext<'a> {
     pub out_root: &'a Path,
     pub clock: &'a Clock,
     pub app_version: &'a str,
-    pub copy_root: &'a Path,
-    pub media_root: Option<&'a Path>,
     pub jobs: usize,
+    pub report: &'a Report,
 }
 
 const BATCH: usize = 256;
 const FAILURE_SAMPLES: usize = 20;
 
 pub fn build_chat(
-    store: &Msgstore,
+    store: &dyn Store,
     stat: &ChatStat,
     context: &BuildContext<'_>,
     bar_label: &str,
@@ -139,7 +140,9 @@ pub fn build_chat(
         people: 0,
         empty: false,
     };
-    let bar = Arc::new(Mutex::new(Bar::new(bar_label, stat.media_count as usize)));
+    let bar = Arc::new(Mutex::new(
+        context.report.bar(bar_label, stat.media_count as usize),
+    ));
     let data = archive.join("data");
     let mut writer = chunks::Writer::new(&data, chunks::MAX_RECORDS)?;
     let mut people: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -225,14 +228,7 @@ fn flush(
     if batch.is_empty() {
         return Ok(());
     }
-    let prepared = prepare_media(
-        batch,
-        &summary.archive,
-        context.copy_root,
-        context.media_root,
-        context.jobs,
-        bar,
-    )?;
+    let prepared = prepare_media(batch, &summary.archive, context.jobs, bar)?;
     for message in batch.drain(..) {
         let result = prepared.get(&message.id);
         if let Some(Prepared { row, failure }) = result {
@@ -279,8 +275,6 @@ fn flush(
 fn prepare_media(
     messages: &[Message],
     archive: &Path,
-    copy_root: &Path,
-    media_root: Option<&Path>,
     jobs: usize,
     bar: &Arc<Mutex<Bar>>,
 ) -> Result<HashMap<i64, Prepared>> {
@@ -304,10 +298,7 @@ fn prepare_media(
                 let mut out: Vec<(i64, Prepared)> = Vec::new();
                 for message in slice {
                     let media = message.media.as_ref().expect("filtered by media");
-                    out.push((
-                        message.id,
-                        one_media(message.id, media, archive, copy_root, media_root, &bar),
-                    ));
+                    out.push((message.id, one_media(message.id, media, archive, &bar)));
                 }
                 out
             }));
@@ -332,8 +323,6 @@ fn one_media(
     id: i64,
     media_item: &crate::msgstore::Media,
     archive: &Path,
-    copy_root: &Path,
-    media_root: Option<&Path>,
     bar: &Arc<Mutex<Bar>>,
 ) -> Prepared {
     let mut row = Map::new();
@@ -346,17 +335,30 @@ fn one_media(
     if let Some(mime) = &media_item.mime {
         row.insert("mt".into(), json!(mime));
     }
-    let Some(source) = media::source_for(&media_item.rel_path, media_root, copy_root) else {
+
+    let Some(source) = media_item.source.as_deref() else {
+        // The file is not in the copy; the phone may still have kept its preview.
         row.insert("mi".into(), json!(1));
+        let preview = media::derive(media_item, archive, "");
         if let Ok(mut bar) = bar.lock() {
             bar.step(1);
         }
-        return Prepared {
-            row: Some(Value::Object(row)),
-            failure: None,
+        return match preview {
+            Ok(derived) => {
+                fill(&mut row, media_item, derived);
+                Prepared {
+                    row: Some(Value::Object(row)),
+                    failure: None,
+                }
+            }
+            Err(error) => Prepared {
+                row: Some(Value::Object(row)),
+                failure: Some(format!("{id}: {}: {}", media_item.rel_path, error)),
+            },
         };
     };
-    let placed = match media::place(&source, archive, true) {
+
+    let placed = match media::place(source, archive, true) {
         Ok(placed) => placed,
         Err(error) => {
             if let Ok(mut bar) = bar.lock() {
@@ -371,33 +373,17 @@ fn one_media(
     row.insert("p".into(), json!(placed.rel_path));
     row.insert(
         "sz".into(),
-        json!(media_item
-            .bytes
-            .unwrap_or_else(|| std::fs::metadata(&source)
-                .map(|meta| meta.len() as i64)
-                .unwrap_or(0))),
+        json!(media_item.bytes.unwrap_or_else(|| std::fs::metadata(source)
+            .map(|meta| meta.len() as i64)
+            .unwrap_or(0))),
     );
-    let derived = media::derive(&media_item.kind, &source, archive, &placed.sha256);
+    let derived = media::derive(media_item, archive, &placed.sha256);
     if let Ok(mut bar) = bar.lock() {
         bar.step(1);
     }
     match derived {
         Ok(derived) => {
-            if let Some(width) = media_item.width.or(derived.width) {
-                row.insert("w".into(), json!(width));
-            }
-            if let Some(height) = media_item.height.or(derived.height) {
-                row.insert("h".into(), json!(height));
-            }
-            if let Some(duration) = media_item.duration_ms.or(derived.duration_ms) {
-                row.insert("d".into(), json!(duration));
-            }
-            if let Some(thumb) = derived.thumb {
-                row.insert("th".into(), json!(thumb));
-            }
-            if let Some(peaks) = derived.peaks {
-                row.insert("pk".into(), json!(peaks));
-            }
+            fill(&mut row, media_item, derived);
             Prepared {
                 row: Some(Value::Object(row)),
                 failure: None,
@@ -407,6 +393,29 @@ fn one_media(
             row: Some(Value::Object(row)),
             failure: Some(format!("{id}: {}: {}", media_item.rel_path, error)),
         },
+    }
+}
+
+/// Add whatever a derivative has to a media row.
+fn fill(
+    row: &mut Map<String, Value>,
+    media_item: &crate::msgstore::Media,
+    derived: media::Derived,
+) {
+    if let Some(width) = media_item.width.or(derived.width) {
+        row.insert("w".into(), json!(width));
+    }
+    if let Some(height) = media_item.height.or(derived.height) {
+        row.insert("h".into(), json!(height));
+    }
+    if let Some(duration) = media_item.duration_ms.or(derived.duration_ms) {
+        row.insert("d".into(), json!(duration));
+    }
+    if let Some(thumb) = derived.thumb {
+        row.insert("th".into(), json!(thumb));
+    }
+    if let Some(peaks) = derived.peaks {
+        row.insert("pk".into(), json!(peaks));
     }
 }
 
@@ -748,15 +757,15 @@ mod tests {
         let data = archive.join("data");
         let mut writer = chunks::Writer::new(&data, chunks::MAX_RECORDS).unwrap();
         let clock = utc();
+        let report = Report::new(false, false, false);
         let context = BuildContext {
             out_root: &root,
             clock: &clock,
             app_version: "2.26.34.7",
-            copy_root: &root,
-            media_root: None,
             jobs: 1,
+            report: &report,
         };
-        let bar = Arc::new(Mutex::new(Bar::new("", 2)));
+        let bar = Arc::new(Mutex::new(Bar::new("", 2, false)));
 
         // Twenty samples are the whole report, however many files fail.
         for already in [19, 20] {
@@ -795,6 +804,8 @@ mod tests {
                         width: None,
                         height: None,
                         duration_ms: None,
+                        source: Some(root.join("Media/broken.jpg")),
+                        thumbnail: None,
                     }),
                     reactions: Vec::new(),
                 })

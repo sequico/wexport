@@ -1,9 +1,9 @@
 //! A one-line progress bar for the part that takes time: media, per chat.
 //!
-//! Silent when stdout is not a terminal, so a log file or a pipe stays clean; throttled, so drawing
-//! costs nothing next to a thumbnail or a transcode.
+//! The reporter decides whether it draws at all: silent on a pipe, with `-q`, and with `-j`, so the
+//! machine-readable stream stays clean. Throttled, so drawing costs nothing next to a thumbnail.
 
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::time::Instant;
 
 pub struct Bar {
@@ -15,13 +15,13 @@ pub struct Bar {
 }
 
 impl Bar {
-    pub fn new(label: &str, total: usize) -> Self {
+    pub fn new(label: &str, total: usize, enabled: bool) -> Self {
         let label: String = label.chars().take(24).collect();
         Bar {
             label,
             total,
             done: 0,
-            enabled: total > 0 && std::io::stdout().is_terminal(),
+            enabled: enabled && total > 0,
             last: Instant::now(),
         }
     }
@@ -65,5 +65,28 @@ impl Bar {
         self.done = self.total;
         print!("\r{}\n", self.render());
         let _ = std::io::stdout().flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_disabled_bar_draws_nothing_but_still_counts() {
+        let mut bar = Bar::new("1. Alice", 10, false);
+        bar.step(3);
+        assert_eq!(bar.done, 3);
+        assert!(!bar.enabled);
+    }
+
+    #[test]
+    fn the_render_is_one_line_with_the_counts() {
+        let mut bar = Bar::new("1. Alice", 4, true);
+        bar.done = 2;
+        let line = bar.render();
+        assert!(line.contains("2/4 files"));
+        assert!(line.contains("50%"));
+        assert!(!line.contains('\n'));
     }
 }

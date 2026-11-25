@@ -90,10 +90,10 @@ pub fn install_hints(name: &str) -> String {
         )
     } else {
         (
-            "sudo apt install ffmpeg",
-            "sudo dnf install ffmpeg",
-            "sudo pacman -S ffmpeg",
-            "winget install Gyan.FFmpeg",
+            "sudo apt install <the tool>",
+            "sudo dnf install <the tool>",
+            "sudo pacman -S <the tool>",
+            "winget install <the tool>",
         )
     };
     format!("  Debian/Ubuntu   {debian}\n  Fedora/RHEL     {fedora}\n  Arch            {arch}\n  Windows         {windows}")
@@ -104,4 +104,25 @@ pub fn missing_binary(name: &str) -> Error {
         "{name} not found on PATH.\n{}\nThen re-run the same command.",
         install_hints(name)
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tesseract_has_its_own_install_lines_and_nothing_else_does() {
+        let tesseract = install_hints("tesseract");
+        assert!(tesseract.contains("tesseract-ocr"));
+        let other = install_hints("some-other-tool");
+        assert!(!other.contains("tesseract"));
+        assert!(other.contains("<the tool>"));
+    }
+
+    #[test]
+    fn a_missing_binary_is_a_dependency_failure() {
+        let error = missing_binary("tesseract");
+        assert_eq!(error.code, EXIT_DEPENDENCY);
+        assert!(error.message.contains("tesseract-ocr"));
+    }
 }

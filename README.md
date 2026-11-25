@@ -1,8 +1,11 @@
 # wexport
 
-Turn an Android WhatsApp backup into a local, scrollable archive of your chats — every message, every
-image, video and voice note, with each timestamp frozen at build time so the archive still says when
-something happened in ten years.
+Turn a WhatsApp backup into a local, scrollable archive of your chats — every message, every image,
+video and voice note, with each timestamp frozen at build time so the archive still says when something
+happened in ten years.
+
+Both phones are read: Android's end-to-end encrypted `crypt15` file (with its 64-digit key), and an
+iPhone's local backup made by Finder or iTunes.
 
 Each chat becomes one folder that opens by double-clicking `index.html`: no server, no wexport, no
 network. Give someone one folder and they see one conversation and nothing else.
@@ -24,34 +27,35 @@ wexport was written for, and it is why it goes after the backup instead of the e
 - **One folder per chat.** Zip it, copy it to a USB stick, send it: it still works.
 - **Frozen time.** Every message carries its wall clock with an explicit UTC offset, written once at
   build time. Reopened in ten years, on any machine, it shows the same hour.
-- **One file, no runtime.** A single binary per platform, Linux x86-64 and Windows x86-64; no
-  installer, no interpreter, no runtime library of ours. `ffmpeg` and `ffprobe` are the only external
-  tools.
+- **One file, no runtime.** A single binary per platform — Linux x86-64, Windows x86-64 and macOS
+  universal — with no installer, no interpreter, no runtime library of ours and **no `ffmpeg`** to
+  install: the thumbnails, posters and waveforms are made by the binary itself.
 
 ![The archive viewer](docs/viewer.png)
 
-> **It needs the 64-digit key.** wexport opens Android `crypt15` backups protected by the 64-digit
-> encryption key WhatsApp shows when end-to-end encrypted backup is turned on. A password or a passkey
-> keeps that key on WhatsApp's servers, so the file cannot be opened offline; iPhone backups are a
-> different format. [Turning on the backup and saving the key →](docs/usage.md)
+> **Android needs the 64-digit key; an iPhone needs a local backup that is not encrypted.** Android
+> `crypt15` backups are opened with the key WhatsApp shows when end-to-end encrypted backup is turned
+> on; a password or a passkey keeps that key on WhatsApp's servers. An iPhone's data is read from a
+> Finder/iTunes backup with "Encrypt local backup" off, with no key involved.
+> [Turning on the backup and saving the key →](docs/usage.md)
 
 ## Install
 
-The [releases](https://github.com/sequico/wexport/releases) carry one binary per platform, with its
+The [releases](https://github.com/sequico/wexport/releases) carry one archive per platform, with its
 SHA-256 beside it:
 
 | Platform | Asset | First run |
 |---|---|---|
 | Linux x86-64 | `wexport-<version>-linux-x86_64.tar.gz` | `tar xzf wexport-<version>-linux-x86_64.tar.gz && ./wexport ~/Downloads/whatsapp-copy` |
 | Windows x86-64 | `wexport-<version>-windows-x86_64.zip` | unzip it, then `wexport.exe C:\Users\you\Downloads\whatsapp-copy` |
+| macOS universal | `wexport-<version>-macos-universal.tar.gz` | `curl -LO <url> && tar xzf wexport-<version>-macos-universal.tar.gz && ./wexport ~/Downloads/whatsapp-copy` |
 
-Each archive holds one file, the binary itself: `wexport` on Linux, `wexport.exe` on Windows. The
-SHA-256 of each archive sits beside it in the release.
+Each archive holds the binary — `wexport` on Linux and macOS, `wexport.exe` on Windows — together with
+`LICENSE` and `THIRD-PARTY.md`. The SHA-256 of each archive sits beside it in the release. On macOS the
+archive is extracted from a terminal, so Gatekeeper has no reason to stop it; there is nothing to
+right-click or approve.
 
-Nothing else is installed. `ffmpeg` and `ffprobe` must be on `PATH`; when they are not, wexport stops
-at startup with the install command for the platform (`sudo apt install ffmpeg`, `sudo dnf install
-ffmpeg`, `sudo pacman -S ffmpeg`, `winget install Gyan.FFmpeg`). `tesseract` is needed only to read
-the key from a screenshot.
+Nothing else is installed. `tesseract` is needed only to read the key from a screenshot.
 
 From source instead: `cargo build --release --locked` (Windows: add
 `--target x86_64-pc-windows-gnu`).
@@ -59,13 +63,17 @@ From source instead: `cargo build --release --locked` (Windows: add
 ## How it works
 
 ```
-phone ──► folder you copy by USB ──► wexport ──► one folder per chat ──► double-click index.html
-                                     + 64-digit key
+Android:  phone ──► folder you copy by USB ──► wexport ──► one folder per chat ──► double-click index.html
+                  + 64-digit key
+
+iPhone:   Finder/iTunes backup ──► wexport ──► the same folders
 ```
 
-`wexport` reads `msgstore.db.crypt15` (and the daily incrementals), decrypts it with the 64-digit key
-WhatsApp showed you when you enabled end-to-end encrypted backups, joins the messages with the
-`Media/` folder you copied, and writes the archive.
+`wexport` reads Android's `msgstore.db.crypt15` (and the daily incrementals), decrypts it with the
+64-digit key WhatsApp showed you when you enabled end-to-end encrypted backups, and joins the messages
+with the `Media/` folder you copied. For an iPhone it reads the `ChatStorage.sqlite` inside a local
+backup, with its log, and follows the manifest to the media files. Either way the output is the same
+kind of folder.
 
 ## First run
 
@@ -85,7 +93,7 @@ It finds the backup wherever the copy put it, asks for the key when it cannot fi
 The code is what `-b` takes. Archives land in `<folder>/output/`, one folder per chat plus an
 `index.html`, and the media part runs behind a progress bar.
 
-[Every flag, the orders and the exit codes →](docs/usage.md#6-commands-and-flags)
+[Every flag, the orders and the exit codes →](docs/usage.md#8-commands-and-flags)
 
 ## The archive
 
@@ -105,11 +113,13 @@ chunks that scroll out of view, searches across all of them, jumps to a date, an
 and voice notes straight from the folder. Keyboard: `/` search, `j`/`k` scroll, `g`/`Home` first
 message, `G`/`End` last.
 
-Media the user did not copy is a normal state, not an error: the archive shows a labelled placeholder.
+Media the user did not copy is a normal state, not an error: the archive shows a labelled placeholder —
+and when the phone kept a preview of that file, the picture is there with the label instead of an empty
+box.
 
 ## The key
 
-Three forms, all read offline:
+For Android, three forms, all read offline:
 
 - the 64 hex digits (spaces and a 4×4 grid are fine);
 - a screenshot of them (needs `tesseract`);
@@ -117,54 +127,61 @@ Three forms, all read offline:
 
 Without any of them the tool asks once on the terminal.
 
+For an iPhone there is no key: the backup is copied by Finder with "Encrypt local backup" off.
+
 ## Scope
 
-- **Android only**, backups in `crypt15` format (end-to-end encrypted, 64-digit key).
-- The user copies the phone folder themselves; the tool never touches the device.
-- Not supported, deliberately: iPhone, Google Drive download, password-based or passkey-based
-  backups, `crypt12`/`crypt14`, re-encrypting anything back.
+- **Android** backups in `crypt15` format (end-to-end encrypted, 64-digit key), full and incrementals.
+- **iPhone** local backups made by Finder or iTunes, unencrypted, and an already-extracted
+  `ChatStorage.sqlite`.
+- The user copies the phone folder or the backup themselves; the tool never touches the device.
+- Not supported, deliberately: encrypted iPhone backups, iCloud, Google Drive download,
+  password-based or passkey-based Android backups, `crypt12`/`crypt14`, re-encrypting anything back.
 
 ## Privacy
 
 - Nothing leaves the machine: no telemetry, no update check, no network code at all.
 - The archive is **plaintext**: anyone holding the folder can read the conversation. The build summary
   says so.
-- The test fixture in this repository is generated by the repository itself. No real WhatsApp data is
+- The test fixtures in this repository are generated by the repository itself. No real WhatsApp data is
   committed.
 
 ## Exit codes
 
 `0` success · `1` unreadable input, or a question with no terminal · `2` unusable key · `3` wrong
-backup type · `4` build incomplete (the archive is usable) · `5` missing dependency.
+backup type (including an encrypted iPhone backup) · `4` build incomplete (the archive is usable) ·
+`5` a missing tool — only `tesseract`, for a key given as a screenshot.
 
-The same table, with what each one means for the person running it, is in [docs/usage.md](docs/usage.md#7-what-can-go-wrong).
+The same table, with what each one means for the person running it, is in [docs/usage.md](docs/usage.md#9-what-can-go-wrong).
 
 ## Status
 
-**1.0.0.** The suite covers the container, the schema adapter, the archive bytes (a committed golden
-chunk), a rebuild that changes nothing and removes what is gone, and the memory ceiling. The viewer is
-checked from `file://` in headless Chromium, on the same files a desktop browser opens.
+**2.0.0.** Two phones, three platforms, media made in-process. The suite covers the container, both
+schema adapters, the archive bytes (a committed golden chunk per phone), a rebuild that changes
+nothing and removes what is gone, the memory ceiling, and the iPhone database with its log. The viewer
+is checked from `file://` in headless Chromium, on the same files a desktop browser opens.
 
 ## Documentation
 
 - [Implementation plan](docs/implementation-plan.md) — the specification: pipeline, data model,
   archive format, milestones, risks, decisions.
-- [Android backup formats](docs/android-backup-formats.md) — what is inside the files, and which key
-  opens which format.
+- [Backup formats](docs/backup-formats.md) — what is inside the files, for Android and iPhone, and
+  which key opens which format.
 - [Usage](docs/usage.md) — the phone steps: turning on the 64-digit key, saving it, making the
   backup, copying the folder, running wexport, and what each error means.
 
 ## Development
 
 ```sh
-cargo test                                   # unit and end-to-end runs on the fixture
+cargo test                                   # unit and end-to-end runs on the fixtures
 ./scripts/gate.sh                            # what a push must pass, about twenty seconds
 ./scripts/gate-release.sh                    # the same, plus mutation testing, fuzzing and TSan
 ```
 
-The fixture is `tests/fixtures/synthetic/phone`, built by `tests/fixtures/synthetic/build.py`; see
-[docs/implementation-plan.md](docs/implementation-plan.md) for the specification, and `AGENTS.md` for
-the project rules an agent follows here.
+The Android fixture is `tests/fixtures/synthetic/phone`, built by
+`tests/fixtures/synthetic/build.py`; the iPhone one is `tests/fixtures/synthetic/ios/backup`, built by
+`tests/fixtures/synthetic/ios/build.py`. See [docs/implementation-plan.md](docs/implementation-plan.md)
+for the specification, and `AGENTS.md` for the project rules an agent follows here.
 
 ## Contributing
 
@@ -174,9 +191,10 @@ Issues and pull requests are welcome, under the [Code of Conduct](CODE_OF_CONDUC
 
 ## License
 
-**GPL-3.0-or-later**, see [LICENSE](LICENSE). The `crypt15` key derivation and container layout follow
-[`wa-crypt-tools`](https://github.com/ElDavoo/wa-crypt-tools) (GPL-3.0), reimplemented here and pinned
-by a test to the value that reference computes.
+**GPL-3.0-or-later**, see [LICENSE](LICENSE). The dependencies and the two compiled-in libraries are
+listed with their notices in [THIRD-PARTY.md](THIRD-PARTY.md). The `crypt15` key derivation and
+container layout follow [`wa-crypt-tools`](https://github.com/ElDavoo/wa-crypt-tools) (GPL-3.0),
+reimplemented here and pinned by a test to the value that reference computes.
 
 wexport is written and maintained by **[Sequi Company](https://sequi.company)** (Ancona, Italy) —
 `info@sequi.company`. Copyright (C) 2026 Sequi Company; see [AUTHORS](AUTHORS).

@@ -10,14 +10,16 @@
 
 pub mod archive;
 pub mod chunks;
+pub mod container;
 pub mod crypt15;
 pub mod discover;
 pub mod error;
+pub mod ios;
 pub mod keys;
 pub mod media;
 pub mod merge;
 pub mod msgstore;
 pub mod progress;
+pub mod report;
+pub mod source;
 pub mod ui;
-
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");

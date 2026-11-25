@@ -21,22 +21,31 @@ done
 
 ./scripts/gate.sh
 
+# Mutation testing copies the tree per job and builds it there: on a machine whose /tmp is a small
+# tmpfs that runs out of space before it runs out of mutants. The work goes under target/ instead.
+TMPDIR="$PWD/target/tmp"
+mkdir -p "$TMPDIR"
+export TMPDIR
+# Each mutant's build is one thread. Eight mutants, each starting four compilers, is thirty-two
+# compilers on four cores: the first run spent most of its wall time thrashing, not compiling.
+export CARGO_BUILD_JOBS=1
+
 echo "== release build"
 cargo build --release --locked
 
 echo "== release build (windows)"
-# The other half of the release: the linker output is inspected by hand, the binary is not run here.
+# The same build the release ships; CI extracts the packaged zip and runs it on Windows.
 cargo build --release --locked --target x86_64-pc-windows-gnu
 
 echo "== mutations"
-# One job per core (capped): 625 mutants at four seconds each is forty minutes in series.
+# One worker per core: a worker builds its own copy of the tree before it mutates, and more workers
+# than cores only multiply that startup work — eight of them on four cores made a shard three times
+# slower than one, and a full run reported every mutant as missed. Four is what this machine can do.
 jobs=$(nproc 2>/dev/null || echo 2)
 [ "$jobs" -gt 8 ] && jobs=8
-# Mutation testing judges logic. The presentation modules (ui, progress) are mostly println and
-# arithmetic on numbers already asserted end-to-end; mutating them says nothing about the product.
-set -- --timeout 180 --jobs "$jobs"
+set -- --timeout 120 --jobs "$jobs" --test-tool nextest
 for file in src/crypt15.rs src/keys.rs src/media.rs src/chunks.rs src/msgstore.rs src/merge.rs \
-    src/discover.rs src/archive.rs src/error.rs; do
+    src/discover.rs src/ios.rs src/container.rs src/archive.rs src/error.rs; do
     set -- "$@" --file "$file"
 done
 # Two mutants have no observable effect, so no test can kill them: the media batch size only decides
@@ -44,6 +53,26 @@ done
 # negative while a message id is positive, so the two tuples are never equal.
 set -- "$@" --exclude-re 'replace >= with < in build_chat'
 set -- "$@" --exclude-re 'replace < with <= in Msgstore::each_message'
+# A shift by eight leaves the low byte empty, so OR and XOR are the same operation.
+set -- "$@" --exclude-re 'replace \| with \^ in (uint|annex_b|ebml_vint)'
+# At the end of the data the next element is empty and the walk returns: one more iteration says
+# nothing.
+set -- "$@" --exclude-re 'replace < with <= in ebml_walk'
+# With fewer than sixteen bytes read the missing largesize bytes are zeros, and the size check that
+# follows stops the walk anyway.
+set -- "$@" --exclude-re 'replace < with > in find_box'
+# The mutation makes the offset stay zero, which is an endless loop: no test can observe it except by
+# hanging, and a hang is not a wrong archive.
+set -- "$@" --exclude-re 'replace \+= with \*= in (find_box|ebml_walk)'
+# An image already at the width limit is resized to the size it has, so the two comparisons are the
+# same picture; and a decoded frame always carries both dimensions, so a zero test joined by AND or
+# by OR never runs at all.
+set -- "$@" --exclude-re 'replace > with >= in (thumbnail_of|h264_poster)'
+set -- "$@" --exclude-re 'replace \|\| with && in h264_poster'
+# The memory test is left out of the test run: it measures an allocation ceiling, which no mutant of
+# the parsers can move, and it costs six seconds on every one of a thousand mutants. Everything after
+# `--` belongs to the test command, so it goes last.
+set -- "$@" -- -E 'not binary(memory)'
 cargo mutants "$@"
 
 echo "== fuzzing"
