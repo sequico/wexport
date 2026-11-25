@@ -2,7 +2,7 @@
 
 One line per release. The detailed history is `git log`.
 
-## Unreleased
+## 2.0.0
 
 - iPhone local backups (Finder/iTunes, unencrypted) and an extracted `ChatStorage.sqlite` open beside
   Android's `crypt15`, with no key; an encrypted iPhone backup is refused by name.
