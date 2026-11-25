@@ -150,7 +150,7 @@ For an iPhone there is no key: the backup is copied by Finder with "Encrypt loca
 
 `0` success · `1` unreadable input, or a question with no terminal · `2` unusable key · `3` wrong
 backup type (including an encrypted iPhone backup) · `4` build incomplete (the archive is usable) ·
-`5` a missing tool, which now means only `tesseract` for a key given as a screenshot.
+`5` a missing tool — only `tesseract`, for a key given as a screenshot.
 
 The same table, with what each one means for the person running it, is in [docs/usage.md](docs/usage.md#9-what-can-go-wrong).
 

@@ -144,7 +144,6 @@ wexport/
 │   ├── implementation-plan.md   # this file
 │   ├── backup-formats.md        # the containers and schemas of both phones
 │   ├── usage.md
-│   ├── plan-2.0.md              # the 2.0 working plan, absorbed at the tag
 │   └── figures/                 # the phone screens usage.md shows
 ├── .github/
 │   ├── workflows/gate.yml       # the push gate on every pull request and push to main
@@ -361,6 +360,10 @@ The archive is opened with `file://`, which is a hostile environment and decides
   `<out>/index.html`, which is never inside a chat folder: a shareable archive must not reveal what
   else exists.
 - No framework, no CDN, no bundler, no WASM, no telemetry, no network calls at all.
+- **The viewer is wexport's own code, under the same licence.** Every chat folder a person shares
+  contains our `index.html`, so the notice sits in a comment at the top of that file, naming
+  GPL-3.0-or-later and pointing at the source — not a copy of the GPL beside it, which would add
+  thirty-odd kilobytes to each of the thousands of folders one backup produces.
 
 ---
 
@@ -420,7 +423,7 @@ it was compiled on.
 
 | Step | Work | Acceptance |
 |---|---|---|
-| M1 | **macOS artifact**: `macos-15` job, two Apple targets + `lipo`, `release.sh --stage` | the archive is extracted and run on the macOS runner; all three archives hold the binary, `LICENSE` and `THIRD-PARTY.md` |
+| M1 | **macOS artifact**: `macos-15` job, two Apple targets + `lipo`, `release.sh --stage` | the joined binary reports the version, carries both slices and a signature, and the finished archive is extracted and its binary hash compared; all three archives hold the binary, `LICENSE` and `THIRD-PARTY.md` |
 | M2 | Source detection: `Source` enum, a backup directory, a bare `ChatStorage.sqlite` | an encrypted iPhone backup is refused by name (exit `3`); several device folders are listed, never guessed |
 | M3 | `src/ios.rs`: chats, messages, senders, the Core Data epoch, the manifest lookup | unit tests cover every field and a renamed column |
 | M4 | iPhone media: paths in the app group, the stored thumbnails, missing files | the iOS fixture builds an archive that passes the same contract, and a thumbnail whose shape differs is fitted, not stretched |
@@ -458,6 +461,16 @@ and the release notes name the commit the binaries were built from.
 The Windows binary is cross-built on Linux and **run on `windows-2022`** in CI, because a cross-build
 proves that it links, not that it starts.
 
+**macOS needs no Apple Developer account and no notarization, because the artifact is a `.tar.gz`
+extracted from a terminal.** The quarantine attribute is set by the browser on the downloaded archive,
+and `tar` does not copy a container's extended attributes onto the files it extracts, so the binary is
+not quarantined and Gatekeeper does not stop it. Double-clicking the archive in Finder is the
+exception — Archive Utility propagates the flag — which is why the documented install is `curl` plus
+`tar`. The linker's ad-hoc signature is what execution requires on Apple Silicon, and nothing else is.
+`release.sh --macos` therefore checks the joined binary itself: both slices with `lipo -archs`, the
+version it reports, and that it carries a signature at all; then it extracts the finished archive and
+compares the hash of the binary inside with the one it built.
+
 ## 8. Testing strategy
 
 - **Unit**: pure functions — key parsing, header parsing, path resolution, payload decoding, chunk
@@ -471,9 +484,14 @@ proves that it links, not that it starts.
   proves nothing. What the suite pins is the emitted chunk bytes and the manifest: building the same
   fixture twice must produce identical files, with the build time held fixed. The viewer is judged in
   M3 by behaviour.
-- **No gate is run per change**; the project's checks run once before a push, whole tree, per the
-  owner's rules. The list lives in `scripts/gate.sh` (push, ~20 s) and `scripts/gate-release.sh`
-  (release, with mutation testing, fuzzing, ThreadSanitizer and the `--locked` build).
+- **No gate is run per change**; the project's checks run once before a push, whole tree. The list
+  lives in `scripts/gate.sh` (push, ~20 s) and `scripts/gate-release.sh` (release, with mutation
+  testing, fuzzing, ThreadSanitizer and the `--locked` build).
+- **The gate runs on macOS too**, not only the artifact check: the same `scripts/gate.sh` on a macOS
+  runner, together with the two Apple builds. APFS treats the filesystem differently — `temp_dir()`
+  resolves through `/private`, and names compare case-insensitively — so a green Linux tree is not
+  evidence for a green Mac one, and a failure there is fixed in the code rather than excluded from
+  the run.
 
 ---
 
@@ -492,7 +510,7 @@ proves that it links, not that it starts.
 | `libc` (Unix only) | the SIGPIPE disposition, so a listing piped into `head` ends quietly | MIT / Apache-2.0 |
 | `tesseract` (external, optional) | read the 64 digits from a screenshot | Apache-2.0 |
 
-**Decision (owner, taken):** wexport is **GPL-3.0-or-later**. The crypt15 reader — varint + protobuf
+**Decision:** wexport is **GPL-3.0-or-later**. The crypt15 reader — varint + protobuf
 header, AES-256-GCM, the nested-HMAC key derivation, the zlib/ZIP payloads — is a port of
 `wa-crypt-tools` (GPL-3.0), and a test pins the derivation to the value that reference implementation
 computes, so a silent change cannot slip through.
@@ -502,7 +520,7 @@ container format is our bug to find, not an upstream release to wait for. The he
 the real-backup run in `tests/real.rs` are what keep that honest. A screenshot key needs the
 `tesseract` binary on the host; the CLI degrades to typed digits, with a message, when it is missing.
 
-**Decision (owner, taken):** no transcoding. The build reads metadata only, keeps the original bytes,
+**Decision:** no transcoding. The build reads metadata only, keeps the original bytes,
 and leaves the optional re-encoded track for the day a browser forces the issue.
 
 **Every archive carries its licences.** `LICENSE` (GPL-3.0-or-later) and `THIRD-PARTY.md`, kept in step
@@ -536,12 +554,12 @@ same notice in a comment at the top of `index.html`.
 
 ## 11. Decisions
 
-Taken by the owner:
+The choices that the rest of this document does not force:
 
 1. **Key from a screenshot**: read it with `tesseract` at the moment the key is needed. It is a host
    dependency; typed digits always work.
-2. **Repository**: private now, public later. Everything is written as if it were public — English
-   docs, GPL headers, no hardcoded personal paths.
+2. **The repository is public**, and everything is written as if it always had been — English docs,
+   GPL headers, no hardcoded personal paths.
 3. **One site per chat**; the `<out>/index.html` page is the only place that lists chats together
    (§2, §6).
 4. **English** in code, CLI, UI and documentation. If the eventual recipient cannot read English, add
@@ -580,8 +598,8 @@ No decision is open.
 ## 12. Later, deliberately not now
 
 - **The graphical application, the AppImage and the signed `.dmg`**: a window over the same pipeline,
-  portable packaging per system. [`plan-2.0.md`](plan-2.0.md) keeps the shape; the CLI is the product
-  until then.
+  portable packaging per system. `ui.rs` already emits events instead of printing, which was the
+  prerequisite; the CLI is the product until then.
 - **Encrypted iPhone backups**: Apple's keybag (PBKDF2, class keys, AES-CBC per file).
 - **HEVC decoding**, for an iPhone video whose thumbnail the phone never stored.
 - **Transcoding**: off and not exposed (§5); the record has room for an alternative track.

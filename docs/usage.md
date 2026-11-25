@@ -14,7 +14,7 @@ Windows) together with the licence files. Nothing has to be installed beside it.
 | Android, protected by a **password** | no: WhatsApp keeps the key on its servers |
 | Android, protected by a **passkey** | no: same, the key never touches the file |
 | Android with end-to-end encryption **off** — `msgstore.db.crypt14` | no: the file is not encrypted with a key you hold |
-| Android on the old **crypt12** chain | no: that chain needs a password, not a key |
+| Android on WhatsApp's password-based **crypt12** chain | no: that chain needs a password, not a key |
 | iPhone, backup **encrypted with a password** | no: Apple's keybag is a different problem |
 | iPhone, **iCloud** backup | no: it is not a folder on a computer |
 
@@ -250,7 +250,7 @@ The exit code is what a script reads:
 | Message | Meaning | What to do |
 |---|---|---|
 | `only crypt14 backups in …` | end-to-end encryption was off when the backup was made | turn it on with the 64-digit key (step 1), back up now, copy again |
-| `only crypt12 backups in …` | the old chain, which needs a password and has no end-to-end key | turn on the 64-digit key, back up now, copy again |
+| `only crypt12 backups in …` | a password-based chain, with no end-to-end key | turn on the 64-digit key, back up now, copy again |
 | `was made with a password` / `with a passkey` | the key is on WhatsApp's servers, not in the file | re-enable with the 64-digit key and make a new full backup; the old files stay closed |
 | `the key does not open this backup` | wrong key, or the backup predates the current key | use the key from the screenshot; if the key was regenerated, build from a backup made after that |
 | `is an iPhone backup encrypted with a password` | "Encrypt local backup" was on | turn it off, make the backup again, run wexport on the new folder |

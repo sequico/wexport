@@ -48,9 +48,9 @@ bullet, not a whole milestone.
    `feat(store): read message_add_on reactions`, `fix(media): keep peaks for zero-length voice
    notes`.
 
-Tests are written but **not run on your own initiative** (owner rule): the project's checks run
-once, whole tree, before a push, and the owner decides when a push happens. Reading the code and
-the diff is what judges a unit.
+Tests are written but **not run on your own initiative**: the project's checks run once, whole tree,
+before a push, and a push is the maintainer's decision. Reading the code and the diff is what judges
+a unit.
 
 ## The Rust this crate is written in
 
@@ -81,7 +81,7 @@ the diff is what judges a unit.
 ## Never do this
 
 - Add a dependency to avoid writing thirty lines. The crates already in `Cargo.toml` are the budget;
-  anything else needs the owner.
+  anything else needs a reason in the commit.
 - Add `fetch`, ES modules, Web Workers or `localStorage` to the viewer because they feel convenient.
   They are exactly what `file://` blocks (§6).
 - Recompute in the viewer anything the build already froze (timestamps, dimensions, mime, paths).

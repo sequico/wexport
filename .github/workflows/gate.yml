@@ -32,7 +32,7 @@ jobs:
       - name: Windows target
         run: rustup target add x86_64-pc-windows-gnu
       - name: no ffmpeg anywhere
-        # The media work is in-process: the suite must pass with the tool the old builds needed gone.
+        # The media work is in-process: the suite must pass on a machine with no ffmpeg installed.
         run: sudo apt-get remove -y ffmpeg || true
       - name: gate
         run: ./scripts/gate.sh
