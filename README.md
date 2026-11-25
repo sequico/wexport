@@ -51,7 +51,8 @@ SHA-256 beside it:
 | macOS universal | `wexport-<version>-macos-universal.tar.gz` | `curl -LO <url> && tar xzf wexport-<version>-macos-universal.tar.gz && ./wexport ~/Downloads/whatsapp-copy` |
 
 Each archive holds the binary — `wexport` on Linux and macOS, `wexport.exe` on Windows — together with
-`LICENSE` and `THIRD-PARTY.md`. The SHA-256 of each archive sits beside it in the release. On macOS the
+`LICENSE` and `THIRD-PARTY.md`. The SHA-256 of each archive sits beside it in the release as
+`<hash>  <name>`, so `sha256sum -c *.sha256` verifies what you downloaded. On macOS the
 archive is extracted from a terminal, so Gatekeeper has no reason to stop it; there is nothing to
 right-click or approve.
 

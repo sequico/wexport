@@ -104,7 +104,9 @@ if [ "$macos" = 1 ]; then
         echo "the macOS archive is missing its licence files" >&2
         exit 1
     }
-    shasum -a 256 "$archive" | awk '{print $1}' > "$archive.sha256"
+    # Two fields with the bare name, so `sha256sum -c` works in the folder a user downloaded to.
+    digest=$(shasum -a 256 "$archive" | awk '{print $1}')
+    printf '%s  %s\n' "$digest" "$(basename "$archive")" > "$archive.sha256"
     echo
     ls -l dist
     exit 0
@@ -197,7 +199,8 @@ for asset in \
     "dist/wexport-$version-linux-x86_64.tar.gz" \
     "dist/wexport-$version-windows-x86_64.zip" \
     "dist/$macos_asset"; do
-    sha256sum "$asset" | awk '{print $1}' > "$asset.sha256"
+    digest=$(sha256sum "$asset" | awk '{print $1}')
+    printf '%s  %s\n' "$digest" "$(basename "$asset")" > "$asset.sha256"
 done
 
 echo
