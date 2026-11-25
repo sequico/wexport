@@ -420,7 +420,7 @@ it was compiled on.
 
 | Step | Work | Acceptance |
 |---|---|---|
-| M1 | **macOS artifact**: `macos-14` job, two Apple targets + `lipo`, `release.sh --stage` | the archive is extracted and run on the macOS runner; all three archives hold the binary, `LICENSE` and `THIRD-PARTY.md` |
+| M1 | **macOS artifact**: `macos-15` job, two Apple targets + `lipo`, `release.sh --stage` | the archive is extracted and run on the macOS runner; all three archives hold the binary, `LICENSE` and `THIRD-PARTY.md` |
 | M2 | Source detection: `Source` enum, a backup directory, a bare `ChatStorage.sqlite` | an encrypted iPhone backup is refused by name (exit `3`); several device folders are listed, never guessed |
 | M3 | `src/ios.rs`: chats, messages, senders, the Core Data epoch, the manifest lookup | unit tests cover every field and a renamed column |
 | M4 | iPhone media: paths in the app group, the stored thumbnails, missing files | the iOS fixture builds an archive that passes the same contract, and a thumbnail whose shape differs is fitted, not stretched |
